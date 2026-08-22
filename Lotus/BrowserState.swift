@@ -165,8 +165,8 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                         DispatchQueue.main.async {
                             self.goBack()
                         }
-                        return nil
                     }
+                    return nil
                 } else if event.keyCode == 124 { // Right Arrow
                     if self.isAnyTextInputFocused {
                         return event
@@ -175,8 +175,8 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                         DispatchQueue.main.async {
                             self.goForward()
                         }
-                        return nil
                     }
+                    return nil
                 }
             }
             return event
