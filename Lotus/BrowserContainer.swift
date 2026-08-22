@@ -17,6 +17,10 @@ struct BrowserContainer: View {
 
     @State private var backOffset: CGFloat = 0
     @State private var forwardOffset: CGFloat = 0
+    /// True for the remainder of the runloop tick in which the selected tab changed.
+    /// Focus gains arriving during that window are spurious SwiftUI field-editor
+    /// restorations from the view diff, not user clicks, so they get dropped.
+    @State private var isSwitchingTabs: Bool = false
 
     private var currentURL: URL? {
         browserState.activeURL
@@ -106,16 +110,23 @@ struct BrowserContainer: View {
             isInputFocused = false
         }
         .onChange(of: browserState.selectedTabId) {
-            syncInputText()
-            isInputFocused = false
+            handleTabSwitch()
         }
         .onChange(of: browserState.activeURL) {
             syncInputText()
         }
         .onChange(of: isInputFocused) { isFocused in
             if isFocused {
+                if isSwitchingTabs {
+                    // Spurious re-focus while the tab switch is still settling.
+                    isInputFocused = false
+                    return
+                }
                 syncInputText()
                 DispatchQueue.main.async {
+                    // Re-verify before selecting: focus may already have been
+                    // lost again during this runloop tick.
+                    guard isInputFocused, !isSwitchingTabs else { return }
                     NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
                 }
             } else {
@@ -141,6 +152,25 @@ struct BrowserContainer: View {
             return path
         }
         return nil
+    }
+
+    /// Ends address-bar editing synchronously and arms the spurious-focus guard
+    /// for the rest of the current runloop tick.
+    ///
+    /// Deferring the resign to SwiftUI's own update cycle left a stale field
+    /// editor installed on the URL field across tab switches, which both made
+    /// the bar look selected and caused WebTabHostNSView's deferred
+    /// first-responder pass to bail out. Ending the edit here is deterministic.
+    private func handleTabSwitch() {
+        isSwitchingTabs = true
+        if isInputFocused {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            isInputFocused = false
+        }
+        syncInputText()
+        DispatchQueue.main.async {
+            isSwitchingTabs = false
+        }
     }
 
     private func syncInputText() {
