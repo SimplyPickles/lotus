@@ -16,6 +16,7 @@ final class FaviconColorExtractor: ObservableObject {
     @Published private(set) var colorCache: [URL: Color] = [:]
     @Published private(set) var imageCache: [URL: NSImage] = [:]
     private var fetchingURLs: Set<URL> = []
+    private var proxyFallbacks: Set<URL> = []
 
     func color(for url: URL?) -> Color? {
         guard let url = url else { return nil }
@@ -42,21 +43,53 @@ final class FaviconColorExtractor: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let data = try? Data(contentsOf: url),
                   let nsImage = NSImage(data: data) else {
-                DispatchQueue.main.async {
-                    self?.fetchingURLs.remove(url)
+                // Direct fetch failed; fall back to the Google favicon proxy.
+                if let proxied = self?.proxyFallbackURL(for: url), self?.tryProxyFallback(for: url) == true {
+                    if let data = try? Data(contentsOf: proxied),
+                       let nsImage = NSImage(data: data) {
+                        self?.finishFetch(for: url, image: nsImage)
+                    } else {
+                        DispatchQueue.main.async {
+                            self?.fetchingURLs.remove(url)
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self?.fetchingURLs.remove(url)
+                    }
                 }
                 return
             }
 
-            let extractedColor = self?.extractAverageColor(from: nsImage)
+            self?.finishFetch(for: url, image: nsImage)
+        }
+    }
 
-            DispatchQueue.main.async {
-                if let extractedColor = extractedColor {
-                    self?.colorCache[url] = extractedColor
-                }
-                self?.imageCache[url] = nsImage
-                self?.fetchingURLs.remove(url)
+    private func finishFetch(for url: URL, image nsImage: NSImage) {
+        let extractedColor = extractAverageColor(from: nsImage)
+
+        DispatchQueue.main.async {
+            if let extractedColor = extractedColor {
+                self.colorCache[url] = extractedColor
             }
+            self.imageCache[url] = nsImage
+            self.fetchingURLs.remove(url)
+        }
+    }
+
+    // Only fall back to the proxy for site-direct favicon URLs, and only once per URL.
+    private func proxyFallbackURL(for url: URL) -> URL? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.path == "/favicon.ico",
+              let host = components.host, !host.isEmpty else { return nil }
+        return URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
+    }
+
+    private func tryProxyFallback(for url: URL) -> Bool {
+        DispatchQueue.main.sync {
+            guard !proxyFallbacks.contains(url) else { return false }
+            proxyFallbacks.insert(url)
+            return true
         }
     }
 

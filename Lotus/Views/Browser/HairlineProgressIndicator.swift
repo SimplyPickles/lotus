@@ -24,7 +24,7 @@ struct HairlineProgressIndicator: View {
     private let hairlineHeight: CGFloat = 1.0
 
     private var isInternalPage: Bool {
-        browserState.activeURL?.scheme == "lotus" || browserState.activeURL?.absoluteString.hasPrefix("lotus://") == true
+        browserState.activeURL?.isLotusPage == true
     }
 
     private var detectedAccentColor: Color {

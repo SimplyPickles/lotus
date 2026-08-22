@@ -1,0 +1,44 @@
+//
+//  BrowserState+Quit.swift
+//  Lotus
+//
+//  Created by Dylan Fraser on 8/21/26.
+//
+
+import SwiftUI
+
+extension BrowserState {
+
+    // MARK: - Quit Flow
+
+    /// Entry point for Cmd-Q and the app-termination delegate. Shows the
+    /// confirmation sheet unless the user opted out.
+    func requestQuit() {
+        if isQuitConfirmationPresented {
+            confirmQuit(alwaysQuit: false)
+            return
+        }
+        if UserDefaults.standard.bool(forKey: Self.alwaysQuitKey) {
+            confirmQuit(alwaysQuit: false)
+            return
+        }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+            isQuitConfirmationPresented = true
+        }
+    }
+
+    func cancelQuit() {
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+            isQuitConfirmationPresented = false
+        }
+    }
+
+    func confirmQuit(alwaysQuit: Bool = false) {
+        if alwaysQuit {
+            UserDefaults.standard.set(true, forKey: Self.alwaysQuitKey)
+        }
+        saveSession()
+        isQuitConfirmationPresented = false
+        AppDelegate.forceTerminate()
+    }
+}

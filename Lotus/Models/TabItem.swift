@@ -23,7 +23,14 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
     var faviconURL: URL? {
         if url?.absoluteString.starts(with: "lotus://") == true { return nil }
         guard let host = url?.host, !host.isEmpty else { return nil }
-        return URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
+        // Fetch the favicon directly from the site to avoid leaking visited hosts
+        // to a third-party proxy; the extractor falls back to the proxy only if
+        // the direct request fails.
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = "/favicon.ico"
+        return components.url
     }
 }
 
