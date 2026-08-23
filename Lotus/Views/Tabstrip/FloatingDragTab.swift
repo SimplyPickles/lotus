@@ -9,11 +9,16 @@ import SwiftUI
 
 struct FloatingDragTab: View {
     let tab: TabItem
+    var splitPair: (TabItem, TabItem)? = nil
     let isPinnedPreview: Bool
     let pinnedCardWidth: CGFloat
     let sidebarWidth: CGFloat
     let isThemeLight: Bool
     let activeThemeColor: Color?
+    /// When set, the ghost renders a folder header instead of a tab.
+    var folder: TabFolder? = nil
+    var folderTabCount: Int = 0
+    var previewCount: Int = 1
 
     private var activeTabBackgroundColor: Color {
         let isInternal = tab.url?.scheme == "lotus" || tab.url?.absoluteString.hasPrefix("lotus://") == true
@@ -25,13 +30,52 @@ struct FloatingDragTab: View {
 
     var body: some View {
         Group {
-            if isPinnedPreview {
+            if let folder {
+                // The ghost always previews the folder closed — it re-expands
+                // in place on drop.
+                let ghostFolder: TabFolder = {
+                    var ghost = folder
+                    ghost.isCollapsed = true
+                    return ghost
+                }()
+                FolderRow(
+                    folder: ghostFolder,
+                    isRenaming: false,
+                    onToggleCollapse: {},
+                    onCommitRename: { _ in },
+                    onCancelRename: {},
+                    onClose: {}
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color(nsColor: .windowBackgroundColor))
+                )
+                .frame(width: max(60, sidebarWidth - 16))
+            } else if isPinnedPreview {
                 PinnedTabButton(
                     tab: tab,
                     isSelected: true,
                     onSelect: {}
                 )
                 .frame(width: pinnedCardWidth)
+            } else if let (tab1, tab2) = splitPair {
+                SplitTabRow(
+                    tab1: tab1,
+                    tab2: tab2,
+                    selectedTabId: tab.id,
+                    currentTabIds: [tab1.id, tab2.id],
+                    sidebarWidth: sidebarWidth,
+                    isThemeLight: isThemeLight,
+                    activeTabBackgroundColor: activeTabBackgroundColor,
+                    namespace: nil,
+                    activeDrag: nil,
+                    onSelect: { _ in },
+                    onClose: { _ in },
+                    onDragChanged: { _, _ in },
+                    onDragEnded: { _ in },
+                    contextMenuBuilder: { _ in AnyView(EmptyView()) }
+                )
+                .frame(width: max(60, sidebarWidth - 16))
             } else {
                 TabButton(
                     tab: tab,
@@ -44,6 +88,31 @@ struct FloatingDragTab: View {
                     onClose: {}
                 )
                 .frame(width: max(60, sidebarWidth - 16))
+            }
+        }
+        .background {
+            if folder == nil && previewCount > 1 {
+                ZStack {
+                    RoundedRectangle(cornerRadius: isPinnedPreview ? 13 : 9, style: .continuous)
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+                        .offset(x: 8, y: 8)
+                    if previewCount > 2 {
+                        RoundedRectangle(cornerRadius: isPinnedPreview ? 13 : 9, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.86))
+                            .offset(x: 4, y: 4)
+                    }
+                }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if folder == nil && previewCount > 1 {
+                Text("\(previewCount)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .frame(minHeight: 20)
+                    .background(Capsule(style: .continuous).fill(Color.accentColor))
+                    .offset(x: 8, y: -8)
             }
         }
         .scaleEffect(isPinnedPreview ? 1.05 : 1.02)

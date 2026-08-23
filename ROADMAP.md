@@ -28,6 +28,7 @@ A living list of suggested fixes, improvements, and features. Ordered roughly by
 ## ✨ Features
 
 ### Near term
+
 - [ ] **Find in page** (Cmd-F) using `WKWebView.find(_:)/find(_:withConfiguration:)`.
 - [ ] **Per-tab reload / stop button state** and Cmd-R / Shift-Cmd-R (hard reload ignoring cache).
 - [ ] **Full history** — back/forward list UI (long-press on nav buttons), plus a browsable history page (`lotus://history`).
@@ -36,6 +37,7 @@ A living list of suggested fixes, improvements, and features. Ordered roughly by
 - [ ] **Print / Export as PDF** (Cmd-P) via `WKWebView.takeSnapshot` or `createPDF`.
 
 ### Medium term
+
 - [ ] **Tab management depth**: duplicate tab, mute tab (`WKWebpagePreferences.allowsContentJavaScript`-adjacent media control), drag tabs between windows, "reopen all closed tabs".
 - [ ] **Tab groups / folders** in the sidebar, with color labels and collapse.
 - [ ] **Bookmarks** — star button in the URL bar, bookmarks bar, `lotus://bookmarks` manager. Persist alongside session data.
@@ -45,6 +47,7 @@ A living list of suggested fixes, improvements, and features. Ordered roughly by
 - [ ] **Reader mode** as another internal page, fed by extracted article content.
 
 ### Longer term
+
 - [ ] **Extensions story** — even minimal (content-blocker style rules via `WKContentRuleListStore`).
 - [ ] **Sync** — bookmarks/history/tab sync across Macs (iCloud or custom).
 - [ ] **Multiple windows** with independent `BrowserState` instances (currently a single shared controller).

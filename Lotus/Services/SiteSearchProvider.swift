@@ -1,0 +1,152 @@
+//
+//  SiteSearchProvider.swift
+//  Lotus
+//
+//  Created by Dylan Fraser on 8/22/26.
+//
+
+import SwiftUI
+
+/// A site the command palette can search directly ("bangs" / tab-to-search).
+///
+/// Typing a trigger (e.g. `youtube`, `yt`, or `!yt`) and pressing Tab or
+/// Space locks the palette into the provider's search mode; the subsequent
+/// query is sent straight to the site's search URL.
+struct SiteSearchProvider: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let host: String
+    let iconName: String
+    /// Lowercase tokens that activate this provider (with or without a `!` prefix).
+    let triggers: [String]
+    /// Base search endpoint, without the query parameter.
+    let searchEndpoint: String
+    let queryParameter: String
+    /// Brand accent used for the locked-mode chip and tab-to-search hint.
+    let accentColor: Color
+    let isAccentLight: Bool
+
+    init(
+        id: String,
+        name: String,
+        host: String,
+        iconName: String,
+        triggers: [String],
+        searchEndpoint: String,
+        queryParameter: String,
+        accentColor: Color,
+        isAccentLight: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.host = host
+        self.iconName = iconName
+        self.triggers = triggers
+        self.searchEndpoint = searchEndpoint
+        self.queryParameter = queryParameter
+        self.accentColor = accentColor
+        self.isAccentLight = isAccentLight
+    }
+
+    func searchURL(for query: String) -> URL? {
+        var components = URLComponents(string: searchEndpoint)
+        components?.queryItems = [URLQueryItem(name: queryParameter, value: query)]
+        return components?.url
+    }
+
+    var homepageURL: URL? {
+        URL(string: "https://\(host)")
+    }
+
+    // MARK: - Registry
+
+    static let all: [SiteSearchProvider] = [
+        SiteSearchProvider(id: "youtube", name: "YouTube", host: "www.youtube.com",
+                           iconName: "play.rectangle.fill",
+                           triggers: ["youtube", "yt"],
+                           searchEndpoint: "https://www.youtube.com/results", queryParameter: "search_query",
+                           accentColor: Color(red: 0.90, green: 0.13, blue: 0.13)),
+        SiteSearchProvider(id: "google", name: "Google", host: "www.google.com",
+                           iconName: "magnifyingglass",
+                           triggers: ["google", "g"],
+                           searchEndpoint: "https://www.google.com/search", queryParameter: "q",
+                           accentColor: Color(red: 0.26, green: 0.52, blue: 0.96)),
+        SiteSearchProvider(id: "wikipedia", name: "Wikipedia", host: "en.wikipedia.org",
+                           iconName: "book.closed.fill",
+                           triggers: ["wikipedia", "wiki", "w"],
+                           searchEndpoint: "https://en.wikipedia.org/w/index.php", queryParameter: "search",
+                           accentColor: Color(red: 0.35, green: 0.38, blue: 0.42)),
+        SiteSearchProvider(id: "reddit", name: "Reddit", host: "www.reddit.com",
+                           iconName: "bubble.left.and.bubble.right.fill",
+                           triggers: ["reddit", "r"],
+                           searchEndpoint: "https://www.reddit.com/search/", queryParameter: "q",
+                           accentColor: Color(red: 1.00, green: 0.27, blue: 0.00)),
+        SiteSearchProvider(id: "github", name: "GitHub", host: "github.com",
+                           iconName: "chevron.left.forwardslash.chevron.right",
+                           triggers: ["github", "gh"],
+                           searchEndpoint: "https://github.com/search", queryParameter: "q",
+                           accentColor: Color(red: 0.29, green: 0.33, blue: 0.39)),
+        SiteSearchProvider(id: "amazon", name: "Amazon", host: "www.amazon.com",
+                           iconName: "cart.fill",
+                           triggers: ["amazon"],
+                           searchEndpoint: "https://www.amazon.com/s", queryParameter: "k",
+                           accentColor: Color(red: 0.90, green: 0.55, blue: 0.00)),
+        SiteSearchProvider(id: "x", name: "X", host: "x.com",
+                           iconName: "bubble.left.fill",
+                           triggers: ["x", "twitter"],
+                           searchEndpoint: "https://x.com/search", queryParameter: "q",
+                           accentColor: Color(red: 0.16, green: 0.18, blue: 0.22)),
+        SiteSearchProvider(id: "stackoverflow", name: "Stack Overflow", host: "stackoverflow.com",
+                           iconName: "square.stack.3d.up.fill",
+                           triggers: ["stackoverflow", "so"],
+                           searchEndpoint: "https://stackoverflow.com/search", queryParameter: "q",
+                           accentColor: Color(red: 0.96, green: 0.50, blue: 0.14)),
+        SiteSearchProvider(id: "twitch", name: "Twitch", host: "www.twitch.tv",
+                           iconName: "play.tv.fill",
+                           triggers: ["twitch"],
+                           searchEndpoint: "https://www.twitch.tv/search", queryParameter: "term",
+                           accentColor: Color(red: 0.57, green: 0.27, blue: 1.00)),
+    ]
+
+    // MARK: - Matching
+
+    private static func normalize(_ input: String) -> String? {
+        var token = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !token.isEmpty, !token.contains(" ") else { return nil }
+        if token.hasPrefix("!") {
+            token.removeFirst()
+        }
+        guard !token.isEmpty else { return nil }
+        return token
+    }
+
+    /// Provider whose trigger exactly equals the token (ignoring a `!` prefix).
+    static func exactMatch(for input: String) -> SiteSearchProvider? {
+        guard let token = normalize(input) else { return nil }
+        return all.first(where: { $0.triggers.contains(token) })
+    }
+
+    /// Provider suggested while typing: an exact trigger, or (for 2+ typed
+    /// characters, so single letters don't spam hints) a trigger prefix.
+    static func match(for input: String) -> SiteSearchProvider? {
+        guard let token = normalize(input) else { return nil }
+        if let exact = all.first(where: { $0.triggers.contains(token) }) {
+            return exact
+        }
+        guard token.count >= 2 else { return nil }
+        return all.first(where: { provider in
+            provider.triggers.contains { $0.hasPrefix(token) }
+        })
+    }
+
+    /// Splits a full "bang" submission like `!yt lofi beats` into its
+    /// provider and remaining query.
+    static func parseBang(_ input: String) -> (provider: SiteSearchProvider, query: String)? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("!") else { return nil }
+        let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard let first = parts.first, let provider = exactMatch(for: String(first)) else { return nil }
+        let query = parts.count > 1 ? String(parts[1]) : ""
+        return (provider, query)
+    }
+}

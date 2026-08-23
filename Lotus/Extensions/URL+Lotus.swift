@@ -8,12 +8,19 @@
 import Foundation
 
 extension URL {
-    /// True for internal `lotus://` pages (e.g. lotus://newtab), which render
+    /// True for internal `lotus://` pages (e.g. lotus://history), which render
     /// as SwiftUI overlays instead of web content.
     var isLotusPage: Bool {
         scheme == "lotus"
     }
 
-    /// The internal new-tab page.
-    static let lotusNewTab = URL(string: "lotus://newtab")!
+    /// The internal browsing history page.
+    static let lotusHistory = URL(string: "lotus://history")!
+
+    /// The internal downloads manager page.
+    static let lotusDownloads = URL(string: "lotus://downloads")!
+
+    /// The integrated browser settings page.
+    static let lotusSettings = URL(string: "lotus://settings")!
 }
+

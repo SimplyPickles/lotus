@@ -15,18 +15,26 @@ extension BrowserState {
     /// Returns the cached webview for a tab, creating (and starting to load)
     /// one on first access.
     func getWebView(for tabId: UUID) -> WKWebView {
+        let tab = tabs.first(where: { $0.id == tabId })
+        let targetURL = tab?.url
+
         if let existing = webViewStore[tabId] {
+            if let targetURL = targetURL,
+               existing.url == nil && existing.backForwardList.currentItem == nil {
+                existing.load(URLRequest(url: targetURL))
+            }
             return existing
         }
 
-        let config = WebViewFactory.makeConfiguration(processPool: sharedProcessPool, messageHandler: self)
+        let config = WebViewFactory.makeConfiguration(messageHandler: self)
         let webView = WebViewFactory.makeWebView(configuration: config, delegate: self)
+        webView.pageZoom = zoomLevel(for: tabId)
         webViewStore[tabId] = webView
 
         setupObservers(for: tabId, webView: webView)
 
-        if let tab = tabs.first(where: { $0.id == tabId }), let url = tab.url, url.scheme != "lotus" {
-            webView.load(URLRequest(url: url))
+        if let targetURL = targetURL {
+            webView.load(URLRequest(url: targetURL))
         }
 
         return webView
@@ -78,6 +86,11 @@ extension BrowserState {
             DispatchQueue.main.async {
                 if let index = self.tabs.firstIndex(where: { $0.id == tabId }) {
                     self.tabs[index].url = newURL
+                }
+                // Record non-internal navigations in browsing history.
+                if newURL.scheme == "http" || newURL.scheme == "https" {
+                    let title = wv.title ?? newURL.host ?? newURL.absoluteString
+                    self.recordHistoryVisit(title: title, url: newURL)
                 }
             }
         }

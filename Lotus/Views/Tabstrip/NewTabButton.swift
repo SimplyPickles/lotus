@@ -25,7 +25,7 @@ struct NewTabButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(foreground)
                     .frame(width: 16, height: 16, alignment: .center)
 
@@ -36,9 +36,9 @@ struct NewTabButton: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 8)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 34)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(isHovered ? hoverFill : Color.clear)
@@ -51,8 +51,7 @@ struct NewTabButton: View {
                 isHovered = hovering
             }
         }
-        .padding(.bottom, -2)
-        .padding(.top, 4)
         .focusable(false)
+        .padding(.bottom, -2)
     }
 }

@@ -20,6 +20,7 @@ final class SessionStore {
     private let directory: URL
     private let primaryURL: URL
     private let backupURL: URL
+    private let saveQueue = DispatchQueue(label: "lotus.session.save", qos: .utility)
 
     init(directory: URL? = nil) {
         let base = directory ?? Self.defaultDirectory()
@@ -35,14 +36,30 @@ final class SessionStore {
 
     // MARK: - Saving
 
+    /// Synchronous save, ensuring data is written to disk before returning.
     func save(_ session: BrowserSessionData) {
+        saveQueue.sync {
+            performSave(session)
+        }
+    }
+
+    /// Asynchronous save on the dedicated persistence queue.
+    func saveAsync(_ session: BrowserSessionData) {
+        saveQueue.async { [weak self] in
+            self?.performSave(session)
+        }
+    }
+
+    private func performSave(_ session: BrowserSessionData) {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let envelope = Envelope(version: Self.currentVersion, session: session)
             let data = try JSONEncoder().encode(envelope)
 
-            // Promote the current primary to backup before overwriting it.
-            if FileManager.default.fileExists(atPath: primaryURL.path) {
+            // Promote the current primary to backup before overwriting it if valid.
+            if FileManager.default.fileExists(atPath: primaryURL.path),
+               let existingData = try? Data(contentsOf: primaryURL),
+               !existingData.isEmpty {
                 try? FileManager.default.removeItem(at: backupURL)
                 try? FileManager.default.copyItem(at: primaryURL, to: backupURL)
             }
@@ -58,16 +75,22 @@ final class SessionStore {
     /// the primary is missing or corrupt. Returns nil only when neither file
     /// yields a usable session.
     func load() -> BrowserSessionData? {
-        loadSession(from: primaryURL) ?? loadSession(from: backupURL)
+        saveQueue.sync {
+            migrateFromUserDefaultsIfNeededSync()
+            return loadSession(from: primaryURL) ?? loadSession(from: backupURL)
+        }
     }
 
     private func loadSession(from url: URL) -> BrowserSessionData? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
         do {
             let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-            guard !envelope.session.tabs.isEmpty else { return nil }
             return envelope.session
         } catch {
+            // Fallback: try decoding unversioned BrowserSessionData for backward compatibility
+            if let legacySession = try? JSONDecoder().decode(BrowserSessionData.self, from: data) {
+                return legacySession
+            }
             NSLog("[Lotus] Session file at \(url.lastPathComponent) is unreadable (\(error.localizedDescription)); trying next source")
             return nil
         }
@@ -78,12 +101,18 @@ final class SessionStore {
     /// One-time import of legacy `UserDefaults` session data so existing users
     /// don't lose their tabs.
     func migrateFromUserDefaultsIfNeeded(defaults: UserDefaults = .standard) {
-        guard load() == nil,
+        saveQueue.sync {
+            migrateFromUserDefaultsIfNeededSync(defaults: defaults)
+        }
+    }
+
+    private func migrateFromUserDefaultsIfNeededSync(defaults: UserDefaults = .standard) {
+        guard !FileManager.default.fileExists(atPath: primaryURL.path) && !FileManager.default.fileExists(atPath: backupURL.path),
               let data = defaults.data(forKey: "lotus.browser.session"),
-              let session = try? JSONDecoder().decode(BrowserSessionData.self, from: data),
-              !session.tabs.isEmpty else { return }
-        save(session)
+              let session = try? JSONDecoder().decode(BrowserSessionData.self, from: data) else { return }
+        performSave(session)
         defaults.removeObject(forKey: "lotus.browser.session")
+        NSLog("[Lotus] Successfully migrated legacy UserDefaults session to Application Support file store")
     }
 
     // MARK: - On-disk format

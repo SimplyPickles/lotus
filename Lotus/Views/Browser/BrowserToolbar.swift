@@ -9,7 +9,9 @@ import SwiftUI
 
 struct BrowserToolbar: View {
     @ObservedObject var browserState: BrowserState
+    var tabId: UUID? = nil
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
 
     @State private var urlInputText: String = ""
     @FocusState private var isInputFocused: Bool
@@ -21,44 +23,77 @@ struct BrowserToolbar: View {
     /// Focus gains arriving during that window are spurious SwiftUI field-editor
     /// restorations from the view diff, not user clicks, so they get dropped.
     @State private var isSwitchingTabs: Bool = false
+    @Binding var isDownloadsPopoverPresented: Bool
+    @State private var isCatchingDownload: Bool = false
+    @State private var isZoomIndicatorVisible: Bool = false
+
+    private var activeTabId: UUID {
+        tabId ?? browserState.selectedTabId
+    }
+
+    private var isLoading: Bool {
+        browserState.isLoading(for: activeTabId)
+    }
 
     private var theme: BrowserChromeTheme {
-        BrowserChromeTheme(browserState: browserState, colorScheme: colorScheme)
+        BrowserChromeTheme(browserState: browserState, tabId: activeTabId, colorScheme: colorScheme)
     }
 
     private var currentURL: URL? {
-        browserState.activeURL
+        browserState.url(for: activeTabId)
+    }
+
+    private var currentTab: TabItem? {
+        browserState.tab(for: activeTabId)
+    }
+
+    private var canGoBack: Bool {
+        browserState.canGoBack(for: activeTabId)
+    }
+
+    private var canGoForward: Bool {
+        browserState.canGoForward(for: activeTabId)
+    }
+
+    private var isLeftmostContainer: Bool {
+        guard let firstId = browserState.currentTabIds.first else { return true }
+        return activeTabId == firstId
+    }
+
+    private var currentZoomLevel: CGFloat {
+        browserState.zoomLevel(for: activeTabId)
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Button {
-                browserState.toggleSidebar()
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 13, weight: .regular))
-                    .transaction { $0.animation = nil }
+            if isLeftmostContainer {
+                Button {
+                    browserState.toggleSidebar()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 13, weight: .regular))
+                }
+                .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+                .focusable(false)
+                .padding(.leading, -1)
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: browserState.isThemeLight, hasCustomTheme: browserState.activeThemeColor != nil))
-            .focusable(false)
-            .padding(.leading, -1)
 
             Button {
                 backOffset = -2.5
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                     backOffset = 0
                 }
-                browserState.goBack()
+                browserState.goBack(for: activeTabId)
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .medium))
                     .offset(x: backOffset)
                     .animation(.spring(response: 0.28, dampingFraction: 0.62), value: backOffset)
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: browserState.isThemeLight, hasCustomTheme: browserState.activeThemeColor != nil))
-            .disabled(!browserState.canGoBack)
-            .opacity(browserState.canGoBack ? 1.0 : 0.35)
-            .animation(.easeInOut(duration: 0.2), value: browserState.canGoBack)
+            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+            .disabled(!canGoBack)
+            .opacity(canGoBack ? 1.0 : 0.35)
+            .animation(.easeInOut(duration: 0.2), value: canGoBack)
             .focusable(false)
 
             Button {
@@ -66,83 +101,129 @@ struct BrowserToolbar: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                     forwardOffset = 0
                 }
-                browserState.goForward()
+                browserState.goForward(for: activeTabId)
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .medium))
                     .offset(x: forwardOffset)
                     .animation(.spring(response: 0.28, dampingFraction: 0.62), value: forwardOffset)
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: browserState.isThemeLight, hasCustomTheme: browserState.activeThemeColor != nil))
-            .disabled(!browserState.canGoForward)
-            .opacity(browserState.canGoForward ? 1.0 : 0.35)
-            .animation(.easeInOut(duration: 0.2), value: browserState.canGoForward)
+            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+            .disabled(!canGoForward)
+            .opacity(canGoForward ? 1.0 : 0.35)
+            .animation(.easeInOut(duration: 0.2), value: canGoForward)
             .focusable(false)
 
             Button {
-                browserState.reload()
+                if isLoading {
+                    browserState.stopLoading(for: activeTabId)
+                } else {
+                    browserState.reload(for: activeTabId)
+                }
             } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .regular))
-                    .transaction { $0.animation = nil }
+                ZStack {
+                    if isLoading {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .frame(width: 14, height: 14, alignment: .center)
+                            .transition(.reloadTransition)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11.5, weight: .regular))
+                            .frame(width: 14, height: 14, alignment: .center)
+                            .transition(.reloadTransition)
+                    }
+                }
+                .animation(.spring(response: 0.30, dampingFraction: 0.76), value: isLoading)
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: browserState.isThemeLight, hasCustomTheme: browserState.activeThemeColor != nil))
+            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+            .disabled(currentURL?.isLotusPage == true)
+            .opacity(currentURL?.isLotusPage == true ? 0.35 : 1.0)
             .focusable(false)
 
-//            Button {
-//                browserState.triggerAutoFill()
-//            } label: {
-//                Image(systemName: "key.fill")
-//                    .font(.system(size: 11, weight: .medium))
-//            }
-//            .buttonStyle(BrowserToolbarButtonStyle(isLight: browserState.isThemeLight, hasCustomTheme: browserState.activeThemeColor != nil))
-//            .help("AutoFill Passwords with Apple Password Manager")
-//            .focusable(false)
-
-            ZStack(alignment: .leading) {
-                if !isEditingOrHovering, let host = prettifiedHost {
-                    HStack(spacing: 4) {
-                        Text(host)
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(theme.foregroundPrimary)
-
-                        if let detail = prettifiedDetail {
-                            Text("/")
-                                .font(.system(size: 13, weight: .light))
-                                .foregroundColor(theme.foregroundSecondary.opacity(0.3))
-
-                            Text(detail)
+            ZStack(alignment: .trailing) {
+                ZStack(alignment: .leading) {
+                    if let feedback = urlCopyFeedback {
+                        URLCopyFeedbackToast(feedback: feedback, theme: theme)
+                            .id(feedback.id)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                                    removal: .move(edge: .top).combined(with: .opacity)
+                                )
+                            )
+                            .allowsHitTesting(false)
+                    } else if !isEditingOrHovering, let host = prettifiedHost {
+                        HStack(spacing: 4) {
+                            Text(host)
                                 .font(.system(size: 13, weight: .regular))
-                                .foregroundColor(theme.foregroundSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                                .foregroundColor(theme.foregroundPrimary)
+
+                            if let detail = prettifiedDetail {
+                                Text("/")
+                                    .font(.system(size: 13, weight: .light))
+                                    .foregroundColor(theme.foregroundSecondary.opacity(0.3))
+
+                                Text(detail)
+                                    .font(.system(size: 13, weight: .regular))
+                                    .foregroundColor(theme.foregroundSecondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .padding(.trailing, currentZoomLevel != 1.0 ? 54 : 0)
+                        .allowsHitTesting(false)
                     }
+
+                    TextField(
+                        "",
+                        text: $urlInputText,
+                        prompt: Text("Search the web or type a URL").foregroundColor(theme.foregroundSecondary)
+                    )
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(theme.foregroundPrimary)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1)
+                    .focused($isInputFocused)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
+                    .padding(.trailing, currentZoomLevel != 1.0 ? 54 : 0)
+                    .opacity((!isEditingOrHovering && prettifiedHost != nil) || urlCopyFeedback != nil ? 0 : 1)
+                    // Editing happens in the command palette now; the field is
+                    // display-only.
                     .allowsHitTesting(false)
+                    .onKeyPress(.escape) {
+                        syncInputText()
+                        isInputFocused = false
+                        return .handled
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    browserState.openCommandPaletteForCurrentTab()
                 }
 
-                TextField(
-                    "",
-                    text: $urlInputText,
-                    prompt: Text("Search the web or type a URL").foregroundColor(theme.foregroundSecondary)
-                )
-                .font(.system(size: 13, weight: .regular))
-                .foregroundColor(theme.foregroundPrimary)
-                .textFieldStyle(.plain)
-                .lineLimit(1)
-                .focused($isInputFocused)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .opacity((!isEditingOrHovering && prettifiedHost != nil) ? 0 : 1)
-                .onKeyPress(.escape) {
-                    syncInputText()
-                    isInputFocused = false
-                    return .handled
+                // Keep the pill mounted through the reset so numericText can
+                // animate the final value to 100% before it fades out.
+                if isZoomIndicatorVisible || currentZoomLevel != 1.0 {
+                    ZoomIndicatorPill(
+                        zoomLevel: currentZoomLevel,
+                        isZoomingIn: browserState.lastZoomChangeDirection[activeTabId] ?? true,
+                        theme: theme,
+                        onReset: {
+                            isZoomIndicatorVisible = true
+                            browserState.resetZoom(for: activeTabId)
+                        }
+                    )
+                    .padding(.trailing, 4)
+                    .transition(
+                        .opacity.animation(.easeInOut(duration: 0.30))
+                            .combined(with: .scale(scale: 0.90).animation(.easeInOut(duration: 0.30)))
+                    )
                 }
             }
-            .transaction { $0.animation = nil }
             .background(
                 ZStack(alignment: .bottomLeading) {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -150,10 +231,11 @@ struct BrowserToolbar: View {
                         .animation(.easeInOut(duration: 0.15), value: isInputHovered)
                         .animation(.easeInOut(duration: 0.15), value: isInputFocused)
 
-                    HairlineProgressIndicator(browserState: browserState)
+                    HairlineProgressIndicator(browserState: browserState, tabId: activeTabId)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             )
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: currentZoomLevel)
             .onHover { hovering in
                 isInputHovered = hovering
             }
@@ -164,28 +246,142 @@ struct BrowserToolbar: View {
                 syncInputText()
                 isInputFocused = false
             }
-            .background {
-                // ⌘L is intentionally view-local: it needs this field's
-                // @FocusState. Recorded in LotusShortcuts.localExceptions.
-                Button("") {
-                    isInputFocused = true
-                }
-                .keyboardShortcut("l", modifiers: .command)
-                .opacity(0)
-                .focusable(false)
-            }
-
 
             Button {
-//                browserState.reload()
+                isDownloadsPopoverPresented.toggle()
+            } label: {
+                ZStack {
+                    if browserState.hasActiveDownloads {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.accentColor.opacity(0.25), lineWidth: 2.0)
+                                .frame(width: 15, height: 15)
+
+                            Circle()
+                                .trim(from: 0.0, to: CGFloat(max(0.08, min(1.0, browserState.overallDownloadProgress))))
+                                .stroke(
+                                    Color.accentColor,
+                                    style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
+                                )
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 15, height: 15)
+                                .animation(.linear(duration: 0.12), value: browserState.overallDownloadProgress)
+
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(Color.accentColor)
+                        }
+                        .frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 13, weight: .regular))
+                    }
+                }
+                .scaleEffect(isCatchingDownload ? 1.20 : 1.0)
+                .animation(.spring(response: 0.32, dampingFraction: 0.64), value: isCatchingDownload)
+            }
+            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+            .focusable(false)
+            .help("Downloads")
+            .onChange(of: browserState.downloadCatchPulseTrigger) { _, _ in
+                isCatchingDownload = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                    isCatchingDownload = false
+                }
+            }
+            .popover(isPresented: $isDownloadsPopoverPresented, arrowEdge: .bottom) {
+                RecentDownloadsPopover(browserState: browserState) {
+                    isDownloadsPopoverPresented = false
+                }
+            }
+
+            Menu {
+                Button {
+                    browserState.openCommandPalette()
+                } label: {
+                    Label("New Tab", systemImage: "plus")
+                }
+
+                Button {
+                    openWindow(id: "main")
+                } label: {
+                    Label("New Window", systemImage: "macwindow.badge.plus")
+                }
+
+                Divider()
+
+                Button {
+                    browserState.addTabBelow(title: "Downloads", url: .lotusDownloads)
+                } label: {
+                    Label("Downloads", systemImage: "arrow.down.circle")
+                }
+
+                Button {
+                    browserState.addTabBelow(title: "History", url: .lotusHistory)
+                } label: {
+                    Label("History", systemImage: "clock")
+                }
+
+                Button {
+                    browserState.addTabBelow(title: "Settings", url: .lotusSettings)
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+
+                Button {
+                    browserState.reopenLastClosedTab()
+                } label: {
+                    Label("Reopen Closed Tab", systemImage: "arrow.uturn.left")
+                }
+
+                Divider()
+
+                Button {
+                    browserState.copyPageURL(for: activeTabId)
+                } label: {
+                    Label("Copy Address", systemImage: "link")
+                }
+                .disabled(currentURL == nil)
+
+                Button {
+                    browserState.printPage(for: activeTabId)
+                } label: {
+                    Label("Print", systemImage: "printer")
+                }
+                .disabled(currentURL?.isLotusPage != false)
+
+                Button {
+                    browserState.togglePictureInPicture(for: activeTabId)
+                } label: {
+                    Label("Picture in Picture", systemImage: "pip")
+                }
+                .disabled(currentURL?.isLotusPage != false)
+
+                Button {
+                    browserState.openFind(for: activeTabId)
+                } label: {
+                    Label("Find in Page", systemImage: "magnifyingglass")
+                }
+                .disabled(currentURL?.isLotusPage != false)
+
+                Button {
+                    browserState.toggleSidebar()
+                } label: {
+                    Label(
+                        browserState.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
+                        systemImage: "sidebar.left"
+                    )
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .regular))
-                    .transaction { $0.animation = nil }
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: browserState.isThemeLight, hasCustomTheme: browserState.activeThemeColor != nil))
+            .menuStyle(.button)
+            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+            .menuIndicator(.hidden)
+            .fixedSize()
             .focusable(false)
-            .padding(.trailing, -9)
+            .padding(.trailing, -8)
 
             Spacer(minLength: 0)
         }
@@ -196,13 +392,26 @@ struct BrowserToolbar: View {
             syncInputText()
             isInputFocused = false
         }
-        .onChange(of: browserState.selectedTabId) {
+        .onChange(of: activeTabId) {
             handleTabSwitch()
         }
-        .onChange(of: browserState.activeURL) {
+        .onChange(of: browserState.url(for: activeTabId)) {
             syncInputText()
         }
-        .onChange(of: isInputFocused) { isFocused in
+        .onChange(of: currentZoomLevel) { _, newZoomLevel in
+            if newZoomLevel != 1.0 {
+                isZoomIndicatorVisible = true
+            } else if isZoomIndicatorVisible {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    if currentZoomLevel == 1.0 {
+                        withAnimation(.easeInOut(duration: 0.30)) {
+                            isZoomIndicatorVisible = false
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: isInputFocused) { _, isFocused in
             if isFocused {
                 if isSwitchingTabs {
                     // Spurious re-focus while the tab switch is still settling.
@@ -220,23 +429,40 @@ struct BrowserToolbar: View {
                 syncInputText()
             }
         }
+        .onChange(of: browserState.focusAddressBarTabId) { _, targetId in
+            if targetId == activeTabId {
+                isInputFocused = true
+                DispatchQueue.main.async {
+                    isInputFocused = true
+                    if browserState.focusAddressBarTabId == activeTabId {
+                        browserState.focusAddressBarTabId = nil
+                    }
+                }
+            }
+        }
     }
 
     private var isEditingOrHovering: Bool {
         isInputFocused || isInputHovered
     }
 
+    private var urlCopyFeedback: URLCopyFeedback? {
+        guard let feedback = browserState.urlCopyFeedback, feedback.tabId == activeTabId else { return nil }
+        return feedback
+    }
+
     private var prettifiedHost: String? {
-        guard let host = currentURL?.host, !host.isEmpty else { return nil }
+        guard let url = currentURL, !url.isLotusPage, let host = url.host, !host.isEmpty else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     private var prettifiedDetail: String? {
-        if let title = browserState.activeTab?.title, !title.isEmpty, title != prettifiedHost, title != currentURL?.absoluteString {
+        guard let url = currentURL, !url.isLotusPage else { return nil }
+        if let title = currentTab?.title, !title.isEmpty, title != prettifiedHost, title != url.absoluteString {
             return title
         }
-        if let path = currentURL?.path, !path.isEmpty && path != "/" {
-            return path
+        if !url.path.isEmpty && url.path != "/" {
+            return url.path
         }
         return nil
     }
@@ -261,10 +487,13 @@ struct BrowserToolbar: View {
     }
 
     private func syncInputText() {
-        if let abs = currentURL?.absoluteString, !abs.isEmpty {
+        if let url = currentURL, url.isLotusPage {
+            // Show the URL for internal pages (e.g. lotus://history).
+            urlInputText = url.absoluteString
+        } else if let abs = currentURL?.absoluteString, !abs.isEmpty {
             urlInputText = abs
         } else {
-            urlInputText = browserState.activeTab?.title ?? ""
+            urlInputText = currentTab?.title ?? ""
         }
     }
 
@@ -272,6 +501,110 @@ struct BrowserToolbar: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         isInputFocused = false
-        browserState.navigateActiveTab(to: trimmed)
+        browserState.navigateTab(id: activeTabId, to: trimmed)
+    }
+}
+
+private struct URLCopyFeedbackToast: View {
+    let feedback: URLCopyFeedback
+    let theme: BrowserChromeTheme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: feedback.systemImage)
+                .font(.system(size: 12, weight: .semibold))
+
+            Text(feedback.message)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundColor(feedback.outcome == .copied ? theme.foregroundPrimary : .red)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+    }
+}
+
+// MARK: - Reload / Stop Icon Transition
+
+private struct SpinAndScaleTransitionModifier: ViewModifier {
+    let rotation: Double
+    let scale: CGFloat
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(rotation))
+            .scaleEffect(scale)
+            .opacity(opacity)
+    }
+}
+
+private extension AnyTransition {
+    static var reloadTransition: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(
+                active: SpinAndScaleTransitionModifier(rotation: -90, scale: 0.6, opacity: 0),
+                identity: SpinAndScaleTransitionModifier(rotation: 0, scale: 1.0, opacity: 1)
+            ),
+            removal: .modifier(
+                active: SpinAndScaleTransitionModifier(rotation: 90, scale: 0.6, opacity: 0),
+                identity: SpinAndScaleTransitionModifier(rotation: 0, scale: 1.0, opacity: 1)
+            )
+        )
+    }
+}
+
+// MARK: - Zoom Indicator Pill
+
+private struct ZoomIndicatorPill: View {
+    let zoomLevel: CGFloat
+    let isZoomingIn: Bool
+    let theme: BrowserChromeTheme
+    let onReset: () -> Void
+
+    @State private var isHovered: Bool = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var percentValue: Int {
+        Int(round(zoomLevel * 100))
+    }
+
+    private var percentText: String {
+        "\(percentValue)%"
+    }
+
+    var body: some View {
+        Button(action: onReset) {
+            HStack(spacing: 2) {
+                Text("\(percentValue)")
+                    .monospacedDigit()
+                    .contentTransition(.numericText(countsDown: !isZoomingIn))
+                    // Keep the rolling digits in a stable vertical lane. Without
+                    // this, the transition's intermediate glyphs can move the
+                    // pill's baseline up and down as their bounds change.
+                    .frame(height: 13, alignment: .center)
+                    .clipped()
+
+                Text("%")
+            }
+            .animation(.spring(response: 0.24, dampingFraction: 0.74), value: percentValue)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(theme.foregroundPrimary.opacity(isHovered ? 1.0 : 0.72))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2.5)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(isHovered
+                          ? (colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08))
+                          : (colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.04)))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Zoom level \(percentText). Click to reset to 100%.")
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }

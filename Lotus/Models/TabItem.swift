@@ -12,12 +12,16 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
     var title: String
     var url: URL?
     var isPinned: Bool
+    /// Sidebar folder this tab belongs to, if any. Pinned tabs never carry a
+    /// folder (folders cannot be pinned). Optional so old sessions decode.
+    var folderId: UUID?
 
-    init(id: UUID = UUID(), title: String, url: URL? = nil, isPinned: Bool = false) {
+    init(id: UUID = UUID(), title: String, url: URL? = nil, isPinned: Bool = false, folderId: UUID? = nil) {
         self.id = id
         self.title = title
         self.url = url
         self.isPinned = isPinned
+        self.folderId = folderId
     }
 
     var faviconURL: URL? {
@@ -37,7 +41,5 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
 extension TabItem {
     static let samples: [TabItem] = [
         TabItem(title: "Apple", url: URL(string: "https://www.apple.com"), isPinned: true),
-        TabItem(title: "Lotus", url: URL(string: "https://apple.com"), isPinned: true),
-        TabItem(title: "New Tab", url: URL(string: "lotus://newtab"), isPinned: false),
     ]
 }

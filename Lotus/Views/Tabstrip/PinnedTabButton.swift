@@ -11,100 +11,239 @@ import Combine
 struct PinnedTabButton: View {
     let tab: TabItem
     let isSelected: Bool
+    var isMultiSelected: Bool = false
+    var isInSplit: Bool = false
+    var isDraggingAnyTab: Bool = false
+    var namespace: Namespace.ID? = nil
+    var isRenaming: Bool = false
+    var onCommitRename: (String) -> Void = { _ in }
+    var onCancelRename: () -> Void = {}
     let onSelect: () -> Void
 
     @State private var isHovered: Bool = false
+    @State private var draftTitle: String = ""
+    @FocusState private var isTitleFocused: Bool
     @ObservedObject private var colorExtractor = FaviconColorExtractor.shared
     @Environment(\.colorScheme) private var colorScheme
 
-    private var outlineColor: Color {
+    private var effectiveHovered: Bool {
+        isHovered && !isDraggingAnyTab
+    }
+
+    private var faviconColors: [Color] {
         if let host = tab.url?.host?.lowercased(), host.contains("apple.com") {
-            return colorScheme == .dark ? Color.white : Color.black
+            let base = colorScheme == .dark ? Color.white : Color.black
+            return [base, base.opacity(0.65)]
+        }
+        if let faviconURL = tab.faviconURL, let extracted = colorExtractor.colors(for: faviconURL), !extracted.isEmpty {
+            return Array(extracted.prefix(3))
         }
         if let faviconURL = tab.faviconURL, let extracted = colorExtractor.color(for: faviconURL) {
-            return extracted
+            return [extracted, extracted]
         }
-        return colorScheme == .dark ? Color.white : Color(nsColor: .labelColor)
+        let fallback = colorScheme == .dark ? Color.white : Color(nsColor: .labelColor)
+        return [fallback, fallback.opacity(0.65)]
+    }
+
+    private var primaryColor: Color {
+        faviconColors.first ?? (colorScheme == .dark ? Color.white : Color(nsColor: .labelColor))
+    }
+
+    private var secondaryColor: Color? {
+        faviconColors.count > 1 ? faviconColors[1] : nil
+    }
+
+    private var tertiaryColor: Color? {
+        faviconColors.count > 2 ? faviconColors[2] : nil
     }
 
     private var backgroundGradient: LinearGradient {
-        let topColor: Color
-        let bottomColor: Color
+        let startOpacity: Double
+        let endOpacity: Double
 
         if colorScheme == .light {
             if isSelected {
-                topColor = Color.white.opacity(0.95)
-                bottomColor = Color.white.opacity(0.88)
-            } else if isHovered {
-                topColor = Color.white.opacity(0.75)
-                bottomColor = Color.white.opacity(0.65)
+                startOpacity = 0.12
+                endOpacity = 0.04
+            } else if isInSplit {
+                startOpacity = 0.09
+                endOpacity = 0.03
+            } else if effectiveHovered {
+                startOpacity = 0.07
+                endOpacity = 0.02
             } else {
-                topColor = Color.white.opacity(0.55)
-                bottomColor = Color.white.opacity(0.45)
+                startOpacity = 0.04
+                endOpacity = 0.012
             }
         } else {
             if isSelected {
-                topColor = outlineColor.opacity(0.5)
-                bottomColor = outlineColor.opacity(0.4)
-            } else if isHovered {
-                topColor = outlineColor.opacity(0.14)
-                bottomColor = outlineColor.opacity(0.10)
+                startOpacity = 0.18
+                endOpacity = 0.06
+            } else if isInSplit {
+                startOpacity = 0.14
+                endOpacity = 0.045
+            } else if effectiveHovered {
+                startOpacity = 0.11
+                endOpacity = 0.035
             } else {
-                topColor = outlineColor.opacity(0.08)
-                bottomColor = outlineColor.opacity(0.04)
+                startOpacity = 0.06
+                endOpacity = 0.018
             }
+        }
+
+        var stops: [Gradient.Stop] = [
+            .init(color: primaryColor.opacity(startOpacity), location: 0.0),
+            .init(color: primaryColor.opacity(startOpacity * 0.85 + endOpacity * 0.15), location: 0.60)
+        ]
+
+        if let tertiary = tertiaryColor, let secondary = secondaryColor {
+            stops.append(.init(color: secondary.opacity(startOpacity * 0.4 + endOpacity * 0.6), location: 0.85))
+            stops.append(.init(color: tertiary.opacity(endOpacity), location: 1.0))
+        } else if let secondary = secondaryColor {
+            stops.append(.init(color: secondary.opacity(endOpacity), location: 1.0))
+        } else {
+            stops.append(.init(color: primaryColor.opacity(endOpacity), location: 1.0))
         }
 
         return LinearGradient(
-            colors: [topColor, bottomColor],
-            startPoint: .top,
-            endPoint: .bottom
+            stops: stops,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
         )
     }
 
-    private var strokeColor: Color {
+    private var borderGradient: LinearGradient {
+        let startOpacity: Double
+        let endOpacity: Double
+
         if colorScheme == .light {
             if isSelected {
-                return outlineColor.opacity(0.25)
-            } else if isHovered {
-                return Color.black.opacity(0.10)
+                startOpacity = 0.45
+                endOpacity = 0.20
+            } else if isInSplit {
+                startOpacity = 0.35
+                endOpacity = 0.16
+            } else if effectiveHovered {
+                startOpacity = 0.26
+                endOpacity = 0.11
             } else {
-                return Color.black.opacity(0.06)
+                startOpacity = 0.18
+                endOpacity = 0.07
             }
         } else {
             if isSelected {
-                return outlineColor.opacity(0.85)
-            } else if isHovered {
-                return outlineColor.opacity(0.35)
+                startOpacity = 0.55
+                endOpacity = 0.26
+            } else if isInSplit {
+                startOpacity = 0.42
+                endOpacity = 0.20
+            } else if effectiveHovered {
+                startOpacity = 0.30
+                endOpacity = 0.14
             } else {
-                return outlineColor.opacity(0.12)
+                startOpacity = 0.20
+                endOpacity = 0.09
             }
         }
+
+        var stops: [Gradient.Stop] = [
+            .init(color: primaryColor.opacity(startOpacity), location: 0.0),
+            .init(color: primaryColor.opacity(startOpacity * 0.85 + endOpacity * 0.15), location: 0.60)
+        ]
+
+        if let tertiary = tertiaryColor, let secondary = secondaryColor {
+            stops.append(.init(color: secondary.opacity(startOpacity * 0.4 + endOpacity * 0.6), location: 0.85))
+            stops.append(.init(color: tertiary.opacity(endOpacity), location: 1.0))
+        } else if let secondary = secondaryColor {
+            stops.append(.init(color: secondary.opacity(endOpacity), location: 1.0))
+        } else {
+            stops.append(.init(color: primaryColor.opacity(endOpacity), location: 1.0))
+        }
+
+        return LinearGradient(
+            stops: stops,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     var body: some View {
-        ZStack {
-            faviconView
-                .frame(width: 18, height: 18)
+        HStack {
+            if isRenaming {
+                TextField("Tab Title", text: $draftTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .textFieldStyle(.plain)
+                    .foregroundColor(colorScheme == .dark ? .white : .primary)
+                    .multilineTextAlignment(.center)
+                    .focused($isTitleFocused)
+                    .onSubmit {
+                        onCommitRename(draftTitle)
+                    }
+                    .onKeyPress(.escape) {
+                        onCancelRename()
+                        return .handled
+                    }
+            } else {
+                faviconView
+            }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(height: 38)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(backgroundGradient)
-                .shadow(color: colorScheme == .light ? Color.black.opacity(isSelected ? 0.10 : 0.05) : Color.clear, radius: isSelected ? 3 : 2, x: 0, y: 1)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(strokeColor, lineWidth: isSelected ? 1.5 : 1)
-                )
+            Group {
+                if isSelected, let namespace {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(backgroundGradient)
+                        .matchedGeometryEffect(id: "activeTabHighlight", in: namespace)
+                } else {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(backgroundGradient)
+                }
+            }
         )
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(
+            color: colorScheme == .light
+                ? Color.black.opacity(isSelected ? 0.06 : (effectiveHovered ? 0.03 : 0.015))
+                : Color.black.opacity(isSelected ? 0.20 : (effectiveHovered ? 0.12 : 0.06)),
+            radius: isSelected ? 3 : 1.5,
+            x: 0,
+            y: 1
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(borderGradient, lineWidth: isSelected ? 1.5 : (isInSplit ? 1.25 : 1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.black.opacity(0.035))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.10), lineWidth: 2)
+                )
+                .opacity(isMultiSelected ? 1 : 0)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .onTapGesture {
-            onSelect()
+            if !isRenaming {
+                onSelect()
+            }
         }
         .onHover { hovering in
+            guard !isDraggingAnyTab else {
+                isHovered = false
+                return
+            }
             withAnimation(.easeInOut(duration: 0.1)) {
                 isHovered = hovering
+            }
+        }
+        .onChange(of: isRenaming) { _, renaming in
+            if renaming {
+                draftTitle = tab.title
+                isTitleFocused = true
+                DispatchQueue.main.async {
+                    isTitleFocused = true
+                }
             }
         }
         .focusable(false)
@@ -117,7 +256,7 @@ struct PinnedTabButton: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(colorScheme == .dark ? .white : .black)
         } else if tab.url?.scheme == "lotus" || tab.url?.absoluteString.hasPrefix("lotus://") == true {
-            Image(systemName: "camera.macro")
+            Image(systemName: tab.url?.host == "history" ? "clock" : (tab.url?.host == "downloads" ? "arrow.down.circle" : (tab.url?.host == "settings" ? "gearshape" : "camera.macro")))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.85) : Color(nsColor: .labelColor))
         } else if let faviconURL = tab.faviconURL {

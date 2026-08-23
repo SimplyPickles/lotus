@@ -8,6 +8,8 @@
 import SwiftUI
 import AppKit
 
+/// An invisible NSView representing a native draggable window area.
+/// Clicking and dragging this view moves the host window.
 struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> WindowDragNSView {
         WindowDragNSView()
@@ -23,7 +25,11 @@ final class WindowDragNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
+        if event.clickCount == 2 {
+            window?.zoom(nil)
+        } else {
+            window?.performDrag(with: event)
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {

@@ -67,11 +67,11 @@ struct QuitConfirmationView: View {
 
                 // Buttons row
                 HStack(spacing: 8) {
-                    // Always quit button
+                    // Always Quit button
                     Button {
                         browserState.confirmQuit(alwaysQuit: true)
                     } label: {
-                        Text("Always quit")
+                        Text("Always Quit")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.white)
                             .padding(.horizontal, 15)
@@ -153,7 +153,12 @@ struct QuitConfirmationView: View {
             )
             .shadow(color: Color.black.opacity(0.55), radius: 30, x: 0, y: 14)
             .offset(y: -45)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .transition(
+                .asymmetric(
+                    insertion: .offset(y: -14).combined(with: .opacity),
+                    removal: .offset(y: -14).combined(with: .opacity)
+                )
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {

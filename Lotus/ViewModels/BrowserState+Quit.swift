@@ -22,13 +22,13 @@ extension BrowserState {
             confirmQuit(alwaysQuit: false)
             return
         }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+        withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
             isQuitConfirmationPresented = true
         }
     }
 
     func cancelQuit() {
-        withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.86)) {
             isQuitConfirmationPresented = false
         }
     }
@@ -37,7 +37,7 @@ extension BrowserState {
         if alwaysQuit {
             UserDefaults.standard.set(true, forKey: Self.alwaysQuitKey)
         }
-        saveSession()
+        saveSession(immediate: true)
         isQuitConfirmationPresented = false
         AppDelegate.forceTerminate()
     }

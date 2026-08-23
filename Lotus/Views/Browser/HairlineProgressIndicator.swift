@@ -11,6 +11,7 @@ import QuartzCore
 
 struct HairlineProgressIndicator: View {
     @ObservedObject var browserState: BrowserState
+    var tabId: UUID? = nil
     @ObservedObject private var colorExtractor = FaviconColorExtractor.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -23,19 +24,32 @@ struct HairlineProgressIndicator: View {
 
     private let hairlineHeight: CGFloat = 1.0
 
+    private var activeTabId: UUID {
+        tabId ?? browserState.selectedTabId
+    }
+
     private var isInternalPage: Bool {
-        browserState.activeURL?.isLotusPage == true
+        browserState.url(for: activeTabId)?.isLotusPage == true
+    }
+
+    private var isLoading: Bool {
+        browserState.isLoading(for: activeTabId)
+    }
+
+    private var estimatedProgress: Double {
+        browserState.estimatedProgress(for: activeTabId)
     }
 
     private var detectedAccentColor: Color {
-        if let host = browserState.activeURL?.host?.lowercased(), host.contains("apple.com") {
+        let url = browserState.url(for: activeTabId)
+        if let host = url?.host?.lowercased(), host.contains("apple.com") {
             return colorScheme == .dark ? Color.white : Color.black
         }
-        if let faviconURL = browserState.activeTab?.faviconURL,
+        if let faviconURL = browserState.tab(for: activeTabId)?.faviconURL,
            let extracted = colorExtractor.color(for: faviconURL) {
             return extracted
         }
-        if let theme = browserState.activeThemeColor {
+        if let theme = browserState.themeColor(for: activeTabId) {
             return theme
         }
         return Color(nsColor: .controlAccentColor)
@@ -112,8 +126,8 @@ struct HairlineProgressIndicator: View {
         }
         .allowsHitTesting(false)
         .onAppear {
-            if browserState.isLoading && !isInternalPage {
-                targetProgress = max(0.08, browserState.estimatedProgress)
+            if isLoading && !isInternalPage {
+                targetProgress = max(0.08, estimatedProgress)
                 currentProgress = targetProgress * 0.5
                 withAnimation(.easeOut(duration: 0.15)) {
                     opacity = 1.0
@@ -121,11 +135,11 @@ struct HairlineProgressIndicator: View {
                 startAnimationLoop()
             }
         }
-        .onChange(of: browserState.selectedTabId) {
+        .onChange(of: activeTabId) {
             fadeTask?.cancel()
             fadeTask = nil
-            if browserState.isLoading && !isInternalPage {
-                targetProgress = max(0.08, browserState.estimatedProgress)
+            if isLoading && !isInternalPage {
+                targetProgress = max(0.08, estimatedProgress)
                 currentProgress = targetProgress
                 isFinishing = false
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -136,17 +150,17 @@ struct HairlineProgressIndicator: View {
                 resetState()
             }
         }
-        .onChange(of: browserState.isLoading) { _, isLoading in
+        .onChange(of: isLoading) { _, loading in
             if isInternalPage {
                 resetState()
                 return
             }
 
-            if isLoading {
+            if loading {
                 fadeTask?.cancel()
                 fadeTask = nil
                 isFinishing = false
-                targetProgress = max(0.08, browserState.estimatedProgress)
+                targetProgress = max(0.08, estimatedProgress)
                 if opacity == 0 {
                     currentProgress = 0.02
                     withAnimation(.easeOut(duration: 0.15)) {
@@ -164,14 +178,14 @@ struct HairlineProgressIndicator: View {
                 }
             }
         }
-        .onChange(of: browserState.estimatedProgress) { _, newProgress in
-            guard browserState.isLoading, !isInternalPage else { return }
+        .onChange(of: estimatedProgress) { _, newProgress in
+            guard isLoading, !isInternalPage else { return }
             let clamped = max(0.08, min(0.96, newProgress))
             if clamped > targetProgress {
                 targetProgress = clamped
             }
         }
-        .onChange(of: browserState.activeURL) {
+        .onChange(of: browserState.url(for: activeTabId)) {
             if isInternalPage {
                 resetState()
             }

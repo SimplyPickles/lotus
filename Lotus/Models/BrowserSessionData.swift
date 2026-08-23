@@ -11,7 +11,12 @@ import Foundation
 struct BrowserSessionData: Codable {
     var tabs: [TabItem]
     var selectedTabId: UUID
+    var currentTabIds: [UUID]?
+    var splitGroups: [[UUID]]?
+    var splitRatios: [String: CGFloat]?
+    var folders: [TabFolder]?
     var recentlyClosed: [ClosedTabRecord]
     var isSidebarVisible: Bool
     var sidebarWidth: CGFloat
+    var tabZoomLevels: [String: CGFloat]?
 }

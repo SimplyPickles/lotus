@@ -10,16 +10,46 @@ import SwiftUI
 
 extension BrowserState {
 
-    func saveSession() {
-        guard !tabs.isEmpty else { return }
-        let session = BrowserSessionData(
+    func makeSessionSnapshot() -> BrowserSessionData {
+        // An empty tabs list is a legitimate state now that closing the last
+        // tab surfaces the command palette instead of a blank new-tab page.
+        var zoomDict: [String: CGFloat] = [:]
+        for (id, zoom) in tabZoomLevels {
+            if zoom != 1.0 {
+                zoomDict[id.uuidString] = zoom
+            }
+        }
+
+        return BrowserSessionData(
             tabs: tabs,
             selectedTabId: selectedTabId,
+            currentTabIds: currentTabIds,
+            splitGroups: splitGroups,
+            splitRatios: splitRatios,
+            folders: folders,
             recentlyClosed: recentlyClosed,
             isSidebarVisible: isSidebarVisible,
-            sidebarWidth: sidebarWidth
+            sidebarWidth: sidebarWidth,
+            tabZoomLevels: zoomDict.isEmpty ? nil : zoomDict
         )
-        sessionStore.save(session)
+    }
+
+    func saveSession(immediate: Bool = false) {
+        if immediate {
+            pendingSaveWorkItem?.cancel()
+            pendingSaveWorkItem = nil
+            let session = makeSessionSnapshot()
+            sessionStore.save(session)
+        } else {
+            pendingSaveWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                let session = self.makeSessionSnapshot()
+                self.sessionStore.saveAsync(session)
+            }
+            pendingSaveWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + saveDebounceInterval, execute: workItem)
+        }
     }
 
     func setupTerminationObserver() {
@@ -29,7 +59,7 @@ extension BrowserState {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.saveSession()
+            self?.saveSession(immediate: true)
         }
     }
 }

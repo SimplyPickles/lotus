@@ -67,7 +67,7 @@ enum LotusShortcuts {
 
     private static func animated(_ perform: @escaping (BrowserState) -> Void) -> (BrowserState) -> Void {
         { state in
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
                 perform(state)
             }
         }
@@ -79,7 +79,10 @@ enum LotusShortcuts {
             $0.toggleSidebar()
         },
         LotusShortcut("newTab", key: "t", modifiers: .command) {
-            $0.addTab()
+            $0.toggleCommandPalette()
+        },
+        LotusShortcut("openSettings", key: ",", modifiers: .command, usesEventMonitor: true) {
+            $0.openSettingsPage()
         },
         LotusShortcut("closeTab", key: "w", modifiers: .command, action: animated {
             $0.removeTab(id: $0.selectedTabId)
@@ -87,8 +90,29 @@ enum LotusShortcuts {
         LotusShortcut("reopenClosedTab", key: "t", modifiers: [.command, .shift]) {
             $0.reopenLastClosedTab()
         },
+        LotusShortcut("showHistory", key: "y", modifiers: .command) {
+            $0.addTabBelow(title: "History", url: .lotusHistory)
+        },
+        LotusShortcut("showDownloads", key: "l", modifiers: [.command, .option]) {
+            $0.addTabBelow(title: "Downloads", url: .lotusDownloads)
+        },
 
         // MARK: Navigation
+        LotusShortcut("focusAddressBar", key: "l", modifiers: .command, usesEventMonitor: true) {
+            $0.openCommandPaletteForCurrentTab()
+        },
+        LotusShortcut("copyCurrentURL", key: "c", modifiers: [.command, .shift], usesEventMonitor: true) {
+            $0.copyCurrentPageURL()
+        },
+        LotusShortcut("findInPage", key: "f", modifiers: .command, usesEventMonitor: true) {
+            $0.toggleFind()
+        },
+        LotusShortcut("findNext", key: "g", modifiers: .command, usesEventMonitor: true) {
+            $0.findNext()
+        },
+        LotusShortcut("findPrevious", key: "g", modifiers: [.command, .shift], usesEventMonitor: true) {
+            $0.findPrevious()
+        },
         LotusShortcut("reload", key: "r", modifiers: .command) {
             $0.reload()
         },
@@ -97,6 +121,9 @@ enum LotusShortcuts {
         },
         LotusShortcut("forward", key: "]", modifiers: .command) {
             $0.goForward()
+        },
+        LotusShortcut("printPage", key: "p", modifiers: .command, usesEventMonitor: true) {
+            $0.printPage()
         },
         // Arrow-key navigation must go through the NSEvent monitor: SwiftUI
         // keyboard shortcuts are unreliable while WKWebView is first responder.
@@ -107,6 +134,20 @@ enum LotusShortcuts {
         LotusShortcut("forwardArrow", key: .rightArrow, modifiers: .command,
                       guardsTextInput: true, usesEventMonitor: true) {
             $0.goForward()
+        },
+
+        // MARK: Zoom
+        LotusShortcut("zoomInPlus", key: "+", modifiers: .command, usesEventMonitor: true) {
+            $0.zoomIn()
+        },
+        LotusShortcut("zoomInEquals", key: "=", modifiers: .command, usesEventMonitor: true) {
+            $0.zoomIn()
+        },
+        LotusShortcut("zoomOut", key: "-", modifiers: .command, usesEventMonitor: true) {
+            $0.zoomOut()
+        },
+        LotusShortcut("zoomActualSize", key: "0", modifiers: .command, usesEventMonitor: true) {
+            $0.resetZoom()
         },
 
         // MARK: Tab Selection
@@ -145,13 +186,13 @@ enum LotusShortcuts {
     ///
     /// | Shortcut | Location                        | Why it's local             |
     /// |----------|---------------------------------|----------------------------|
-    /// | ⌘L       | `BrowserContainer` URL field    | Needs the `@FocusState`    |
     /// | ⌘Q       | Menu bar (`LotusApp.commands`)  | Standard menu-item route   |
     /// | Esc/↩    | `QuitConfirmationView` buttons  | Sheet-local default/cancel |
     static let localExceptions: [String] = [
-        "⌘L — Focus URL bar (BrowserContainer, @FocusState)",
         "⌘Q — Quit (menu bar CommandGroup → requestQuit)",
         "Esc / ↩ — Quit confirmation sheet buttons",
+        "Esc / ↩ / ↑↓⇥ — CommandPalette field (view-local suggestion navigation)",
+        "Esc / ↩ / ⇧↩ — FindBarView field (find dismissal and match navigation)",
     ]
 
     /// All entries routed through the NSEvent key-down monitor.
@@ -189,23 +230,88 @@ enum KeyboardShortcutRouter {
         126: .upArrow,
         48: .tab,
         36: .return,
+        76: .return,
         53: .escape,
+        51: .delete,
     ]
 
-    /// Matches a key-down event against the event-monitor entries of the
-    /// global shortcut table. Returns nil if the event was consumed.
+    static func keyEquivalent(for event: NSEvent) -> KeyEquivalent? {
+        if let special = keyCodeToKey[event.keyCode] {
+            return special
+        }
+        guard let chars = event.charactersIgnoringModifiers?.lowercased(),
+              let firstChar = chars.first else {
+            return nil
+        }
+        return KeyEquivalent(firstChar)
+    }
+
+    /// Matches a key-down event against modal sheets and the global shortcut table.
+    /// Returns nil if the event was consumed.
     static func handleKeyEvent(_ event: NSEvent, browserState: BrowserState) -> NSEvent? {
         guard event.type == .keyDown else { return event }
 
-        let key = keyCodeToKey[event.keyCode]
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // 1. Quit confirmation modal keyboard handling (Enter / Esc / ⌘Q)
+        if browserState.isQuitConfirmationPresented {
+            if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
+                DispatchQueue.main.async {
+                    browserState.confirmQuit(alwaysQuit: false)
+                }
+                return nil
+            }
+            if event.keyCode == 53 { // Escape
+                DispatchQueue.main.async {
+                    browserState.cancelQuit()
+                }
+                return nil
+            }
+            if flags.contains(.command),
+               let chars = event.charactersIgnoringModifiers?.lowercased(),
+               chars == "q" {
+                DispatchQueue.main.async {
+                    browserState.confirmQuit(alwaysQuit: false)
+                }
+                return nil
+            }
+            return nil
+        }
+
+        // 2. Folder close confirmation modal keyboard handling (Enter / Esc)
+        if let folderId = browserState.folderToCloseConfirmation {
+            if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
+                DispatchQueue.main.async {
+                    browserState.confirmCloseFolder(id: folderId, keepTabs: false)
+                }
+                return nil
+            }
+            if event.keyCode == 53 { // Escape
+                DispatchQueue.main.async {
+                    browserState.cancelCloseFolder()
+                }
+                return nil
+            }
+            return nil
+        }
+
+        // 3. Find on Page dismiss on Escape
+        if browserState.isFindPresented && event.keyCode == 53 { // Escape
+            DispatchQueue.main.async {
+                browserState.closeFind()
+            }
+            return nil
+        }
+
+        // 2. Match against global shortcut table
+        guard let key = keyEquivalent(for: event) else { return event }
         let modifiers = EventModifiers(flags)
 
-        let match = LotusShortcuts.eventMonitorEntries.first { shortcut in
+        let match = LotusShortcuts.table.first { shortcut in
             shortcut.key == key && shortcut.modifiers == modifiers
         }
 
-        guard let match else { return event }
+        guard let match = match else { return event }
         if match.guardsTextInput && browserState.isAnyTextInputFocused {
             return event
         }
@@ -213,8 +319,7 @@ enum KeyboardShortcutRouter {
         DispatchQueue.main.async {
             match.action(browserState)
         }
-        // Consume the event even when the action is a no-op (e.g. no history),
-        // matching the previous monitor behavior.
+        // Consume the event so it does not pass to the WKWebView or cause duplicates.
         return nil
     }
 }
@@ -232,8 +337,7 @@ private extension EventModifiers {
 
 // MARK: - SwiftUI Rendering
 
-/// Renders every non-event-monitor entry in the shortcut table as an
-/// invisible button, following the established invisible-button pattern.
+/// Renders shortcut table entries as invisible buttons for standard SwiftUI accessibility.
 struct GlobalShortcutHandlers: View {
     @ObservedObject var browserState: BrowserState
 

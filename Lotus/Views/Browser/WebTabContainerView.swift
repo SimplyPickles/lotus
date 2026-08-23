@@ -10,22 +10,28 @@ import WebKit
 
 struct WebTabContainerView: NSViewRepresentable {
     @ObservedObject var browserState: BrowserState
+    var tabId: UUID? = nil
+
+    private var activeTabId: UUID {
+        tabId ?? browserState.selectedTabId
+    }
 
     private var isInternalLotusPage: Bool {
-        browserState.activeURL?.scheme == "lotus" || browserState.activeURL?.absoluteString.hasPrefix("lotus://") == true
+        let url = browserState.url(for: activeTabId)
+        return url?.scheme == "lotus" || url?.absoluteString.hasPrefix("lotus://") == true
     }
 
     func makeNSView(context: Context) -> WebTabHostNSView {
         let hostView = WebTabHostNSView()
         if !isInternalLotusPage {
-            hostView.updateActiveWebView(browserState.activeWebView)
+            hostView.updateActiveWebView(browserState.getWebView(for: activeTabId))
         }
         return hostView
     }
 
     func updateNSView(_ nsView: WebTabHostNSView, context: Context) {
         if !isInternalLotusPage {
-            nsView.updateActiveWebView(browserState.activeWebView)
+            nsView.updateActiveWebView(browserState.getWebView(for: activeTabId))
         }
     }
 
@@ -45,12 +51,9 @@ final class WebTabHostNSView: NSView {
         super.init(frame: frameRect)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        self.layer?.cornerRadius = 10
-        if #available(macOS 10.15, *) {
-            self.layer?.cornerCurve = .continuous
-        }
-        self.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        self.layer?.masksToBounds = true
+        self.layer?.cornerRadius = 0
+        self.layer?.maskedCorners = []
+        self.layer?.masksToBounds = false
         self.autoresizesSubviews = true
     }
 
@@ -61,27 +64,30 @@ final class WebTabHostNSView: NSView {
     func updateActiveWebView(_ newWebView: WKWebView) {
         newWebView.underPageBackgroundColor = NSColor.windowBackgroundColor
         newWebView.wantsLayer = true
-        newWebView.layer?.cornerRadius = 10
-        if #available(macOS 10.15, *) {
-            newWebView.layer?.cornerCurve = .continuous
-        }
-        newWebView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        newWebView.layer?.masksToBounds = true
+        newWebView.layer?.cornerRadius = 0
+        newWebView.layer?.maskedCorners = []
+        newWebView.layer?.masksToBounds = false
+
+        clearCornerRadii(in: newWebView)
         newWebView.autoresizingMask = [.width, .height]
 
         let isTabSwitch = newWebView !== currentWebView
 
         if isTabSwitch {
-            for subview in subviews {
-                subview.isHidden = true
-            }
             if newWebView.superview != self {
                 addSubview(newWebView)
             } else {
                 addSubview(newWebView, positioned: .above, relativeTo: nil)
             }
+            newWebView.frame = bounds
             newWebView.isHidden = false
             currentWebView = newWebView
+
+            for subview in subviews {
+                if subview !== newWebView {
+                    subview.isHidden = true
+                }
+            }
 
             applyBoundsToSubviews()
 
@@ -150,11 +156,21 @@ final class WebTabHostNSView: NSView {
 
     private func applyBoundsToSubviews() {
         guard bounds.width > 0, bounds.height > 0 else { return }
+        let targetFrame = NSRect(x: 0, y: 0, width: ceil(bounds.width), height: ceil(bounds.height))
         for subview in subviews {
-            if subview.frame != bounds {
-                subview.frame = bounds
+            if subview.frame != targetFrame {
+                subview.frame = targetFrame
                 subview.needsLayout = true
             }
+        }
+    }
+
+    private func clearCornerRadii(in view: NSView) {
+        view.layer?.cornerRadius = 0
+        view.layer?.maskedCorners = []
+
+        for subview in view.subviews {
+            clearCornerRadii(in: subview)
         }
     }
 }

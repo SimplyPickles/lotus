@@ -12,11 +12,48 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
     let id: String
     let text: String
     let isURL: Bool
+    let isInternalPage: Bool
+    let systemImage: String
+    let badgeText: String?
 
-    init(text: String, isURL: Bool = false) {
+    var displayText: String {
+        switch text.lowercased() {
+        case "lotus://history": return "History"
+        case "lotus://downloads": return "Downloads"
+        case "lotus://settings": return "Settings"
+        default: return text
+        }
+    }
+
+    init(
+        text: String,
+        isURL: Bool = false,
+        isInternalPage: Bool = false,
+        systemImage: String? = nil,
+        badgeText: String? = nil
+    ) {
         self.id = text
         self.text = text
         self.isURL = isURL
+        self.isInternalPage = isInternalPage
+        if let systemImage {
+            self.systemImage = systemImage
+        } else if isInternalPage {
+            self.systemImage = "clock"
+        } else if isURL {
+            self.systemImage = "globe"
+        } else {
+            self.systemImage = "magnifyingglass"
+        }
+        if let badgeText {
+            self.badgeText = badgeText
+        } else if isInternalPage {
+            self.badgeText = "Lotus Page"
+        } else if isURL {
+            self.badgeText = "Jump to URL"
+        } else {
+            self.badgeText = nil
+        }
     }
 }
 
@@ -70,9 +107,13 @@ final class SearchSuggestionService: ObservableObject {
             return
         }
 
-        // 2. Immediately populate local matching suggestions with 0ms latency
+        // 2. Keep the current list on screen while fetching — replacing it
+        //    with the (usually shorter) local matches on every keystroke made
+        //    the dropdown flicker. Local matches only seed an empty list.
         let localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed)
-        self.suggestions = localMatches
+        if self.suggestions.isEmpty {
+            self.suggestions = localMatches
+        }
         self.isLoading = true
 
         // 3. Fetch online completions immediately with zero debounce delay
@@ -94,15 +135,98 @@ final class SearchSuggestionService: ObservableObject {
         isLoading = false
     }
 
+    /// Returns the ghost autocomplete text remainder if a top domain or history host matches.
+    func ghostRemainder(for query: String, history: [HistoryItem] = []) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        // 1. Check history display hosts
+        for item in history {
+            if let host = item.displayHost?.lowercased(), host.hasPrefix(trimmed) && host != trimmed {
+                return String(host.dropFirst(trimmed.count))
+            }
+        }
+
+        // 2. Check common domains
+        for domain in Self.commonDomains {
+            if domain.hasPrefix(trimmed) && domain != trimmed {
+                return String(domain.dropFirst(trimmed.count))
+            }
+        }
+
+        // 3. Check internal pages
+        let internalPages = ["lotus://history", "lotus://downloads", "lotus://settings"]
+        for page in internalPages {
+            if page.hasPrefix(trimmed) && page != trimmed {
+                return String(page.dropFirst(trimmed.count))
+            }
+        }
+
+        return nil
+    }
+
+    /// Returns the full string of the ghost autocomplete match.
+    func fullGhostMatch(for query: String, history: [HistoryItem] = []) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        // 1. Check history display hosts
+        for item in history {
+            if let host = item.displayHost?.lowercased(), host.hasPrefix(trimmed) && host != trimmed {
+                return host
+            }
+        }
+
+        // 2. Check common domains
+        for domain in Self.commonDomains {
+            if domain.hasPrefix(trimmed) && domain != trimmed {
+                return domain
+            }
+        }
+
+        // 3. Check internal pages
+        let internalPages = ["lotus://history", "lotus://downloads", "lotus://settings"]
+        for page in internalPages {
+            if page.hasPrefix(trimmed) && page != trimmed {
+                return page
+            }
+        }
+
+        return nil
+    }
+
     private func getLocalSuggestions(for queryLower: String, rawQuery: String) -> [SearchSuggestion] {
         var results: [SearchSuggestion] = []
         var seen = Set<String>()
 
+        // 1. Check internal Lotus pages (e.g. History)
+        let internalPages: [(aliases: [String], text: String, title: String, icon: String)] = [
+            (aliases: ["history", "lotus://history", "lotus:history"], text: "lotus://history", title: "History", icon: "clock"),
+            (aliases: ["downloads", "lotus://downloads", "lotus:downloads"], text: "lotus://downloads", title: "Downloads", icon: "arrow.down.circle"),
+            (aliases: ["settings", "lotus://settings", "lotus:settings"], text: "lotus://settings", title: "Settings", icon: "gearshape")
+        ]
+
+        for page in internalPages {
+            if page.aliases.contains(where: { $0.hasPrefix(queryLower) || queryLower.hasPrefix($0) }) {
+                results.append(SearchSuggestion(
+                    text: page.text,
+                    isURL: true,
+                    isInternalPage: true,
+                    systemImage: page.icon,
+                    badgeText: "Lotus Page"
+                ))
+                seen.insert(page.text.lowercased())
+            }
+        }
+
+        // 2. Check common domains
         for domain in Self.commonDomains {
             if domain.hasPrefix(queryLower) && domain != queryLower {
-                results.append(SearchSuggestion(text: domain, isURL: true))
-                seen.insert(domain)
-                if results.count >= 2 { break }
+                if !seen.contains(domain) {
+                    results.append(SearchSuggestion(text: domain, isURL: true))
+                    seen.insert(domain)
+                    if results.count >= 3 { break }
+                }
             }
         }
 

@@ -10,52 +10,119 @@ import SwiftUI
 // MARK: - Drag Handling
 
 extension Tabstrip {
-    var pinZoneThresholdY: CGFloat {
-        let count = browserState.pinnedTabs.count
-        let currentPinnedHeight: CGFloat
-        if count == 0 {
-            currentPinnedHeight = (activeDrag?.isHoveringPinZone == true) ? 46 : 0
-        } else {
-            let cols = count <= 4 ? count : 3
-            let rows = (count + cols - 1) / cols
-            currentPinnedHeight = CGFloat(rows) * 38 + CGFloat(max(0, rows - 1)) * 8 + 10
-        }
-        return headerHeight + currentPinnedHeight
+
+    func prospectivePinnedCount(for units: [SidebarTabUnit]) -> Int {
+        let draggedIds = Set(units.flatMap(\.tabIds))
+        let remainingCount = browserState.pinnedTabs.filter { !draggedIds.contains($0.id) }.count
+        return remainingCount + draggedIds.count
     }
 
-    func handleDragChanged(tab: TabItem, source: TabDragState.Source, value: DragGesture.Value) {
+    func pinnedHeight(for count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let columns = count <= 4 ? count : 3
+        let rows = (count + columns - 1) / columns
+        return CGFloat(rows) * 38 + CGFloat(max(0, rows - 1)) * 8 + 10
+    }
+
+    func handleDragChanged(tab: TabItem, source: TabDragState.Source, rowIndex: Int? = nil, value: DragGesture.Value) {
         let index: Int
         if source == .pinned {
             index = browserState.pinnedTabs.firstIndex(where: { $0.id == tab.id }) ?? 0
         } else {
-            index = browserState.unpinnedTabs.firstIndex(where: { $0.id == tab.id }) ?? 0
+            index = rowIndex ?? (unpinnedRows.firstIndex(where: { $0.contains(tab.id) }) ?? 0)
         }
         handleDragChanged(tab: tab, source: source, index: index, value: value)
     }
 
     func handleDragChanged(tab: TabItem, source: TabDragState.Source, index: Int, value: DragGesture.Value) {
         if activeDrag == nil {
-            browserState.selectTab(tab)
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
 
         let location = value.location
-        let isAbove = location.y < pinZoneThresholdY
-        let wasAbove = activeDrag?.isHoveringPinZone ?? (source == .pinned)
+        let sidebarW = browserState.sidebarWidth
+        let isOverSidebar = location.x < sidebarW
+        let draggedUnits = activeDrag?.draggedUnits.isEmpty == false
+            ? (activeDrag?.draggedUnits ?? [])
+            : browserState.selectedUnitsForDrag(startingAt: tab.id)
 
-        if activeDrag != nil && wasAbove != isAbove {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        var splitTarget: TabDragState.SplitDropTarget? = nil
+        var isAbove = false
+        var targetIdx: Int = index
+
+        let canSplit = draggedUnits.count == 1
+            && draggedUnits.first?.isSplit == false
+            && browserState.canOpenInSplit(id: tab.id)
+        let canPin = !draggedUnits.contains(where: \.isSplit)
+
+        if !isOverSidebar {
+            if canSplit {
+                // Dragging over browser container area with valid split conditions
+                let windowWidth = NSApp.keyWindow?.contentView?.bounds.width ?? 800
+                let windowHeight = NSApp.keyWindow?.contentView?.bounds.height ?? 600
+                let (leftFrame, rightFrame) = browserState.splitTargetFrames(windowWidth: windowWidth, windowHeight: windowHeight)
+
+                if leftFrame.insetBy(dx: -8, dy: -8).contains(location) {
+                    splitTarget = .left
+                } else if rightFrame.insetBy(dx: -8, dy: -8).contains(location) {
+                    splitTarget = .right
+                } else {
+                    splitTarget = nil
+                }
+            } else {
+                splitTarget = nil
+            }
+            targetIdx = index
+            isAbove = (source == .pinned)
+        } else {
+            // Dragging inside sidebar
+            let prospectivePinThreshold = headerHeight + max(
+                pinnedGridHeight,
+                pinnedHeight(for: prospectivePinnedCount(for: draggedUnits))
+            )
+            isAbove = canPin && (location.y < prospectivePinThreshold)
+            if isAbove {
+                targetIdx = calculatePinnedTargetIndex(location: location, draggedUnits: draggedUnits)
+            } else {
+                targetIdx = calculateUnpinnedTargetIndex(location: location, draggedUnits: draggedUnits)
+            }
         }
 
-        let targetIdx: Int
-        if isAbove {
-            targetIdx = calculatePinnedTargetIndex(location: location, source: source)
-        } else {
-            targetIdx = calculateUnpinnedTargetIndex(location: location, source: source, originalIndex: index)
+        // Live preview: would this drop position put the tab inside a
+        // folder? Drives real-time shrink/grow of the floating ghost.
+        var targetFolderId: UUID? = nil
+        if isOverSidebar && !isAbove {
+            let draggedIds = Set(draggedUnits.flatMap(\.tabIds))
+            let reducedRows = unpinnedRows.filter { !$0.containsAny(draggedIds) }
+            let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
+            let relativeY = location.y - unpinnedStartY
+            if relativeY >= 0 {
+                let directRow = Int(relativeY / rowHeight)
+                if directRow < reducedRows.count, case .folderHeader(let folder) = reducedRows[directRow] {
+                    // Hovering directly over the folder icon / header: put tab inside that folder
+                    targetFolderId = folder.id
+                    targetIdx = directRow + 1
+                }
+            }
+
+            if targetFolderId == nil {
+                let insertAt = min(targetIdx, reducedRows.count)
+                targetFolderId = adoptedFolderIdForInsertion(at: insertAt, in: reducedRows)
+            }
         }
 
         let previousTarget = activeDrag?.targetIndex
-        let targetChanged = (previousTarget != targetIdx) || (wasAbove != isAbove)
+        let previousSplitTarget = activeDrag?.splitDropTarget
+        let wasAbove = activeDrag?.isHoveringPinZone ?? (source == .pinned)
+
+        let targetChanged: Bool
+        if isOverSidebar {
+            targetChanged = (previousTarget != targetIdx) || (wasAbove != isAbove) || (previousSplitTarget != nil)
+        } else if canSplit {
+            targetChanged = (previousSplitTarget != splitTarget)
+        } else {
+            targetChanged = false
+        }
 
         if targetChanged {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
@@ -68,246 +135,397 @@ extension Tabstrip {
             originalIndex: index,
             location: location,
             isHoveringPinZone: isAbove,
-            targetIndex: targetIdx
+            targetIndex: targetIdx,
+            splitDropTarget: splitTarget,
+            draggedUnits: draggedUnits,
+            wouldJoinFolder: targetFolderId != nil,
+            targetFolderId: targetFolderId
         )
 
-        if targetChanged || activeDrag == nil {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                activeDrag = newDragState
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            browserState.activeTabDrag = newDragState
+            activeDrag = newDragState
+        }
+    }
+
+    // MARK: - Folder Dragging
+
+    /// The dragged folder's block in the current row list: header index plus
+    /// the number of rows it spans (1 for the header, + visible member rows).
+    func folderBlockInfo(_ folderId: UUID, in rows: [UnpinnedTabRow]) -> (start: Int, rowCount: Int)? {
+        guard let start = rows.firstIndex(where: {
+            if case .folderHeader(let folder) = $0 { return folder.id == folderId }
+            return false
+        }) else { return nil }
+        var count = 1
+        var next = start + 1
+        while next < rows.count, rows[next].memberFolderId == folderId {
+            count += 1
+            next += 1
+        }
+        return (start, count)
+    }
+
+    /// Drag handler for folder header rows. The folder previews as a single
+    /// collapsed header while dragging, but its complete member block is
+    /// preserved for the final reorder. Pin-zone and split targets don't
+    /// apply, and the drag stays local to the tabstrip.
+    func handleFolderDragChanged(folder: TabFolder, rowIndex: Int, value: DragGesture.Value) {
+        if activeDrag == nil {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            browserState.clearSidebarSelection()
+        }
+
+        let location = value.location
+        let rows = unpinnedRows
+        guard let block = folderBlockInfo(folder.id, in: rows) else { return }
+
+        // Target is an insertion position in the row list *without* the block.
+        var targetIdx = block.start
+        if location.x < browserState.sidebarWidth {
+            let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
+            let relativeY = max(0, location.y - unpinnedStartY)
+            let raw = Int((relativeY + rowHeight * 0.5) / rowHeight)
+            let reducedCount = rows.count - block.rowCount
+            let target = min(max(0, raw), reducedCount)
+            targetIdx = snappedFolderTargetIndex(target, blockStart: block.start, blockCount: block.rowCount, rows: rows)
+        }
+
+        if let previous = activeDrag?.targetIndex, previous != targetIdx {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+
+        let placeholder = TabItem(id: folder.id, title: folder.name)
+        let newDrag = TabDragState(
+            tabId: folder.id,
+            tab: placeholder,
+            source: .unpinned,
+            originalIndex: block.start,
+            location: location,
+            isHoveringPinZone: false,
+            targetIndex: targetIdx,
+            splitDropTarget: nil,
+            folder: folder
+        )
+
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            browserState.activeTabDrag = newDrag
+            activeDrag = newDrag
+        }
+    }
+
+    /// Folders are top-level: a folder block may not land inside another
+    /// folder's member span. Walks forward past the blocked span; bails back
+    /// to the original position when nothing fits.
+    func snappedFolderTargetIndex(_ raw: Int, blockStart: Int, blockCount: Int, rows: [UnpinnedTabRow]) -> Int {
+        var reduced = rows
+        let headerRow = reduced[blockStart]
+        reduced.removeSubrange(blockStart..<blockStart + blockCount)
+        guard !reduced.isEmpty else { return 0 }
+
+        var target = min(max(0, raw), reduced.count)
+        var iterations = 0
+        while iterations <= reduced.count {
+            iterations += 1
+            var hypothetical = reduced
+            let insertAt = min(target, hypothetical.count)
+            hypothetical.insert(headerRow, at: insertAt)
+            if adoptedFolderId(at: insertAt, in: hypothetical) == nil {
+                return target
             }
-        } else {
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                activeDrag = newDragState
+            target += 1
+            if target > reduced.count {
+                return blockStart
             }
         }
+        return blockStart
     }
 
     func handleDragEnded(value: DragGesture.Value) {
         guard let drag = activeDrag else { return }
 
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        // Folder header drop: reorder the whole folder block.
+        if let folder = drag.folder {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+                if drag.location.x < browserState.sidebarWidth {
+                    let rows = unpinnedRows
+                    if let block = folderBlockInfo(folder.id, in: rows) {
+                        let target = min(max(0, drag.targetIndex), rows.count - block.rowCount)
+                        if target != block.start {
+                            var reduced = rows
+                            let blockRows = Array(reduced[block.start..<block.start + block.rowCount])
+                            reduced.removeSubrange(block.start..<block.start + block.rowCount)
+                            reduced.insert(contentsOf: blockRows, at: min(target, reduced.count))
+                            browserState.tabs = browserState.tabs.filter { $0.isPinned }
+                                + flattenUnpinnedRows(reduced, movedRowIndex: nil)
+                        }
+                    }
+                }
+                activeDrag = nil
+                browserState.activeTabDrag = nil
+            }
+            return
+        }
 
+        if let splitSide = drag.splitDropTarget,
+           drag.draggedUnitCount == 1,
+           drag.effectiveDraggedUnits.first?.isSplit == false,
+           browserState.canOpenInSplit(id: drag.tab.id) {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            activeDrag = nil
+            browserState.activeTabDrag = nil
+            browserState.openInSplit(id: drag.tab.id, side: splitSide == .left ? .left : .right)
+            return
+        }
+
+        let destination: SidebarTabDropDestination?
+        if drag.location.x < browserState.sidebarWidth {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+
+            if drag.isHoveringPinZone && drag.canPinPayload {
+                destination = .pinned(index: drag.targetIndex)
+            } else {
+                let reducedRows = unpinnedRows.filter { !$0.containsAny(drag.draggedTabIds) }
+                let target = min(max(0, drag.targetIndex), reducedRows.count)
+                let beforeTabId = firstTabId(startingAt: target, in: reducedRows, excluding: drag.draggedTabIds)
+                destination = .unpinned(beforeTabId: beforeTabId, folderId: drag.targetFolderId)
+            }
+        } else {
+            destination = nil
+        }
+
+        // The live preview has already placed every row at its final visual
+        // position. Commit the model and remove offsets atomically without a
+        // second layout animation, which would make rows jump vertically.
         var transaction = Transaction()
         transaction.animation = nil
         withTransaction(transaction) {
-            var newTabs = browserState.tabs
-
-            if drag.isHoveringPinZone {
-                // Dropped in Pinned Zone
-                if drag.source == .unpinned {
-                    // Pin the tab & insert into target pinned position
-                    if let mainIndex = newTabs.firstIndex(where: { $0.id == drag.tab.id }) {
-                        newTabs[mainIndex].isPinned = true
-                        let movedTab = newTabs.remove(at: mainIndex)
-
-                        let currentPinned = newTabs.filter { $0.isPinned && $0.id != movedTab.id }
-                        if drag.targetIndex < currentPinned.count {
-                            let targetTab = currentPinned[drag.targetIndex]
-                            if let mainTargetIndex = newTabs.firstIndex(where: { $0.id == targetTab.id }) {
-                                newTabs.insert(movedTab, at: mainTargetIndex)
-                            } else {
-                                newTabs.insert(movedTab, at: 0)
-                            }
-                        } else {
-                            if let lastPinned = currentPinned.last, let lastIndex = newTabs.firstIndex(where: { $0.id == lastPinned.id }) {
-                                newTabs.insert(movedTab, at: lastIndex + 1)
-                            } else {
-                                newTabs.insert(movedTab, at: 0)
-                            }
-                        }
-                    }
-                } else {
-                    // Reorder within pinned tabs
-                    let otherPinned = newTabs.filter { $0.isPinned && $0.id != drag.tabId }
-                    if let mainFrom = newTabs.firstIndex(where: { $0.id == drag.tabId }) {
-                        let movedTab = newTabs.remove(at: mainFrom)
-                        if drag.targetIndex < otherPinned.count {
-                            let targetTab = otherPinned[drag.targetIndex]
-                            if let mainTo = newTabs.firstIndex(where: { $0.id == targetTab.id }) {
-                                newTabs.insert(movedTab, at: mainTo)
-                            } else {
-                                newTabs.insert(movedTab, at: 0)
-                            }
-                        } else {
-                            if let lastPinned = otherPinned.last, let lastIndex = newTabs.firstIndex(where: { $0.id == lastPinned.id }) {
-                                newTabs.insert(movedTab, at: lastIndex + 1)
-                            } else {
-                                newTabs.insert(movedTab, at: 0)
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Dropped in Unpinned Zone
-                if drag.source == .pinned {
-                    // Unpin the tab & insert into target unpinned position
-                    if let mainIndex = newTabs.firstIndex(where: { $0.id == drag.tab.id }) {
-                        newTabs[mainIndex].isPinned = false
-                        let movedTab = newTabs.remove(at: mainIndex)
-
-                        let currentUnpinned = newTabs.filter { !$0.isPinned && $0.id != movedTab.id }
-                        if drag.targetIndex < currentUnpinned.count {
-                            let targetTab = currentUnpinned[drag.targetIndex]
-                            if let mainTargetIndex = newTabs.firstIndex(where: { $0.id == targetTab.id }) {
-                                newTabs.insert(movedTab, at: mainTargetIndex)
-                            } else {
-                                newTabs.append(movedTab)
-                            }
-                        } else {
-                            newTabs.append(movedTab)
-                        }
-                    }
-                } else {
-                    // Reorder within unpinned tabs
-                    let unpinned = newTabs.filter { !$0.isPinned }
-                    if drag.originalIndex < unpinned.count && drag.targetIndex < unpinned.count && drag.originalIndex != drag.targetIndex {
-                        let movedTab = unpinned[drag.originalIndex]
-                        if let mainFrom = newTabs.firstIndex(where: { $0.id == movedTab.id }) {
-                            newTabs.remove(at: mainFrom)
-                            let currentUnpinned = newTabs.filter { !$0.isPinned }
-                            let targetIndex = min(drag.targetIndex, currentUnpinned.count)
-                            if targetIndex < currentUnpinned.count {
-                                let targetTab = currentUnpinned[targetIndex]
-                                if let mainTo = newTabs.firstIndex(where: { $0.id == targetTab.id }) {
-                                    newTabs.insert(movedTab, at: mainTo)
-                                } else {
-                                    newTabs.append(movedTab)
-                                }
-                            } else {
-                                newTabs.append(movedTab)
-                            }
-                        }
-                    }
-                }
+            if let destination {
+                browserState.moveTabUnits(drag.effectiveDraggedUnits, to: destination)
             }
-
-            browserState.tabs = newTabs
             activeDrag = nil
+            browserState.activeTabDrag = nil
         }
     }
 
-    func calculatePinnedTargetIndex(location: CGPoint, source: TabDragState.Source) -> Int {
-        let cols = pinnedColumnCount
-        let colWidth = (browserState.sidebarWidth - 16 - CGFloat(cols - 1) * 8) / CGFloat(cols)
-        let relativeX = location.x - 8
-        let relativeY = location.y - headerHeight
-
-        let col = min(max(0, Int(relativeX / (colWidth + 8))), cols - 1)
-        let row = max(0, Int(relativeY / pinnedRowHeight))
-        let index = row * cols + col
-        let count = source == .pinned ? max(0, browserState.pinnedTabs.count - 1) : browserState.pinnedTabs.count
-        return max(0, min(count, index))
+    /// Flattens sidebar rows back into the unpinned tab order. The moved row
+    /// adopts folder membership from its drop position; every other row keeps
+    /// its own. Folder headers contribute no tabs — they are derived views of
+    /// the membership being written here.
+    func flattenUnpinnedRows(_ rows: [UnpinnedTabRow], movedRowIndex: Int?) -> [TabItem] {
+        var result: [TabItem] = []
+        for (index, row) in rows.enumerated() {
+            switch row {
+            case .folderHeader(let folder):
+                // Collapsed folders hide their member rows — re-emit those
+                // tabs here or they'd be dropped from the tabs array. A row
+                // dropped right below the header lands after them, keeping
+                // members contiguous.
+                if folder.isCollapsed {
+                    result.append(contentsOf: browserState.folderTabs(folder.id))
+                }
+            case .single(var tab):
+                if index == movedRowIndex {
+                    tab.folderId = adoptedFolderId(at: index, in: rows)
+                }
+                result.append(tab)
+            case .split(var t1, var t2):
+                if index == movedRowIndex {
+                    let folderId = adoptedFolderId(at: index, in: rows)
+                    t1.folderId = folderId
+                    t2.folderId = folderId
+                }
+                result.append(t1)
+                result.append(t2)
+            }
+        }
+        return result
     }
 
-    func calculateUnpinnedTargetIndex(location: CGPoint, source: TabDragState.Source, originalIndex: Int) -> Int {
-        let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 3
-        let relativeY = location.y - unpinnedStartY
-        let rawIndex = Int((relativeY / rowHeight).rounded())
-        let maxIndex = max(0, browserState.unpinnedTabs.count - (source == .unpinned ? 1 : 0))
-        return max(0, min(maxIndex, rawIndex))
+    /// Folder adopted by a row dropped at `index`:
+    /// - between an expanded folder's header and its first member → that folder
+    /// - between two members of the same folder → that folder
+    /// - anywhere else → loose. In particular, dropping below a collapsed or
+    ///   empty folder lands *below* the folder, never inside it.
+    func adoptedFolderId(at index: Int, in rows: [UnpinnedTabRow]) -> UUID? {
+        guard index > 0 else { return nil }
+        let above = rows[index - 1]
+        if case .folderHeader(let folder) = above {
+            if !folder.isCollapsed {
+                return folder.id
+            }
+            return nil
+        }
+        if let aboveFolderId = above.memberFolderId,
+           index < rows.count,
+           rows[index].memberFolderId == aboveFolderId {
+            return aboveFolderId
+        }
+        return nil
+    }
+
+    func adoptedFolderIdForInsertion(at index: Int, in rows: [UnpinnedTabRow]) -> UUID? {
+        guard index > 0, index <= rows.count else { return nil }
+        let above = rows[index - 1]
+        let below = index < rows.count ? rows[index] : nil
+
+        if case .folderHeader(let folder) = above,
+           !folder.isCollapsed {
+            return folder.id
+        }
+        if let folderId = above.memberFolderId,
+           below?.memberFolderId == folderId {
+            return folderId
+        }
+        return nil
+    }
+
+    func firstTabId(in row: UnpinnedTabRow, excluding excludedIds: Set<UUID>) -> UUID? {
+        switch row {
+        case .single(let tab):
+            return excludedIds.contains(tab.id) ? nil : tab.id
+        case .split(let first, let second):
+            return [first.id, second.id].first(where: { !excludedIds.contains($0) })
+        case .folderHeader(let folder):
+            return browserState.folderTabs(folder.id).map(\.id).first(where: { !excludedIds.contains($0) })
+        }
+    }
+
+    func firstTabId(startingAt index: Int, in rows: [UnpinnedTabRow], excluding excludedIds: Set<UUID>) -> UUID? {
+        guard index < rows.count else { return nil }
+        for i in index..<rows.count {
+            if let tabId = firstTabId(in: rows[i], excluding: excludedIds) {
+                return tabId
+            }
+        }
+        return nil
+    }
+
+    /// Returns the active rows without the dragged tabs and the insertion slot.
+    func projectedReducedRows(for drag: TabDragState) -> (rows: [UnpinnedTabRow], target: Int) {
+        let basicRows = unpinnedRows.filter { !$0.containsAny(drag.draggedTabIds) }
+        let basicTarget = min(max(0, drag.targetIndex), basicRows.count)
+        return (basicRows, basicTarget)
+    }
+
+    func calculatePinnedTargetIndex(location: CGPoint, draggedUnits: [SidebarTabUnit]) -> Int {
+        let count = prospectivePinnedCount(for: draggedUnits)
+        let cols = count <= 4 ? max(1, count) : 3
+        let cardWidth = (browserState.sidebarWidth - 16 - CGFloat(cols - 1) * 8) / CGFloat(cols)
+        let slotWidth = cardWidth + 8
+        let relativeX = max(0, location.x - 8)
+        let relativeY = max(0, location.y - headerHeight - 4)
+        let col = min(max(0, Int(relativeX / slotWidth)), cols - 1)
+        let row = max(0, Int(relativeY / pinnedRowHeight))
+        let rawIndex = row * cols + col
+        let draggedIds = Set(draggedUnits.flatMap(\.tabIds))
+        let remainingCount = browserState.pinnedTabs.filter { !draggedIds.contains($0.id) }.count
+        return min(max(0, rawIndex), remainingCount)
+    }
+
+    func calculateUnpinnedTargetIndex(location: CGPoint, draggedUnits: [SidebarTabUnit]) -> Int {
+        let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
+        let relativeY = max(0, location.y - unpinnedStartY)
+        let rawIndex = Int((relativeY + rowHeight * 0.5) / rowHeight)
+        let draggedIds = Set(draggedUnits.flatMap(\.tabIds))
+        let selectedIndices = unpinnedRows.indices.filter { unpinnedRows[$0].containsAny(draggedIds) }
+        let removedBeforePointer = selectedIndices.filter { $0 < rawIndex }.count
+        let reducedCount = unpinnedRows.count - selectedIndices.count
+        return min(max(0, rawIndex - removedBeforePointer), reducedCount)
     }
 
     func pinnedShiftOffset(for tabId: UUID) -> CGSize {
-        guard let drag = activeDrag, drag.isHoveringPinZone,
-              let index = browserState.pinnedTabs.firstIndex(where: { $0.id == tabId }) else {
+        guard let index = browserState.pinnedTabs.firstIndex(where: { $0.id == tabId }) else {
             return .zero
         }
         return pinnedShiftOffset(for: index)
     }
 
-    func unpinnedShiftOffset(for tabId: UUID) -> CGFloat {
-        guard let drag = activeDrag,
-              let index = browserState.unpinnedTabs.firstIndex(where: { $0.id == tabId }) else {
+    func unpinnedShiftOffset(forRowIndex index: Int) -> CGFloat {
+        guard let drag = activeDrag else { return 0 }
+
+        // A dragged folder previews as collapsed in the sidebar. Its member
+        // rows collapse out of layout while the header reorders like one row;
+        // the full model block still moves atomically when dropped.
+        if let draggedFolder = drag.folder {
+            if drag.location.x >= browserState.sidebarWidth { return 0 }
+            let rows = unpinnedRows
+            guard let block = folderBlockInfo(draggedFolder.id, in: rows) else { return 0 }
+            let origin = block.start
+            let target = drag.targetIndex
+
+            if index == origin {
+                return CGFloat(target - origin) * rowHeight
+            }
+            if index > origin && index < origin + block.rowCount {
+                return 0
+            }
+
+            let reducedIndex = index < origin ? index : index - block.rowCount
+            if origin < target, reducedIndex >= origin, reducedIndex < target {
+                return -rowHeight
+            }
+            if origin > target, reducedIndex >= target, reducedIndex < origin {
+                return rowHeight
+            }
             return 0
         }
-        return unpinnedShiftOffset(for: index)
+
+        let rows = unpinnedRows
+        guard index < rows.count else { return 0 }
+        let row = rows[index]
+        if row.containsAny(drag.draggedTabIds) { return 0 }
+
+        let projection = projectedReducedRows(for: drag)
+        var projectedIds = projection.rows.map(\.id)
+        let reservesUnpinnedSpace = drag.location.x < browserState.sidebarWidth
+            && !drag.isHoveringPinZone
+            && drag.splitDropTarget == nil
+        if reservesUnpinnedSpace {
+            let placeholders = (0..<drag.draggedUnitCount).map { "drag_placeholder_\($0)" }
+            projectedIds.insert(contentsOf: placeholders, at: min(projection.target, projectedIds.count))
+        }
+        guard let newIndex = projectedIds.firstIndex(of: row.id) else { return 0 }
+        return CGFloat(newIndex - index) * rowHeight
     }
 
     func pinnedShiftOffset(for index: Int) -> CGSize {
-        guard let drag = activeDrag, drag.isHoveringPinZone else { return .zero }
+        guard let drag = activeDrag, drag.folder == nil else { return .zero }
+        let pinned = browserState.pinnedTabs
+        guard index < pinned.count else { return .zero }
+        let tabId = pinned[index].id
+        if drag.draggedTabIds.contains(tabId) { return .zero }
 
+        let remainingIds = pinned.map(\.id).filter { !drag.draggedTabIds.contains($0) }
+        guard let reducedSlot = remainingIds.firstIndex(of: tabId) else { return .zero }
+        if drag.isHoveringPinZone && drag.canPinPayload {
+            let insertionIndex = min(max(0, drag.targetIndex), remainingIds.count)
+            let newSlot = reducedSlot >= insertionIndex
+                ? reducedSlot + drag.draggedTabIds.count
+                : reducedSlot
+            return pinnedGridOffset(from: index, to: newSlot)
+        }
+
+        let newSlot = reducedSlot
+        return pinnedGridOffset(from: index, to: newSlot)
+    }
+
+    func pinnedGridOffset(from originalSlot: Int, to targetSlot: Int) -> CGSize {
         let cols = pinnedColumnCount
         let cardWidth = (browserState.sidebarWidth - 16 - CGFloat(cols - 1) * 8) / CGFloat(cols)
         let slotSpacingX = cardWidth + 8
-        let slotSpacingY: CGFloat = 46 // 38pt card + 8pt spacing
-
-        if drag.source == .pinned {
-            let origin = drag.originalIndex
-            let target = drag.targetIndex
-
-            var visualSlot = index
-            if index == origin {
-                visualSlot = target
-            } else if origin < target {
-                if index > origin && index <= target {
-                    visualSlot = index - 1
-                }
-            } else if origin > target {
-                if index >= target && index < origin {
-                    visualSlot = index + 1
-                }
-            }
-
-            let originCol = index % cols
-            let originRow = index / cols
-            let targetCol = visualSlot % cols
-            let targetRow = visualSlot / cols
-
-            let offsetX = CGFloat(targetCol - originCol) * slotSpacingX
-            let offsetY = CGFloat(targetRow - originRow) * slotSpacingY
-            return CGSize(width: offsetX, height: offsetY)
-        } else {
-            // drag.source == .unpinned
-            if index >= drag.targetIndex {
-                let visualSlot = index + 1
-                let originCol = index % cols
-                let originRow = index / cols
-                let targetCol = visualSlot % cols
-                let targetRow = visualSlot / cols
-
-                let offsetX = CGFloat(targetCol - originCol) * slotSpacingX
-                let offsetY = CGFloat(targetRow - originRow) * slotSpacingY
-                return CGSize(width: offsetX, height: offsetY)
-            }
-            return .zero
-        }
-    }
-
-    func unpinnedShiftOffset(for index: Int) -> CGFloat {
-        guard let drag = activeDrag else { return 0 }
-
-        if drag.source == .unpinned {
-            if drag.isHoveringPinZone {
-                if index > drag.originalIndex {
-                    return -rowHeight
-                }
-                return 0
-            } else {
-                if index == drag.originalIndex {
-                    return CGFloat(drag.targetIndex - drag.originalIndex) * rowHeight
-                }
-                let origin = drag.originalIndex
-                let target = drag.targetIndex
-                if origin < target {
-                    if index > origin && index <= target {
-                        return -rowHeight
-                    }
-                } else if origin > target {
-                    if index >= target && index < origin {
-                        return rowHeight
-                    }
-                }
-                return 0
-            }
-        } else {
-            if !drag.isHoveringPinZone {
-                if index >= drag.targetIndex {
-                    return rowHeight
-                }
-            }
-            return 0
-        }
+        let originCol = originalSlot % cols
+        let originRow = originalSlot / cols
+        let targetCol = targetSlot % cols
+        let targetRow = targetSlot / cols
+        return CGSize(
+            width: CGFloat(targetCol - originCol) * slotSpacingX,
+            height: CGFloat(targetRow - originRow) * pinnedRowHeight
+        )
     }
 }
