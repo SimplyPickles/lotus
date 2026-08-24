@@ -9,29 +9,27 @@ import SwiftUI
 
 /// Chromium-style preset colors for tab folders / groups.
 enum FolderColor: String, Codable, CaseIterable, Identifiable {
-    case grey
-    case green
     case blue
     case purple
-    case yellow
     case pink
     case red
     case orange
-    case cyan
+    case green
+    case yellow
+    case grey
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .grey: return "Grey"
-        case .green: return "Green"
-        case .blue: return "Blue"
-        case .purple: return "Purple"
-        case .yellow: return "Yellow"
-        case .pink: return "Pink"
-        case .red: return "Red"
-        case .orange: return "Orange"
-        case .cyan: return "Cyan"
+            case .blue: return "Blue"
+            case .purple: return "Purple"
+            case .pink: return "Pink"
+            case .red: return "Red"
+            case .orange: return "Orange"
+            case .yellow: return "Yellow"
+            case .green: return "Green"
+            case .grey: return "Grey"
         }
     }
 
@@ -41,24 +39,22 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
 
     var nsColor: NSColor {
         switch self {
-        case .blue:
-            return NSColor(srgbRed: 0.18, green: 0.53, blue: 0.98, alpha: 1.0)
-        case .red:
-            return NSColor(srgbRed: 0.92, green: 0.26, blue: 0.21, alpha: 1.0)
-        case .yellow:
-            return NSColor(srgbRed: 0.96, green: 0.72, blue: 0.15, alpha: 1.0)
-        case .green:
-            return NSColor(srgbRed: 0.13, green: 0.69, blue: 0.30, alpha: 1.0)
-        case .pink:
-            return NSColor(srgbRed: 0.91, green: 0.30, blue: 0.58, alpha: 1.0)
-        case .purple:
-            return NSColor(srgbRed: 0.63, green: 0.31, blue: 0.90, alpha: 1.0)
-        case .cyan:
-            return NSColor(srgbRed: 0.00, green: 0.73, blue: 0.83, alpha: 1.0)
-        case .orange:
-            return NSColor(srgbRed: 0.98, green: 0.55, blue: 0.15, alpha: 1.0)
-        case .grey:
-            return NSColor(srgbRed: 0.60, green: 0.62, blue: 0.65, alpha: 1.0)
+            case .blue:
+                return NSColor(srgbRed: 0.18, green: 0.53, blue: 0.98, alpha: 1.0)
+            case .purple:
+                return NSColor(srgbRed: 0.63, green: 0.31, blue: 0.90, alpha: 1.0)
+            case .pink:
+                return NSColor(srgbRed: 0.91, green: 0.30, blue: 0.58, alpha: 1.0)
+            case .red:
+                return NSColor(srgbRed: 0.92, green: 0.26, blue: 0.21, alpha: 1.0)
+            case .orange:
+                return NSColor(srgbRed: 0.98, green: 0.55, blue: 0.15, alpha: 1.0)
+            case .yellow:
+                return NSColor(srgbRed: 0.96, green: 0.72, blue: 0.15, alpha: 1.0)
+            case .green:
+                return NSColor(srgbRed: 0.13, green: 0.69, blue: 0.30, alpha: 1.0)
+            case .grey:
+                return NSColor(srgbRed: 0.60, green: 0.62, blue: 0.65, alpha: 1.0)
         }
     }
 
@@ -83,6 +79,13 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Records whether a folder label is maintained by the on-device name
+/// generator or was explicitly chosen by the person using Lotus.
+enum FolderNameOrigin: String, Codable, Hashable {
+    case automatic
+    case manual
+}
+
 /// A collapsible group of unpinned tabs in the sidebar (Arc/Zen-style).
 ///
 /// Membership is stored on the tabs themselves (`TabItem.folderId`); the
@@ -93,16 +96,24 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
     var name: String
     var isCollapsed: Bool
     var color: FolderColor
+    var nameOrigin: FolderNameOrigin
 
-    init(id: UUID = UUID(), name: String = "New Folder", isCollapsed: Bool = false, color: FolderColor = .blue) {
+    init(
+        id: UUID = UUID(),
+        name: String = "New Folder",
+        isCollapsed: Bool = false,
+        color: FolderColor = .blue,
+        nameOrigin: FolderNameOrigin = .automatic
+    ) {
         self.id = id
         self.name = name
         self.isCollapsed = isCollapsed
         self.color = color
+        self.nameOrigin = nameOrigin
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, isCollapsed, color
+        case id, name, isCollapsed, color, nameOrigin
     }
 
     init(from decoder: Decoder) throws {
@@ -111,5 +122,8 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
         self.name = try container.decode(String.self, forKey: .name)
         self.isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
         self.color = try container.decodeIfPresent(FolderColor.self, forKey: .color) ?? .blue
+        // Folders saved before automatic naming were all person-provided
+        // labels, so preserve them rather than retroactively renaming them.
+        self.nameOrigin = try container.decodeIfPresent(FolderNameOrigin.self, forKey: .nameOrigin) ?? .manual
     }
 }

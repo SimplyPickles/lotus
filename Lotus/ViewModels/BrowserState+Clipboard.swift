@@ -50,14 +50,16 @@ extension BrowserState {
 
     func copyPageURL(for tabId: UUID) {
         let currentURL = webViewStore[tabId]?.url ?? url(for: tabId)
-        guard let currentURL else {
-            presentURLCopyFeedback(for: tabId, outcome: .failed)
+        guard let currentURL, !currentURL.isLotusPage else {
             return
         }
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         let didCopy = pasteboard.setString(currentURL.absoluteString, forType: .string)
+        if didCopy {
+            themeBloomTrigger[tabId, default: 0] += 1
+        }
         presentURLCopyFeedback(for: tabId, outcome: didCopy ? .copied : .failed)
     }
 
@@ -65,17 +67,17 @@ extension BrowserState {
         urlCopyFeedbackDismissalWorkItem?.cancel()
 
         let feedback = URLCopyFeedback(id: UUID(), tabId: tabId, outcome: outcome)
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+        withAnimation(.spring(response: 0.40, dampingFraction: 0.84)) {
             urlCopyFeedback = feedback
         }
 
         let dismissal = DispatchWorkItem { [weak self] in
             guard self?.urlCopyFeedback?.id == feedback.id else { return }
-            withAnimation(.easeIn(duration: 0.20)) {
+            withAnimation(.easeInOut(duration: 0.32)) {
                 self?.urlCopyFeedback = nil
             }
         }
         urlCopyFeedbackDismissalWorkItem = dismissal
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.65, execute: dismissal)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.15, execute: dismissal)
     }
 }

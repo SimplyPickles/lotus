@@ -22,5 +22,23 @@ extension URL {
 
     /// The integrated browser settings page.
     static let lotusSettings = URL(string: "lotus://settings")!
+
+    /// A prettified display title for internal `lotus://` pages (e.g. "Settings", "History", "Downloads").
+    var lotusPageTitle: String? {
+        guard isLotusPage else { return nil }
+        switch host?.lowercased() {
+        case "settings":
+            return "Settings"
+        case "history":
+            return "History"
+        case "downloads":
+            return "Downloads"
+        default:
+            if let host = host, !host.isEmpty {
+                return host.capitalized
+            }
+            return "Lotus"
+        }
+    }
 }
 

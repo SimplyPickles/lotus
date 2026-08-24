@@ -102,38 +102,21 @@ struct TabButton: View {
                         return .handled
                     }
             } else {
-                ZStack(alignment: .leading) {
-                    Text(tab.title)
-                        .font(.system(size: isSplit ? 12 : 13, weight: .medium))
-                        .foregroundColor(sidebarForeground)
-                        .lineLimit(1)
-                        .opacity(isSelected ? 0 : 1)
-
-                    Text(tab.title)
-                        .font(.system(size: isSplit ? 12 : 13, weight: .medium))
-                        .foregroundColor(selectedForegroundPrimary)
-                        .lineLimit(1)
-                        .opacity(isSelected ? 1 : 0)
-                }
-                .animation(.easeInOut(duration: 0.16), value: isSelected)
+                Text(tab.title)
+                    .font(.system(size: isSplit ? 12 : 13, weight: .medium))
+                    .foregroundColor(isSelected ? selectedForegroundPrimary : sidebarForeground)
+                    .lineLimit(1)
+                    .animation(.easeInOut(duration: 0.16), value: isSelected)
             }
 
             Spacer(minLength: 0)
 
             Button(action: onClose) {
-                ZStack {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(sidebarForegroundSecondary)
-                        .opacity(isSelected ? 0 : 1)
-
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(selectedForegroundSecondary)
-                        .opacity(isSelected ? 1 : 0)
-                }
-                .animation(.easeInOut(duration: 0.16), value: isSelected)
-                .frame(width: 14, height: 14)
+                Image(systemName: "xmark")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundColor(isSelected ? selectedForegroundSecondary : sidebarForegroundSecondary)
+                    .animation(.easeInOut(duration: 0.16), value: isSelected)
+                    .frame(width: 14, height: 14)
             }
             .buttonStyle(.plain)
             .opacity(effectiveHovered && !isRenaming ? 1 : 0)

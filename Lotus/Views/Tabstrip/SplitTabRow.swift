@@ -179,39 +179,21 @@ private struct SplitTabHalf: View {
             faviconView
                 .frame(width: 16, height: 16, alignment: .center)
 
-            ZStack(alignment: .leading) {
-                Text(tab.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(sidebarForeground.opacity(0.85))
-                    .lineLimit(1)
-                    .opacity(isSplitActive ? 0 : 1)
-
-                Text(tab.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(selectedForegroundPrimary)
-                    .lineLimit(1)
-                    .opacity(isSplitActive ? 1 : 0)
-            }
-            .animation(.easeInOut(duration: 0.16), value: isFocused)
-            .animation(.easeInOut(duration: 0.16), value: isSplitActive)
+            Text(tab.title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(isSplitActive ? selectedForegroundPrimary : sidebarForeground.opacity(0.85))
+                .lineLimit(1)
+                .animation(.easeInOut(duration: 0.16), value: isFocused)
+                .animation(.easeInOut(duration: 0.16), value: isSplitActive)
 
             Spacer(minLength: 0)
 
             Button(action: onClose) {
-                ZStack {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(sidebarForegroundSecondary)
-                        .opacity(isSplitActive ? 0 : 1)
-
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(selectedForegroundSecondary)
-                        .opacity(isSplitActive ? 1 : 0)
-                }
-                .animation(.easeInOut(duration: 0.16), value: isFocused)
-                .animation(.easeInOut(duration: 0.16), value: isSplitActive)
-                .frame(width: 14, height: 14)
+                Image(systemName: "xmark")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundColor(isSplitActive ? selectedForegroundSecondary : sidebarForegroundSecondary)
+                    .animation(.easeInOut(duration: 0.16), value: isSplitActive)
+                    .frame(width: 14, height: 14)
             }
             .buttonStyle(.plain)
             .opacity(effectiveHovered ? 1 : 0)

@@ -11,13 +11,10 @@ extension BrowserState {
 
     /// Moves an ordered drag payload in one model assignment. Destination
     /// attributes apply to the complete payload so folder members stay
-    /// contiguous and split pairs are never separated.
+    /// contiguous. Split pairs move atomically and dissolve only when pinned.
     @discardableResult
     func moveTabUnits(_ units: [SidebarTabUnit], to destination: SidebarTabDropDestination) -> Bool {
         guard !units.isEmpty else { return false }
-        if case .pinned = destination, units.contains(where: \.isSplit) {
-            return false
-        }
 
         var seenIds = Set<UUID>()
         let orderedIds = units.flatMap(\.tabIds).filter { seenIds.insert($0).inserted }
@@ -29,6 +26,25 @@ extension BrowserState {
 
         switch destination {
         case .pinned(let requestedIndex):
+            let hasAffectedSplitGroup = splitGroups.contains { group in
+                group.contains(where: movedIdSet.contains)
+            }
+            if hasAffectedSplitGroup {
+                splitGroups.removeAll { group in
+                    group.contains(where: movedIdSet.contains)
+                }
+
+                if currentTabIds.contains(where: movedIdSet.contains), currentTabIds.count > 1 {
+                    let focusedTabId = movedIdSet.contains(selectedTabId)
+                        ? selectedTabId
+                        : currentTabIds.first(where: { !movedIdSet.contains($0) })
+                            ?? orderedIds.first
+                    if let focusedTabId {
+                        currentTabIds = [focusedTabId]
+                    }
+                }
+            }
+
             for index in moved.indices {
                 moved[index].isPinned = true
                 moved[index].folderId = nil

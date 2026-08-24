@@ -73,11 +73,30 @@ struct SplitResizeHandle: View {
                         let maxRatio = 1.0 - minRatio
                         let clampedRatio = min(max(rawRatio, minRatio), maxRatio)
 
-                        // 50% snap zone (roughly 16pt window around center)
-                        let snapThresholdRatio = 16.0 / availableWidth
-                        let isNearCenter = abs(clampedRatio - 0.5) <= snapThresholdRatio
-                        let targetRatio = isNearCenter ? 0.5 : clampedRatio
+                        // Magnetic anchor points: 50% (strong primary snap), 33.3% (1/3), 66.7% (2/3), 25% (1/4), 75% (3/4)
+                        let primarySnapRadius: CGFloat = 28.0 / availableWidth
+                        let secondarySnapRadius: CGFloat = 20.0 / availableWidth
 
+                        var snappedRatio: CGFloat = clampedRatio
+                        var currentlySnappedToCenter = false
+
+                        if abs(clampedRatio - 0.5) <= primarySnapRadius {
+                            let diff = clampedRatio - 0.5
+                            let pullFactor = abs(diff) / primarySnapRadius
+                            // Quadratic magnetic pull easing toward exact center
+                            if pullFactor < 0.65 {
+                                snappedRatio = 0.5
+                            } else {
+                                snappedRatio = 0.5 + diff * (pullFactor * pullFactor)
+                            }
+                            currentlySnappedToCenter = true
+                        } else if abs(clampedRatio - 0.3333) <= secondarySnapRadius {
+                            snappedRatio = 0.3333
+                        } else if abs(clampedRatio - 0.6667) <= secondarySnapRadius {
+                            snappedRatio = 0.6667
+                        }
+
+                        let isNearCenter = currentlySnappedToCenter
                         if isNearCenter != isSnappedToCenter {
                             if isNearCenter {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
@@ -85,7 +104,7 @@ struct SplitResizeHandle: View {
                             isSnappedToCenter = isNearCenter
                         }
 
-                        browserState.setSplitRatio(targetRatio, for: group, save: false)
+                        browserState.setSplitRatio(snappedRatio, for: group, save: false)
                     }
                     .onEnded { _ in
                         dragStartRatio = nil

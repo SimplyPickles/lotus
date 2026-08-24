@@ -26,6 +26,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var tabs: [TabItem] {
         didSet {
             saveSession()
+            scheduleAutomaticFolderNames(affectedBy: oldValue)
         }
     }
     @Published var selectedTabId: UUID {
@@ -78,12 +79,18 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var canGoForward: Bool = false
     @Published var isLoading: Bool = false
     @Published var estimatedProgress: Double = 0.0
+    /// Navigation state for every live webview. Split-pane chrome observes
+    /// these values instead of reading non-observable WKWebView properties.
+    @Published var tabLoadingStates: [UUID: Bool] = [:]
+    @Published var tabEstimatedProgress: [UUID: Double] = [:]
     @Published var activeThemeColor: Color? = nil
     @Published var activeThemeNSColor: NSColor? = nil
     @Published var isThemeLight: Bool = false
     @Published var isWebInputFocused: Bool = false
     @Published var isQuitConfirmationPresented: Bool = false
     @Published var folderToCloseConfirmation: UUID? = nil
+    @Published var pendingPopupRequest: PopupConfirmationRequest? = nil
+    @Published var isClearAllDataConfirmationPresented: Bool = false
     @Published var isCommandPaletteOpen: Bool = false
     @Published var commandPaletteMode: CommandPaletteMode = .newTab
     @Published var isFindPresented: Bool = false
@@ -166,13 +173,32 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     let sessionStore = SessionStore()
     let historyStore = HistoryStore()
-    var historyEntries: [HistoryItem] = []
+    @Published var historyEntries: [HistoryItem] = []
     let downloadStore = DownloadStore()
     @Published var downloads: [DownloadItem] = []
     @Published var activeFlyingDownload: FlyingDownloadPayload? = nil
     @Published var downloadCatchPulseTrigger: Int = 0
     @Published var themeBloomTrigger: [UUID: Int] = [:]
-    var downloadsMonitor: DownloadsFolderMonitor?
+    @Published var pageLoadShimmerTrigger: [UUID: Int] = [:]
+    @Published var shieldDeflectTrigger: [UUID: Int] = [:]
+    private var lastShieldDeflectTime: [UUID: Date] = [:]
+    var initialShimmerPlayedTabs: Set<UUID> = []
+
+    func triggerPageLoadShimmer(for tabId: UUID) {
+        // Only trigger shimmer on the tab's initial load/creation, not on reloads or redirects
+        guard !initialShimmerPlayedTabs.contains(tabId) else { return }
+        initialShimmerPlayedTabs.insert(tabId)
+        pageLoadShimmerTrigger[tabId, default: 0] += 1
+    }
+
+    func triggerShieldDeflect(for tabId: UUID) {
+        let now = Date()
+        if let last = lastShieldDeflectTime[tabId], now.timeIntervalSince(last) < 1.0 {
+            return
+        }
+        lastShieldDeflectTime[tabId] = now
+        shieldDeflectTrigger[tabId, default: 0] += 1
+    }
     var customDownloadDirectory: URL?
     var urlCopyFeedbackDismissalWorkItem: DispatchWorkItem?
 
@@ -196,7 +222,9 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     func triggerFlyingDownloadAnimation(filename: String, iconName: String, startLocation: CGPoint? = nil) {
         let start = startLocation ?? FlyingDownloadView.currentMouseWindowLocation()
-        let themeColor = activeThemeColor
+        let tab = activeTab
+        let faviconColors = tab?.faviconURL.flatMap { FaviconColorExtractor.shared.colors(for: $0) }
+        let faviconColor = tab?.faviconURL.flatMap { FaviconColorExtractor.shared.color(for: $0) } ?? activeThemeColor
         let isLight = isThemeLight
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -204,7 +232,8 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 filename: filename,
                 iconName: iconName,
                 startPoint: start,
-                themeColor: themeColor,
+                themeColor: faviconColor,
+                gradientColors: faviconColors,
                 isThemeLight: isLight
             )
         }
@@ -212,11 +241,22 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     var pendingSaveWorkItem: DispatchWorkItem?
     let saveDebounceInterval: TimeInterval = 0.5
+    var automaticFolderNameTasks: [UUID: Task<Void, Never>] = [:]
+    var automaticFolderNameGenerationIDs: [UUID: UUID] = [:]
+    var automaticFolderNameLastGeneratedInputs: [UUID: AutomaticFolderNameInput] = [:]
 
     var terminationObserver: NSObjectProtocol?
     private var keyMonitor: Any?
 
     static let alwaysQuitKey = "lotus.always_quit_without_confirming"
+    static let autoFolderNamesKey = "lotus.browser.autoFolderNames"
+
+    var isAutoFolderNamesEnabled: Bool {
+        if UserDefaults.standard.object(forKey: Self.autoFolderNamesKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: Self.autoFolderNamesKey)
+    }
 
     /// Tabs whose playing video was auto-detached into Picture in Picture
     /// when the user switched away (see `BrowserState+PictureInPicture`).
@@ -229,7 +269,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     // MARK: - Focus
 
     var isAnyTextInputFocused: Bool {
-        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented {
+        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented {
             return true
         }
         if let responder = NSApp.keyWindow?.firstResponder {
@@ -245,19 +285,33 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     init(tabs: [TabItem]? = nil, initialSelectedId: UUID? = nil) {
         let store = SessionStore()
         let restoredSession = (tabs == nil) ? store.load() : nil
+        let startupBehavior = UserDefaults.standard.string(forKey: "lotus.browser.startupBehavior") ?? "restore"
+
         if let explicitTabs = tabs {
             self.tabs = explicitTabs
             let sel = initialSelectedId ?? explicitTabs.first?.id ?? UUID()
             self.selectedTabId = sel
             self.splitGroups = []
             self.currentTabIds = [sel]
+        } else if startupBehavior == "empty" {
+            self.tabs = []
+            self.folders = []
+            self.selectedTabId = UUID()
+            self.splitGroups = []
+            self.currentTabIds = []
+            self.isCommandPaletteOpen = true
         } else if let session = restoredSession {
             // Migration: the lotus://newtab page no longer exists — drop any
             // blank new-tab pages persisted by older versions.
             var restoredTabs = session.tabs.filter { !($0.url?.isLotusPage == true && $0.url?.host != "history") }
+            
+            if startupBehavior == "pinnedOnly" {
+                restoredTabs = restoredTabs.filter { $0.isPinned }
+            }
+
             // Restore folders; clear membership that points at a missing
             // folder, and never let pinned tabs carry folder membership.
-            let restoredFolders = session.folders ?? []
+            let restoredFolders = (startupBehavior == "pinnedOnly") ? [] : (session.folders ?? [])
             let folderIds = Set(restoredFolders.map { $0.id })
             restoredTabs = restoredTabs.map { tab in
                 var tab = tab
@@ -271,15 +325,15 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             let sel = restoredTabs.contains(where: { $0.id == session.selectedTabId }) ? session.selectedTabId : (restoredTabs.first?.id ?? UUID())
             self.selectedTabId = sel
             let validTabsSet = Set(restoredTabs.map { $0.id })
-            let validGroups = (session.splitGroups ?? []).map { group in
+            let validGroups = (startupBehavior == "pinnedOnly") ? [] : (session.splitGroups ?? []).map { group in
                 group.filter { validTabsSet.contains($0) }
             }.filter { $0.count >= 2 }
             self.splitGroups = validGroups
-            self.splitRatios = session.splitRatios ?? [:]
+            self.splitRatios = (startupBehavior == "pinnedOnly") ? [:] : (session.splitRatios ?? [:])
             if restoredTabs.isEmpty {
                 self.currentTabIds = []
                 self.isCommandPaletteOpen = true
-            } else if let saved = session.currentTabIds, saved.count >= 2 {
+            } else if let saved = session.currentTabIds, saved.count >= 2, startupBehavior != "pinnedOnly" {
                 let valid = saved.filter { validTabsSet.contains($0) }
                 self.currentTabIds = valid.isEmpty ? [sel] : valid
             } else if let group = validGroups.first(where: { $0.contains(sel) }) {
@@ -310,7 +364,6 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         self.historyEntries = historyStore.load()
         self.downloads = downloadStore.load()
         self.restoreDownloadLocation()
-        self.downloadsMonitor = DownloadsFolderMonitor(browserState: self)
         self.updateNavigationState()
         // Initialize webviews for the currently visible tab(s) so they begin loading immediately
         for tabId in currentTabIds {
@@ -328,6 +381,38 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         if let km = keyMonitor {
             NSEvent.removeMonitor(km)
+        }
+    }
+
+    // MARK: - Clear All Data
+
+    /// Clears all browsing data: WebKit website data (cookies, cache, IndexedDB, local storage, WebAuthn credentials),
+    /// browsing history, downloads records, and favicon/color caches.
+    func clearAllBrowserData(completion: (() -> Void)? = nil) {
+        // 1. Clear WebKit website data store
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        let sinceDate = Date.distantPast
+        WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, modifiedSince: sinceDate) { [weak self] in
+            DispatchQueue.main.async {
+                guard let self = self else {
+                    completion?()
+                    return
+                }
+
+                // 2. Clear history and downloads
+                self.historyStore.clearAll(entries: &self.historyEntries)
+                self.downloadStore.clearAll(entries: &self.downloads)
+
+                // 3. Clear favicon and color caches
+                FaviconColorExtractor.shared.clearCache()
+
+                // 4. Reload active webviews so pages reset state cleanly
+                for webView in self.webViewStore.values {
+                    webView.reload()
+                }
+
+                completion?()
+            }
         }
     }
 

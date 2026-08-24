@@ -51,6 +51,7 @@ struct FloatingDragTab: View {
                         .fill(Color(nsColor: .windowBackgroundColor))
                 )
                 .frame(width: max(60, sidebarWidth - 16))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             } else if isPinnedPreview {
                 PinnedTabButton(
                     tab: tab,

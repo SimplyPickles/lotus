@@ -56,6 +56,6 @@ struct TabDragState: Equatable {
     }
 
     var canPinPayload: Bool {
-        !effectiveDraggedUnits.contains(where: \.isSplit)
+        folder == nil
     }
 }

@@ -33,12 +33,33 @@ extension BrowserState {
         }
     }
 
+    func detectedAccentNSColor(for tabId: UUID) -> NSColor {
+        let tabURL = url(for: tabId)
+        if let host = tabURL?.host?.lowercased(), host.contains("apple.com") {
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark ? .white : .black
+        }
+        if let faviconURL = tab(for: tabId)?.faviconURL,
+           let extracted = FaviconColorExtractor.shared.nsColor(for: faviconURL) {
+            return extracted
+        }
+        if let theme = themeColors[tabId]?.nsColor {
+            return theme
+        }
+        if let active = activeThemeNSColor {
+            return active
+        }
+        return NSColor.controlAccentColor
+    }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         extractThemeColor(from: webView)
+        extractFavicon(from: webView)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         extractThemeColor(from: webView)
+        extractFavicon(from: webView)
     }
 
     func extractThemeColor(from webView: WKWebView) {
@@ -52,6 +73,25 @@ extension BrowserState {
             if let parsed = ColorParser.parse(colorString) {
                 DispatchQueue.main.async {
                     self.updateThemeColor(for: tabId, parsed: parsed)
+                }
+            }
+        }
+    }
+
+    func extractFavicon(from webView: WKWebView) {
+        guard let tabId = webViewStore.first(where: { $0.value === webView })?.key else { return }
+        guard webView.url?.isLotusPage != true else { return }
+
+        webView.evaluateJavaScript(UserScripts.faviconProbe) { [weak self] result, _ in
+            guard let self = self,
+                  let urlString = result as? String,
+                  let favURL = URL(string: urlString) else { return }
+            DispatchQueue.main.async {
+                if let index = self.tabs.firstIndex(where: { $0.id == tabId }) {
+                    if self.tabs[index].customFaviconURL != favURL {
+                        self.tabs[index].customFaviconURL = favURL
+                        FaviconColorExtractor.shared.prefetch(for: favURL)
+                    }
                 }
             }
         }

@@ -35,7 +35,8 @@ extension Tabstrip {
     }
 
     func handleDragChanged(tab: TabItem, source: TabDragState.Source, index: Int, value: DragGesture.Value) {
-        if activeDrag == nil {
+        let isStartingDrag = activeDrag == nil
+        if isStartingDrag {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
 
@@ -53,7 +54,11 @@ extension Tabstrip {
         let canSplit = draggedUnits.count == 1
             && draggedUnits.first?.isSplit == false
             && browserState.canOpenInSplit(id: tab.id)
-        let canPin = !draggedUnits.contains(where: \.isSplit)
+        // Pinning a split pair is allowed; `moveTabUnits` dissolves its split
+        // group as it converts the payload into pinned tabs.
+        let canPin = true
+
+        let currentRows = unpinnedRows
 
         if !isOverSidebar {
             if canSplit {
@@ -62,9 +67,10 @@ extension Tabstrip {
                 let windowHeight = NSApp.keyWindow?.contentView?.bounds.height ?? 600
                 let (leftFrame, rightFrame) = browserState.splitTargetFrames(windowWidth: windowWidth, windowHeight: windowHeight)
 
-                if leftFrame.insetBy(dx: -8, dy: -8).contains(location) {
+                // Magnetic catch bounds for split target drop zones
+                if leftFrame.insetBy(dx: -28, dy: -28).contains(location) {
                     splitTarget = .left
-                } else if rightFrame.insetBy(dx: -8, dy: -8).contains(location) {
+                } else if rightFrame.insetBy(dx: -28, dy: -28).contains(location) {
                     splitTarget = .right
                 } else {
                     splitTarget = nil
@@ -84,7 +90,7 @@ extension Tabstrip {
             if isAbove {
                 targetIdx = calculatePinnedTargetIndex(location: location, draggedUnits: draggedUnits)
             } else {
-                targetIdx = calculateUnpinnedTargetIndex(location: location, draggedUnits: draggedUnits)
+                targetIdx = calculateUnpinnedTargetIndex(location: location, draggedUnits: draggedUnits, in: currentRows)
             }
         }
 
@@ -93,38 +99,45 @@ extension Tabstrip {
         var targetFolderId: UUID? = nil
         if isOverSidebar && !isAbove {
             let draggedIds = Set(draggedUnits.flatMap(\.tabIds))
-            let reducedRows = unpinnedRows.filter { !$0.containsAny(draggedIds) }
-            let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
-            let relativeY = location.y - unpinnedStartY
-            if relativeY >= 0 {
-                let directRow = Int(relativeY / rowHeight)
-                if directRow < reducedRows.count, case .folderHeader(let folder) = reducedRows[directRow] {
-                    // Hovering directly over the folder icon / header: put tab inside that folder
-                    targetFolderId = folder.id
-                    targetIdx = directRow + 1
-                }
-            }
+            let reducedRows = currentRows.filter { !$0.containsAny(draggedIds) }
+            let relativeY = unpinnedContentY(for: location)
+            let hoverTarget = folderMembershipForHover(
+                at: relativeY,
+                in: currentRows,
+                excluding: draggedIds
+            )
 
-            if targetFolderId == nil {
+            if hoverTarget.forcesLoosePlacement {
+                // The upper half of a folder header is an intentional loose
+                // slot before it. Do not let the preceding folder's tail
+                // adoption pull the tab into the wrong group.
+                targetFolderId = nil
+            } else if let folderId = hoverTarget.folderId {
+                targetFolderId = folderId
+            } else {
                 let insertAt = min(targetIdx, reducedRows.count)
                 targetFolderId = adoptedFolderIdForInsertion(at: insertAt, in: reducedRows)
             }
         }
 
         let previousTarget = activeDrag?.targetIndex
+        let previousTargetFolderId = activeDrag?.targetFolderId
         let previousSplitTarget = activeDrag?.splitDropTarget
         let wasAbove = activeDrag?.isHoveringPinZone ?? (source == .pinned)
 
         let targetChanged: Bool
         if isOverSidebar {
-            targetChanged = (previousTarget != targetIdx) || (wasAbove != isAbove) || (previousSplitTarget != nil)
+            targetChanged = (previousTarget != targetIdx)
+                || (previousTargetFolderId != targetFolderId)
+                || (wasAbove != isAbove)
+                || (previousSplitTarget != nil)
         } else if canSplit {
             targetChanged = (previousSplitTarget != splitTarget)
         } else {
             targetChanged = false
         }
 
-        if targetChanged {
+        if targetChanged && !isStartingDrag {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
 
@@ -185,8 +198,7 @@ extension Tabstrip {
         // Target is an insertion position in the row list *without* the block.
         var targetIdx = block.start
         if location.x < browserState.sidebarWidth {
-            let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
-            let relativeY = max(0, location.y - unpinnedStartY)
+            let relativeY = unpinnedContentY(for: location)
             let raw = Int((relativeY + rowHeight * 0.5) / rowHeight)
             let reducedCount = rows.count - block.rowCount
             let target = min(max(0, raw), reducedCount)
@@ -246,11 +258,44 @@ extension Tabstrip {
     }
 
     func handleDragEnded(value: DragGesture.Value) {
+        // SwiftUI can deliver a final gesture location that is newer than the
+        // last onChanged value. Resolve it once before committing so a release
+        // on a folder boundary uses the same target the cursor is over.
+        let dragBeforeFinalResolution = activeDrag
+        if let currentDrag = dragBeforeFinalResolution {
+            if let folder = currentDrag.folder {
+                handleFolderDragChanged(
+                    folder: folder,
+                    rowIndex: currentDrag.originalIndex,
+                    value: value
+                )
+            } else {
+                handleDragChanged(
+                    tab: currentDrag.tab,
+                    source: currentDrag.source,
+                    index: currentDrag.originalIndex,
+                    value: value
+                )
+            }
+        }
+
+        let didResolveFinalTargetChange: Bool
+        if let dragBeforeFinalResolution, let resolvedDrag = activeDrag {
+            didResolveFinalTargetChange = dragBeforeFinalResolution.targetIndex != resolvedDrag.targetIndex
+                || dragBeforeFinalResolution.targetFolderId != resolvedDrag.targetFolderId
+                || dragBeforeFinalResolution.isHoveringPinZone != resolvedDrag.isHoveringPinZone
+                || dragBeforeFinalResolution.splitDropTarget != resolvedDrag.splitDropTarget
+        } else {
+            didResolveFinalTargetChange = false
+        }
+
         guard let drag = activeDrag else { return }
 
         // Folder header drop: reorder the whole folder block.
         if let folder = drag.folder {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            if !didResolveFinalTargetChange {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            }
             withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
                 if drag.location.x < browserState.sidebarWidth {
                     let rows = unpinnedRows
@@ -276,7 +321,9 @@ extension Tabstrip {
            drag.draggedUnitCount == 1,
            drag.effectiveDraggedUnits.first?.isSplit == false,
            browserState.canOpenInSplit(id: drag.tab.id) {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            if !didResolveFinalTargetChange {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            }
             activeDrag = nil
             browserState.activeTabDrag = nil
             browserState.openInSplit(id: drag.tab.id, side: splitSide == .left ? .left : .right)
@@ -285,7 +332,9 @@ extension Tabstrip {
 
         let destination: SidebarTabDropDestination?
         if drag.location.x < browserState.sidebarWidth {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            if !didResolveFinalTargetChange {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            }
 
             if drag.isHoveringPinZone && drag.canPinPayload {
                 destination = .pinned(index: drag.targetIndex)
@@ -378,11 +427,55 @@ extension Tabstrip {
            !folder.isCollapsed {
             return folder.id
         }
-        if let folderId = above.memberFolderId,
-           below?.memberFolderId == folderId {
-            return folderId
+        if let folderId = above.memberFolderId {
+            if below?.memberFolderId == folderId {
+                return folderId
+            }
+            // A row inserted immediately after an expanded folder's last
+            // visible member remains part of that folder.
+            if browserState.folder(for: folderId)?.isCollapsed == false {
+                return folderId
+            }
         }
         return nil
+    }
+
+    /// Resolves folder membership from the visible row beneath the pointer.
+    /// `targetIndex` remains the reduced-row insertion slot from
+    /// `calculateUnpinnedTargetIndex`; this helper only supplies the
+    /// membership intent that drives the ghost and final model commit.
+    func folderMembershipForHover(
+        at relativeY: CGFloat,
+        in rows: [UnpinnedTabRow],
+        excluding draggedIds: Set<UUID>
+    ) -> (folderId: UUID?, forcesLoosePlacement: Bool) {
+        let rowIndex = Int(relativeY / rowHeight)
+        guard rows.indices.contains(rowIndex) else {
+            return (nil, false)
+        }
+
+        let row = rows[rowIndex]
+        guard !row.containsAny(draggedIds) else {
+            return (nil, false)
+        }
+
+        let insertionIndex = Int((relativeY + rowHeight * 0.5) / rowHeight)
+        let isInLowerHalf = insertionIndex > rowIndex
+
+        switch row {
+        case .folderHeader(let folder):
+            // The upper half intentionally creates a loose row immediately
+            // before the folder; the lower half joins at its visible start.
+            return isInLowerHalf ? (folder.id, false) : (nil, true)
+
+        case .single(let tab):
+            // An explicit lower-half member target makes the trailing gap of
+            // an expanded folder's final tab reliably append to that folder.
+            return isInLowerHalf ? (tab.folderId, false) : (nil, false)
+
+        case .split(let first, _):
+            return isInLowerHalf ? (first.folderId, false) : (nil, false)
+        }
     }
 
     func firstTabId(in row: UnpinnedTabRow, excluding excludedIds: Set<UUID>) -> UUID? {
@@ -407,8 +500,9 @@ extension Tabstrip {
     }
 
     /// Returns the active rows without the dragged tabs and the insertion slot.
-    func projectedReducedRows(for drag: TabDragState) -> (rows: [UnpinnedTabRow], target: Int) {
-        let basicRows = unpinnedRows.filter { !$0.containsAny(drag.draggedTabIds) }
+    func projectedReducedRows(for drag: TabDragState, in rows: [UnpinnedTabRow]? = nil) -> (rows: [UnpinnedTabRow], target: Int) {
+        let activeRows = rows ?? unpinnedRows
+        let basicRows = activeRows.filter { !$0.containsAny(drag.draggedTabIds) }
         let basicTarget = min(max(0, drag.targetIndex), basicRows.count)
         return (basicRows, basicTarget)
     }
@@ -428,15 +522,22 @@ extension Tabstrip {
         return min(max(0, rawIndex), remainingCount)
     }
 
-    func calculateUnpinnedTargetIndex(location: CGPoint, draggedUnits: [SidebarTabUnit]) -> Int {
-        let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
-        let relativeY = max(0, location.y - unpinnedStartY)
+    func calculateUnpinnedTargetIndex(location: CGPoint, draggedUnits: [SidebarTabUnit], in rows: [UnpinnedTabRow]? = nil) -> Int {
+        let activeRows = rows ?? unpinnedRows
+        let relativeY = unpinnedContentY(for: location)
         let rawIndex = Int((relativeY + rowHeight * 0.5) / rowHeight)
         let draggedIds = Set(draggedUnits.flatMap(\.tabIds))
-        let selectedIndices = unpinnedRows.indices.filter { unpinnedRows[$0].containsAny(draggedIds) }
+        let selectedIndices = activeRows.indices.filter { activeRows[$0].containsAny(draggedIds) }
         let removedBeforePointer = selectedIndices.filter { $0 < rawIndex }.count
-        let reducedCount = unpinnedRows.count - selectedIndices.count
+        let reducedCount = activeRows.count - selectedIndices.count
         return min(max(0, rawIndex - removedBeforePointer), reducedCount)
+    }
+
+    /// Converts a drag location in the window coordinate space into the
+    /// vertical coordinate of the scroll view's content.
+    func unpinnedContentY(for location: CGPoint) -> CGFloat {
+        let unpinnedStartY = headerHeight + pinnedGridHeight + newTabButtonHeight + 4
+        return max(0, location.y - unpinnedStartY + unpinnedScrollOffset)
     }
 
     func pinnedShiftOffset(for tabId: UUID) -> CGSize {
@@ -446,16 +547,16 @@ extension Tabstrip {
         return pinnedShiftOffset(for: index)
     }
 
-    func unpinnedShiftOffset(forRowIndex index: Int) -> CGFloat {
+    func unpinnedShiftOffset(forRowIndex index: Int, in rows: [UnpinnedTabRow]? = nil) -> CGFloat {
         guard let drag = activeDrag else { return 0 }
+        let activeRows = rows ?? unpinnedRows
 
         // A dragged folder previews as collapsed in the sidebar. Its member
         // rows collapse out of layout while the header reorders like one row;
         // the full model block still moves atomically when dropped.
         if let draggedFolder = drag.folder {
             if drag.location.x >= browserState.sidebarWidth { return 0 }
-            let rows = unpinnedRows
-            guard let block = folderBlockInfo(draggedFolder.id, in: rows) else { return 0 }
+            guard let block = folderBlockInfo(draggedFolder.id, in: activeRows) else { return 0 }
             let origin = block.start
             let target = drag.targetIndex
 
@@ -476,12 +577,11 @@ extension Tabstrip {
             return 0
         }
 
-        let rows = unpinnedRows
-        guard index < rows.count else { return 0 }
-        let row = rows[index]
+        guard index < activeRows.count else { return 0 }
+        let row = activeRows[index]
         if row.containsAny(drag.draggedTabIds) { return 0 }
 
-        let projection = projectedReducedRows(for: drag)
+        let projection = projectedReducedRows(for: drag, in: activeRows)
         var projectedIds = projection.rows.map(\.id)
         let reservesUnpinnedSpace = drag.location.x < browserState.sidebarWidth
             && !drag.isHoveringPinZone

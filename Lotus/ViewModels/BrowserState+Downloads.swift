@@ -8,6 +8,7 @@
 import SwiftUI
 import WebKit
 import AppKit
+import CoreServices
 
 // MARK: - Active Download Cache
 
@@ -95,7 +96,7 @@ extension BrowserState: WKDownloadDelegate {
 
         let originalURL = download.originalRequest?.url ?? response.url ?? destinationURL
         let item = DownloadItem(
-            filename: cleanFilename,
+            filename: destinationURL.lastPathComponent,
             originalURL: originalURL,
             destinationURL: destinationURL,
             fileSize: totalSize,
@@ -130,12 +131,7 @@ extension BrowserState: WKDownloadDelegate {
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
-            if let trust = challenge.protectionSpace.serverTrust {
-                completionHandler(.useCredential, URLCredential(trust: trust))
-                return
-            }
-        }
+        // Let WebKit and the system trust store validate server certificates.
         completionHandler(.performDefaultHandling, nil)
     }
 
@@ -146,9 +142,11 @@ extension BrowserState: WKDownloadDelegate {
             let targetId = cachedItem?.id
             let destination = cachedItem?.destinationURL
 
-            if let index = self.downloads.firstIndex(where: {
-                ($0.id == targetId) || ($0.destinationURL == destination) || ($0.state == .downloading)
-            }) {
+            if let index = Self.downloadIndex(
+                in: self.downloads,
+                id: targetId,
+                destinationURL: destination
+            ) {
                 self.downloads[index].state = .completed
                 self.downloads[index].completedAt = Date()
 
@@ -160,6 +158,10 @@ extension BrowserState: WKDownloadDelegate {
                     self.downloads[index].bytesReceived = size
                 }
 
+                Self.applyDownloadQuarantine(
+                    to: self.downloads[index].destinationURL,
+                    sourceURL: cachedItem?.originalURL ?? self.downloads[index].originalURL
+                )
                 self.downloadStore.save(self.downloads)
                 NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             } else if var item = cachedItem {
@@ -170,6 +172,7 @@ extension BrowserState: WKDownloadDelegate {
                     item.fileSize = fileSize
                     item.bytesReceived = fileSize
                 }
+                Self.applyDownloadQuarantine(to: item.destinationURL, sourceURL: item.originalURL)
                 self.downloadStore.upsert(item, in: &self.downloads)
                 NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             }
@@ -183,9 +186,11 @@ extension BrowserState: WKDownloadDelegate {
             let targetId = cachedItem?.id
             let destination = cachedItem?.destinationURL
 
-            if let index = self.downloads.firstIndex(where: {
-                ($0.id == targetId) || ($0.destinationURL == destination) || ($0.state == .downloading)
-            }) {
+            if let index = Self.downloadIndex(
+                in: self.downloads,
+                id: targetId,
+                destinationURL: destination
+            ) {
                 self.downloads[index].state = .failed
                 self.downloads[index].errorMessage = error.localizedDescription
                 self.downloads[index].completedAt = Date()
@@ -211,7 +216,75 @@ extension BrowserState: WKDownloadDelegate {
         if sanitized.hasPrefix(".") {
             sanitized = "download_\(sanitized.dropFirst())"
         }
+        
+        let tidyObject = UserDefaults.standard.object(forKey: "lotus.browser.tidyDownloadsEnabled")
+        let tidyEnabled = (tidyObject as? Bool) ?? true
+        if tidyEnabled {
+            sanitized = tidyFilename(sanitized)
+        }
+        
         return sanitized
+    }
+
+    /// Cleans and formats downloaded filenames into clean, readable titles (e.g. replaces underscores/dashes with spaces, strips URL noise, hashes, and UUIDs).
+    static func tidyFilename(_ filename: String) -> String {
+        let ns = filename as NSString
+        let ext = ns.pathExtension
+        var stem = ns.deletingPathExtension
+
+        // 1. URL-decode if needed
+        if let unescaped = stem.removingPercentEncoding {
+            stem = unescaped
+        }
+
+        // 2. Strip leading/trailing query parameters or fragments if accidentally present in filename
+        if let qIdx = stem.firstIndex(of: "?") {
+            stem = String(stem[..<qIdx])
+        }
+        if let fIdx = stem.firstIndex(of: "#") {
+            stem = String(stem[..<fIdx])
+        }
+
+        // 3. Strip standard UUID patterns (e.g. 550e8400-e29b-41d4-a716-446655440000)
+        stem = stem.replacingOccurrences(
+            of: #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // 4. Strip long random hex/alphanumeric checksum hashes (e.g. _a1b2c3d4e5f6, -6473829104, etc.)
+        stem = stem.replacingOccurrences(
+            of: #"[_-][0-9a-fA-F]{10,}"#,
+            with: "",
+            options: .regularExpression
+        )
+        stem = stem.replacingOccurrences(
+            of: #"^[0-9a-fA-F]{16,}[_-]"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // 5. Replace separators (underscores, pluses, multiple hyphens/dots) with spaces
+        stem = stem.replacingOccurrences(of: "_", with: " ")
+        stem = stem.replacingOccurrences(of: "+", with: " ")
+        stem = stem.replacingOccurrences(of: "%20", with: " ")
+        stem = stem.replacingOccurrences(of: "-", with: " ")
+        
+        // 6. Collapse consecutive spaces and trim edge punctuation
+        stem = stem.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-_.~ "))
+
+        // 7. Capitalize first letter of words if all lowercase
+        if !stem.isEmpty && stem == stem.lowercased() {
+            stem = stem.capitalized
+        }
+
+        if stem.isEmpty {
+            stem = "Download"
+        }
+
+        return ext.isEmpty ? stem : "\(stem).\(ext)"
     }
 
     static func uniqueDestinationURL(for filename: String, in directory: URL) -> URL {
@@ -236,6 +309,43 @@ extension BrowserState: WKDownloadDelegate {
         }
 
         return destination
+    }
+
+    /// Finds only the record associated with a specific Lotus-owned transfer.
+    /// A completion callback must never use another in-progress record as a fallback.
+    private static func downloadIndex(
+        in downloads: [DownloadItem],
+        id: UUID?,
+        destinationURL: URL?
+    ) -> Int? {
+        if let id, let index = downloads.firstIndex(where: { $0.id == id }) {
+            return index
+        }
+        if let destinationURL,
+           let index = downloads.firstIndex(where: { $0.destinationURL == destinationURL }) {
+            return index
+        }
+        return nil
+    }
+
+    /// Marks files written by Lotus as web downloads so Finder and Gatekeeper
+    /// retain the usual warning path when a user opens them.
+    private static func applyDownloadQuarantine(to fileURL: URL, sourceURL: URL) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+
+        var resourceURL = fileURL
+        var values = URLResourceValues()
+        values.quarantineProperties = [
+            kLSQuarantineAgentNameKey as String: "Lotus",
+            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
+            kLSQuarantineDataURLKey as String: sourceURL
+        ]
+
+        do {
+            try resourceURL.setResourceValues(values)
+        } catch {
+            NSLog("[Lotus] Failed to quarantine download at \(fileURL.path): \(error.localizedDescription)")
+        }
     }
 }
 
@@ -295,8 +405,6 @@ extension BrowserState {
         customDownloadDirectory = resolvedURL
         saveDownloadLocationBookmark(for: resolvedURL)
 
-        downloadsMonitor?.stopMonitoring()
-        downloadsMonitor = DownloadsFolderMonitor(browserState: self)
     }
 
     private func saveDownloadLocationBookmark(for url: URL) {
@@ -343,6 +451,7 @@ extension BrowserState {
 
                 if let decodedData = Data(base64Encoded: dataPart, options: .ignoreUnknownCharacters) {
                     try? decodedData.write(to: destinationURL)
+                    Self.applyDownloadQuarantine(to: destinationURL, sourceURL: url)
 
                     let item = DownloadItem(
                         filename: filename,
@@ -380,7 +489,7 @@ extension BrowserState {
         triggerFlyingDownloadAnimation(filename: item.filename, iconName: item.systemIconName)
 
         var request = URLRequest(url: url)
-        request.setValue(WebViewFactory.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(WebViewFactory.currentUserAgent, forHTTPHeaderField: "User-Agent")
 
         let task = URLSession.shared.downloadTask(with: request) { [weak self] tempURL, response, error in
             DispatchQueue.main.async {
@@ -398,6 +507,7 @@ extension BrowserState {
                 guard let tempURL = tempURL else { return }
                 do {
                     try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                    Self.applyDownloadQuarantine(to: destinationURL, sourceURL: url)
                     if let index = self.downloads.firstIndex(where: { $0.id == item.id }) {
                         self.downloads[index].state = .completed
                         self.downloads[index].completedAt = Date()

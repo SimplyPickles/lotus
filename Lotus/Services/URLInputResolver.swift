@@ -58,7 +58,7 @@ enum URLInputResolver {
         }
     }
 
-    private static var selectedSearchEngine: SearchEngine {
+    static var selectedSearchEngine: SearchEngine {
         let storedValue = UserDefaults.standard.string(forKey: "lotus.browser.searchEngine")
         return storedValue.flatMap(SearchEngine.init(rawValue:)) ?? .google
     }

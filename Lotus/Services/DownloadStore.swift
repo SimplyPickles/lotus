@@ -47,7 +47,7 @@ final class DownloadStore {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let pruned = entries.count > Self.maxEntries
-                ? Array(entries.suffix(Self.maxEntries))
+                ? Array(entries.prefix(Self.maxEntries))
                 : entries
             let envelope = Envelope(version: Self.currentVersion, entries: pruned)
             let data = try JSONEncoder().encode(envelope)

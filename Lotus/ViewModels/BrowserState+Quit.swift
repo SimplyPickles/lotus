@@ -37,6 +37,14 @@ extension BrowserState {
         if alwaysQuit {
             UserDefaults.standard.set(true, forKey: Self.alwaysQuitKey)
         }
+        
+        if ContentBlockerService.shared.clearDataOnQuit {
+            clearAllBrowserData {
+                AppDelegate.forceTerminate()
+            }
+            return
+        }
+        
         saveSession(immediate: true)
         isQuitConfirmationPresented = false
         AppDelegate.forceTerminate()

@@ -18,11 +18,12 @@ struct ContentView: View {
     @State private var temporaryFloatingDismissTask: DispatchWorkItem? = nil
 
     private var shouldShowFloatingSidebar: Bool {
-        !browserState.isSidebarVisible && (isHoveringFloatingSidebar || isFloatingSidebarTemporarilyShown || browserState.isResizingSidebar || browserState.activeTabDrag != nil)
+        !browserState.isSidebarVisible
+            && (isHoveringFloatingSidebar || isFloatingSidebarTemporarilyShown || browserState.activeTabDrag != nil || browserState.isResizingSidebar)
     }
 
     private var isStaticSidebarPresented: Bool {
-        browserState.isSidebarVisible || (browserState.isResizingSidebar && !isHoveringFloatingSidebar)
+        browserState.isSidebarVisible
     }
 
     var body: some View {
@@ -36,12 +37,11 @@ struct ContentView: View {
                     Tabstrip(browserState: browserState)
                         .frame(
                             width: isStaticSidebarPresented ? browserState.sidebarWidth : 0,
-                            alignment: .leading
+                            alignment: .trailing
                         )
                         .clipped()
                         .opacity(isStaticSidebarPresented ? 1 : 0)
                         .allowsHitTesting(isStaticSidebarPresented)
-                        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isStaticSidebarPresented)
                         .zIndex(1)
 
                     // MARK - Browser Containers
@@ -62,12 +62,11 @@ struct ContentView: View {
                         }
                     }
                     .animation(nil, value: browserState.currentTabIds)
-                    .transaction { $0.animation = nil }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding([.top, .trailing, .bottom], showsBrowserFrame ? 6 : 0)
-                    .padding(.leading, browserState.isSidebarVisible ? 0 : (showsBrowserFrame ? 6 : 0))
-                    .animation(.spring(response: 0.32, dampingFraction: 0.85), value: browserState.isSidebarVisible)
+                    .padding(.leading, isStaticSidebarPresented ? 0 : (showsBrowserFrame ? 6 : 0))
                 }
+                .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isStaticSidebarPresented)
 
                 // Hover trigger zone on the left edge when sidebar is collapsed
                 if !browserState.isSidebarVisible && !shouldShowFloatingSidebar {
@@ -163,7 +162,7 @@ struct ContentView: View {
         .background(TrafficLightPositioner(
             leading: (shouldShowFloatingSidebar && !browserState.isSidebarVisible) ? 22 : 20,
             top: (shouldShowFloatingSidebar && !browserState.isSidebarVisible) ? 22 : 20,
-            isVisible: browserState.isSidebarVisible || shouldShowFloatingSidebar
+            isVisible: isStaticSidebarPresented || shouldShowFloatingSidebar
         ))
         .background {
             GlobalShortcutHandlers(browserState: browserState)
@@ -184,10 +183,20 @@ struct ContentView: View {
             }
         }
         .overlay {
+            if browserState.pendingPopupRequest != nil {
+                PopupConfirmationView(browserState: browserState)
+            }
+        }
+        .overlay {
+            if browserState.isClearAllDataConfirmationPresented {
+                ClearAllDataConfirmationView(browserState: browserState)
+            }
+        }
+        .overlay {
             if let flyingPayload = browserState.activeFlyingDownload {
                 GeometryReader { overlayGeo in
-                    let targetX = overlayGeo.size.width - 46
-                    let targetY: CGFloat = 24
+                    let targetX = overlayGeo.size.width - 80
+                    let targetY: CGFloat = 20
                     FlyingDownloadView(
                         payload: flyingPayload,
                         targetPoint: CGPoint(x: targetX, y: targetY)
@@ -203,7 +212,8 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.isQuitConfirmationPresented)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.folderToCloseConfirmation != nil)
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: browserState.isSidebarVisible)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.pendingPopupRequest != nil)
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isStaticSidebarPresented)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: shouldShowFloatingSidebar)
         .onChange(of: browserState.isSidebarVisible) { _, visible in
             temporaryFloatingDismissTask?.cancel()

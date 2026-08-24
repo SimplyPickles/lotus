@@ -150,7 +150,7 @@ final class FolderContextMenuNSView: NSView {
         return buildMenu(folder: folder, browserState: browserState)
     }
 
-        private func buildMenu(folder: TabFolder, browserState: BrowserState) -> NSMenu {
+    private func buildMenu(folder: TabFolder, browserState: BrowserState) -> NSMenu {
         let menu = NSMenu()
 
         // 1. Folder title, tab count, and color swatches

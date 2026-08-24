@@ -43,6 +43,9 @@ extension BrowserState {
     // MARK: - KVO Observers
 
     func setupObservers(for tabId: UUID, webView: WKWebView) {
+        tabLoadingStates[tabId] = webView.isLoading
+        tabEstimatedProgress[tabId] = webView.estimatedProgress
+
         var tabObservers: [NSKeyValueObservation] = []
 
         let backObs = webView.observe(\.canGoBack, options: [.new]) { [weak self] wv, _ in
@@ -63,19 +66,23 @@ extension BrowserState {
         }
         tabObservers.append(forwardObs)
 
-        let loadingObs = webView.observe(\.isLoading, options: [.new]) { [weak self] wv, _ in
-            DispatchQueue.main.async {
-                if self?.selectedTabId == tabId {
-                    self?.isLoading = wv.isLoading
+        let loadingObs = webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] wv, _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.tab(for: tabId) != nil else { return }
+                self.tabLoadingStates[tabId] = wv.isLoading
+                if self.selectedTabId == tabId {
+                    self.isLoading = wv.isLoading
                 }
             }
         }
         tabObservers.append(loadingObs)
 
-        let progressObs = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] wv, _ in
-            DispatchQueue.main.async {
-                if self?.selectedTabId == tabId {
-                    self?.estimatedProgress = wv.estimatedProgress
+        let progressObs = webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] wv, _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.tab(for: tabId) != nil else { return }
+                self.tabEstimatedProgress[tabId] = wv.estimatedProgress
+                if self.selectedTabId == tabId {
+                    self.estimatedProgress = wv.estimatedProgress
                 }
             }
         }
@@ -101,6 +108,9 @@ extension BrowserState {
             DispatchQueue.main.async {
                 if let index = self.tabs.firstIndex(where: { $0.id == tabId }) {
                     self.tabs[index].title = newTitle
+                }
+                if let currentURL = wv.url {
+                    self.updateHistoryTitle(title: newTitle, for: currentURL)
                 }
             }
         }

@@ -16,8 +16,8 @@ final class FaviconColorExtractor: ObservableObject {
     @Published private(set) var colorCache: [URL: Color] = [:]
     @Published private(set) var gradientColorsCache: [URL: [Color]] = [:]
     @Published private(set) var imageCache: [URL: NSImage] = [:]
+    @Published private(set) var nsColorCache: [URL: NSColor] = [:]
     private var fetchingURLs: Set<URL> = []
-    private var proxyFallbacks: Set<URL> = []
 
     func color(for url: URL?) -> Color? {
         guard let url = url else { return nil }
@@ -25,6 +25,19 @@ final class FaviconColorExtractor: ObservableObject {
             return cached
         }
         fetch(for: url)
+        return nil
+    }
+
+    func nsColor(for url: URL?) -> NSColor? {
+        guard let url = url else { return nil }
+        if let cached = nsColorCache[url] {
+            return cached
+        }
+        if let c = color(for: url) {
+            let ns = NSColor(c)
+            nsColorCache[url] = ns
+            return ns
+        }
         return nil
     }
 
@@ -46,33 +59,86 @@ final class FaviconColorExtractor: ObservableObject {
         return nil
     }
 
+    func prefetch(for url: URL?) {
+        guard let url = url else { return }
+        if imageCache[url] == nil {
+            fetch(for: url)
+        }
+    }
+
+    func clearCache() {
+        colorCache.removeAll()
+        gradientColorsCache.removeAll()
+        imageCache.removeAll()
+        nsColorCache.removeAll()
+        fetchingURLs.removeAll()
+    }
+
     private func fetch(for url: URL) {
         guard !fetchingURLs.contains(url) else { return }
         fetchingURLs.insert(url)
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let data = try? Data(contentsOf: url),
-                  let nsImage = NSImage(data: data) else {
-                // Direct fetch failed; fall back to the Google favicon proxy.
-                if let proxied = self?.proxyFallbackURL(for: url), self?.tryProxyFallback(for: url) == true {
-                    if let data = try? Data(contentsOf: proxied),
-                       let nsImage = NSImage(data: data) {
-                        self?.finishFetch(for: url, image: nsImage)
-                    } else {
-                        DispatchQueue.main.async {
-                            self?.fetchingURLs.remove(url)
-                        }
+        if url.isFileURL {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let data = try? Data(contentsOf: url),
+                      let nsImage = NSImage(data: data) else {
+                    DispatchQueue.main.async {
+                        self?.fetchingURLs.remove(url)
                     }
+                    return
+                }
+                self?.finishFetch(for: url, image: nsImage)
+            }
+        } else {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5.0
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+            request.setValue("image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5", forHTTPHeaderField: "Accept")
+
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+                let httpResponse = response as? HTTPURLResponse
+                let statusCode = httpResponse?.statusCode ?? 0
+                let isSuccess = (200...299).contains(statusCode)
+
+                if isSuccess, let data = data, let nsImage = NSImage(data: data) {
+                    self?.finishFetch(for: url, image: nsImage)
+                    return
+                }
+
+                // If direct fetch fails, is blocked (e.g. 403 on Discord), or returns 404, fall back to Google favicon CDN
+                if let host = url.host, !host.isEmpty, !url.absoluteString.contains("google.com/s2/favicons") {
+                    self?.fetchFallback(host: host, originalURL: url)
                 } else {
                     DispatchQueue.main.async {
                         self?.fetchingURLs.remove(url)
                     }
                 }
-                return
-            }
-
-            self?.finishFetch(for: url, image: nsImage)
+            }.resume()
         }
+    }
+
+    private func fetchFallback(host: String, originalURL: URL) {
+        guard let fallbackURL = URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64") else {
+            DispatchQueue.main.async {
+                self.fetchingURLs.remove(originalURL)
+            }
+            return
+        }
+
+        var request = URLRequest(url: fallbackURL)
+        request.timeoutInterval = 5.0
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if (200...299).contains(statusCode), let data = data, let nsImage = NSImage(data: data) {
+                self?.finishFetch(for: originalURL, image: nsImage)
+            } else {
+                DispatchQueue.main.async {
+                    self?.fetchingURLs.remove(originalURL)
+                }
+            }
+        }.resume()
     }
 
     private func finishFetch(for url: URL, image nsImage: NSImage) {
@@ -85,22 +151,6 @@ final class FaviconColorExtractor: ObservableObject {
             }
             self.imageCache[url] = nsImage
             self.fetchingURLs.remove(url)
-        }
-    }
-
-    // Only fall back to the proxy for site-direct favicon URLs, and only once per URL.
-    private func proxyFallbackURL(for url: URL) -> URL? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.path == "/favicon.ico",
-              let host = components.host, !host.isEmpty else { return nil }
-        return URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
-    }
-
-    private func tryProxyFallback(for url: URL) -> Bool {
-        DispatchQueue.main.sync {
-            guard !proxyFallbacks.contains(url) else { return false }
-            proxyFallbacks.insert(url)
-            return true
         }
     }
 

@@ -13,7 +13,7 @@ extension Tabstrip {
     var resizeHandle: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: 10)
+            .frame(width: 12)
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {

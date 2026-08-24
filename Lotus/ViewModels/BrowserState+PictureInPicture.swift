@@ -24,7 +24,7 @@ extension BrowserState {
                     self?.autoPiPTabs.remove(targetId)
                 }
             } else {
-                webView.evaluateJavaScript(UserScripts.enterPictureInPicture) { result, error in
+                webView.evaluateJavaScript(UserScripts.enterPictureInPictureManual) { result, error in
                     #if DEBUG
                     NSLog("[Lotus] PiP enter (manual): \(result as? String ?? "nil") \(error.map { "error: \($0.localizedDescription)" } ?? "")")
                     #endif
@@ -45,6 +45,9 @@ extension BrowserState {
             webView.evaluateJavaScript(UserScripts.exitPictureInPicture, completionHandler: nil)
             autoPiPTabs.remove(newId)
         }
+
+        let isAutoPiPEnabled = UserDefaults.standard.object(forKey: "lotus.browser.autoPiPEnabled") as? Bool ?? true
+        guard isAutoPiPEnabled else { return }
 
         // The old tab may still be on screen as half of a split — leave it be.
         guard !currentTabIds.contains(oldId), let oldWebView = webViewStore[oldId] else { return }

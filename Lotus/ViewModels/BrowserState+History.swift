@@ -23,6 +23,12 @@ extension BrowserState {
         historyStore.addEntry(title: title, url: url, to: &historyEntries)
     }
 
+    /// Updates the title of the most recent browsing history visit for a URL.
+    func updateHistoryTitle(title: String, for url: URL) {
+        guard url.scheme == "http" || url.scheme == "https" else { return }
+        historyStore.updateTitle(title, for: url, in: &historyEntries)
+    }
+
     // MARK: - History Management
 
     /// Removes specific history entries by their ids.

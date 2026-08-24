@@ -233,7 +233,7 @@ struct HairlineProgressIndicator: View {
             return false
         }
 
-        if browserState.isLoading && !isFinishing {
+        if isLoading && !isFinishing {
             // Gentle continuous trickle if network is waiting on data
             if targetProgress < 0.90 {
                 targetProgress += (0.90 - targetProgress) * 0.04 * dt
@@ -257,6 +257,7 @@ struct HairlineProgressIndicator: View {
                 currentProgress = 1.0
                 isFinishing = false
                 startFadeOut()
+                browserState.triggerPageLoadShimmer(for: activeTabId)
                 return false
             }
         } else {
@@ -274,7 +275,7 @@ struct HairlineProgressIndicator: View {
             }
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
-            if !browserState.isLoading {
+            if !isLoading {
                 resetState()
             }
         }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 import WebKit
 
 extension BrowserState {
@@ -13,21 +14,54 @@ extension BrowserState {
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if navigationAction.shouldPerformDownload {
-            decisionHandler(.download)
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
             return
         }
 
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
+        let scheme = url.scheme?.lowercased()
+        let allowedSchemes: Set<String> = [
+            "http", "https", "about", "lotus", "blob", "data", "javascript",
+            "webkit-extension", "chrome-extension"
+        ]
+
+        // Never delegate local file URLs originating in web content to Finder
+        // or another application. A page must not be able to launch local apps
+        // or open arbitrary local paths through navigation.
+        if scheme == "file" {
+            decisionHandler(.cancel)
+            return
+        }
+
+        // External protocols (for example, mailto:) require an explicit user
+        // click and a confirmation before Lotus asks macOS to open a handler.
+        if let scheme, !allowedSchemes.contains(scheme) {
+            decisionHandler(.cancel)
+            if navigationAction.navigationType == .linkActivated {
+                presentExternalURLConfirmation(for: url, from: webView)
+            }
+            return
+        }
+
+        if navigationAction.shouldPerformDownload {
+            decisionHandler(.download)
             return
         }
 
         let isCmdPressed = navigationAction.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.command)
         let isLinkClick = navigationAction.navigationType == .linkActivated
 
-        if isCmdPressed && isLinkClick && url.scheme != "about" {
-            let sourceTabId = webViewStore.first(where: { $0.value === webView })?.key ?? selectedTabId
+        // Strict popup & link shield: blocks link clicks and new window navigations for the page
+        let sourceTabId = webViewStore.first(where: { $0.value === webView })?.key ?? selectedTabId
+        let currentSourceURL = webView.url ?? tab(for: sourceTabId)?.url
+        if ContentBlockerService.shared.isStrictPopupBlockingActive(for: currentSourceURL) {
+            if navigationAction.targetFrame == nil || isLinkClick {
+                decisionHandler(.cancel)
+                return
+            }
+        }
+
+        if isCmdPressed && isLinkClick && scheme != "about" {
             DispatchQueue.main.async { [weak self] in
                 self?.openTabFromCmdClick(sourceTabId: sourceTabId, title: url.host ?? "New Tab", url: url, select: false)
             }
@@ -35,17 +69,21 @@ extension BrowserState {
             return
         }
 
-        let allowedSchemes: Set<String> = [
-            "http", "https", "about", "lotus", "blob", "data", "javascript",
-            "webkit-extension", "chrome-extension"
-        ]
-        if let scheme = url.scheme?.lowercased(), !allowedSchemes.contains(scheme) {
-            NSWorkspace.shared.open(url)
-            decisionHandler(.cancel)
-            return
-        }
-
         decisionHandler(.allow)
+    }
+
+    private func presentExternalURLConfirmation(for url: URL, from webView: WKWebView) {
+        guard let window = webView.window ?? NSApp.keyWindow else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Open External Application?"
+        alert.informativeText = "This link wants to open \(url.absoluteString) outside Lotus."
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
@@ -72,24 +110,53 @@ extension BrowserState {
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         let sourceTabId = webViewStore.first(where: { $0.value === webView })?.key ?? selectedTabId
-        let targetURL = navigationAction.request.url
+        let sourceURL = webView.url ?? tab(for: sourceTabId)?.url
 
-        WebViewFactory.applySharedPreferences(to: configuration)
-
-        let isCmdPressed = navigationAction.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.command)
-        let newTab: TabItem
-        if isCmdPressed {
-            newTab = openTabFromCmdClick(sourceTabId: sourceTabId, title: targetURL?.host ?? "New Tab", url: targetURL, select: true)
-        } else {
-            newTab = addTabBelow(currentTabId: sourceTabId, title: targetURL?.host ?? "New Tab", url: targetURL, select: true)
+        // If strict popup & link blocking is active on this page, silently block all popup window attempts
+        if ContentBlockerService.shared.isStrictPopupBlockingActive(for: sourceURL) {
+            return nil
         }
 
-        let newWebView = WebViewFactory.makeWebView(configuration: configuration, delegate: self)
-        webViewStore[newTab.id] = newWebView
+        let targetURL = navigationAction.request.url
 
-        setupObservers(for: newTab.id, webView: newWebView)
+        let isCmdPressed = navigationAction.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.command)
+        if isCmdPressed {
+            WebViewFactory.configurePopup(configuration)
+            let newTab = openTabFromCmdClick(sourceTabId: sourceTabId, title: targetURL?.host ?? "New Tab", url: targetURL, select: true)
+            let newWebView = WebViewFactory.makeWebView(configuration: configuration, delegate: self)
+            webViewStore[newTab.id] = newWebView
+            setupObservers(for: newTab.id, webView: newWebView)
+            return newWebView
+        }
 
-        return newWebView
+        // Popup confirmation prompt for automated/script popups and new window requests
+        let sourceHost = sourceURL.flatMap { DomainNormalizer.normalize(url: $0) } ?? "Current Page"
+        let targetHost = targetURL.flatMap { DomainNormalizer.normalize(url: $0) } ?? (targetURL?.absoluteString ?? "New Tab")
+
+        DispatchQueue.main.async { [weak self] in
+            withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
+                self?.pendingPopupRequest = PopupConfirmationRequest(
+                    sourceTabId: sourceTabId,
+                    sourceHost: sourceHost,
+                    targetURL: targetURL,
+                    targetHost: targetHost
+                )
+            }
+        }
+
+        return nil
+    }
+
+    func confirmOpenPopup() {
+        guard let req = pendingPopupRequest else { return }
+        pendingPopupRequest = nil
+        if let targetURL = req.targetURL {
+            addTabBelow(currentTabId: req.sourceTabId, title: targetURL.host ?? "New Tab", url: targetURL, select: true)
+        }
+    }
+
+    func cancelOpenPopup() {
+        pendingPopupRequest = nil
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -97,12 +164,7 @@ extension BrowserState {
     }
 
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
-            if let trust = challenge.protectionSpace.serverTrust {
-                completionHandler(.useCredential, URLCredential(trust: trust))
-                return
-            }
-        }
+        // Let WebKit and the system trust store validate server certificates.
         completionHandler(.performDefaultHandling, nil)
     }
 
@@ -112,18 +174,22 @@ extension BrowserState {
             return
         }
         DispatchQueue.main.async { [weak self] in
-            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key,
-               self?.selectedTabId == tabId {
-                self?.isLoading = false
+            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key {
+                self?.tabLoadingStates[tabId] = false
+                if self?.selectedTabId == tabId {
+                    self?.isLoading = false
+                }
             }
         }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         DispatchQueue.main.async { [weak self] in
-            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key,
-               self?.selectedTabId == tabId {
-                self?.isLoading = false
+            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key {
+                self?.tabLoadingStates[tabId] = false
+                if self?.selectedTabId == tabId {
+                    self?.isLoading = false
+                }
             }
         }
     }
@@ -139,11 +205,11 @@ extension BrowserState {
     }
 
     func isLoading(for tabId: UUID) -> Bool {
-        webViewStore[tabId]?.isLoading ?? false
+        tabLoadingStates[tabId] ?? webViewStore[tabId]?.isLoading ?? false
     }
 
     func estimatedProgress(for tabId: UUID) -> Double {
-        webViewStore[tabId]?.estimatedProgress ?? 0.0
+        tabEstimatedProgress[tabId] ?? webViewStore[tabId]?.estimatedProgress ?? 0.0
     }
 
     // MARK: - Navigation Actions
@@ -174,6 +240,7 @@ extension BrowserState {
         let targetId = tabId ?? selectedTabId
         let wv = getWebView(for: targetId)
         wv.stopLoading()
+        tabLoadingStates[targetId] = false
         if selectedTabId == targetId {
             isLoading = false
         }
@@ -221,6 +288,12 @@ extension BrowserState {
             return addTabBelow(currentTabId: sourceTabId, title: title, url: url, select: select)
         }
 
+        // Pinned tabs cannot belong to folders. Keep the source pinned and
+        // open its child as a regular unpinned tab instead of grouping them.
+        if sourceTab.isPinned {
+            return addTabBelow(currentTabId: sourceTabId, title: title, url: url, select: select)
+        }
+
         // If the source tab is not in a folder, create a new tab group with it
         let groupName: String
         let trimmedTitle = sourceTab.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -253,6 +326,8 @@ extension BrowserState {
         let wv = getWebView(for: selectedTabId)
         self.canGoBack = wv.canGoBack
         self.canGoForward = wv.canGoForward
+        self.tabLoadingStates[selectedTabId] = wv.isLoading
+        self.tabEstimatedProgress[selectedTabId] = wv.estimatedProgress
         self.isLoading = wv.isLoading
         self.estimatedProgress = wv.estimatedProgress
         // Internal pages always present with the system appearance, even if

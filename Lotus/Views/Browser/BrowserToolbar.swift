@@ -25,7 +25,13 @@ struct BrowserToolbar: View {
     @State private var isSwitchingTabs: Bool = false
     @Binding var isDownloadsPopoverPresented: Bool
     @State private var isCatchingDownload: Bool = false
+    @State private var showDownloadSuccessRing: Bool = false
+    @State private var downloadRingScale: CGFloat = 0.85
+    @State private var downloadRingOpacity: Double = 0.0
     @State private var isZoomIndicatorVisible: Bool = false
+    @State private var isBloomActive: Bool = false
+    @State private var bloomScale: CGFloat = 0.6
+    @State private var bloomOpacity: Double = 0.0
 
     private var activeTabId: UUID {
         tabId ?? browserState.selectedTabId
@@ -62,6 +68,25 @@ struct BrowserToolbar: View {
 
     private var currentZoomLevel: CGFloat {
         browserState.zoomLevel(for: activeTabId)
+    }
+
+    private var clampedDownloadProgress: CGFloat {
+        CGFloat(max(0.08, min(1.0, browserState.overallDownloadProgress)))
+    }
+
+    private var hairlineAccentColor: Color {
+        let url = browserState.url(for: activeTabId)
+        if let host = url?.host?.lowercased(), host.contains("apple.com") {
+            return colorScheme == .dark ? Color.white : Color.black
+        }
+        if let faviconURL = browserState.tab(for: activeTabId)?.faviconURL,
+           let extracted = FaviconColorExtractor.shared.color(for: faviconURL) {
+            return extracted
+        }
+        if let theme = browserState.themeColor(for: activeTabId) {
+            return theme
+        }
+        return Color(nsColor: .controlAccentColor)
     }
 
     var body: some View {
@@ -143,17 +168,7 @@ struct BrowserToolbar: View {
 
             ZStack(alignment: .trailing) {
                 ZStack(alignment: .leading) {
-                    if let feedback = urlCopyFeedback {
-                        URLCopyFeedbackToast(feedback: feedback, theme: theme)
-                            .id(feedback.id)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                                    removal: .move(edge: .top).combined(with: .opacity)
-                                )
-                            )
-                            .allowsHitTesting(false)
-                    } else if !isEditingOrHovering, let host = prettifiedHost {
+                    if !isEditingOrHovering, let host = prettifiedHost {
                         HStack(spacing: 4) {
                             Text(host)
                                 .font(.system(size: 13, weight: .regular))
@@ -174,6 +189,7 @@ struct BrowserToolbar: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .padding(.trailing, currentZoomLevel != 1.0 ? 54 : 0)
+                        .opacity(urlCopyFeedback != nil ? 0 : 1)
                         .allowsHitTesting(false)
                     }
 
@@ -191,15 +207,26 @@ struct BrowserToolbar: View {
                     .padding(.vertical, 5)
                     .padding(.trailing, currentZoomLevel != 1.0 ? 54 : 0)
                     .opacity((!isEditingOrHovering && prettifiedHost != nil) || urlCopyFeedback != nil ? 0 : 1)
-                    // Editing happens in the command palette now; the field is
-                    // display-only.
                     .allowsHitTesting(false)
                     .onKeyPress(.escape) {
                         syncInputText()
                         isInputFocused = false
                         return .handled
                     }
+
+                    if let feedback = urlCopyFeedback {
+                        URLCopyFeedbackToast(feedback: feedback, theme: theme, accentColor: hairlineAccentColor)
+                            .id(feedback.id)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .offset(y: 12).combined(with: .opacity),
+                                    removal: .offset(y: -12).combined(with: .opacity)
+                                )
+                            )
+                            .allowsHitTesting(false)
+                    }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contentShape(Rectangle())
                 .onTapGesture {
                     browserState.openCommandPaletteForCurrentTab()
@@ -224,12 +251,32 @@ struct BrowserToolbar: View {
                     )
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .background(
                 ZStack(alignment: .bottomLeading) {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(theme.inputBackground(isFocused: isInputFocused, isHovered: isInputHovered))
                         .animation(.easeInOut(duration: 0.15), value: isInputHovered)
                         .animation(.easeInOut(duration: 0.15), value: isInputFocused)
+
+                    // Delicate radial tint bloom matching the site's theme color, radiating from the left
+                    if isBloomActive {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(
+                                RadialGradient(
+                                    gradient: Gradient(colors: [
+                                        hairlineAccentColor.opacity(0.42),
+                                        hairlineAccentColor.opacity(0.18),
+                                        Color.clear
+                                    ]),
+                                    center: .leading,
+                                    startRadius: 0,
+                                    endRadius: 280
+                                )
+                            )
+                            .scaleEffect(x: bloomScale, y: 1.0, anchor: .leading)
+                            .opacity(bloomOpacity)
+                    }
 
                     HairlineProgressIndicator(browserState: browserState, tabId: activeTabId)
                 }
@@ -252,15 +299,16 @@ struct BrowserToolbar: View {
             } label: {
                 ZStack {
                     if browserState.hasActiveDownloads {
+                        let activeColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : hairlineAccentColor
                         ZStack {
                             Circle()
-                                .stroke(Color.accentColor.opacity(0.25), lineWidth: 2.0)
+                                .stroke(activeColor.opacity(0.25), lineWidth: 2.0)
                                 .frame(width: 15, height: 15)
 
                             Circle()
-                                .trim(from: 0.0, to: CGFloat(max(0.08, min(1.0, browserState.overallDownloadProgress))))
+                                .trim(from: 0.0, to: clampedDownloadProgress)
                                 .stroke(
-                                    Color.accentColor,
+                                    activeColor,
                                     style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
                                 )
                                 .rotationEffect(.degrees(-90))
@@ -269,7 +317,7 @@ struct BrowserToolbar: View {
 
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(Color.accentColor)
+                                .foregroundColor(activeColor)
                         }
                         .frame(width: 16, height: 16)
                     } else {
@@ -277,16 +325,42 @@ struct BrowserToolbar: View {
                             .font(.system(size: 13, weight: .regular))
                     }
                 }
-                .scaleEffect(isCatchingDownload ? 1.20 : 1.0)
-                .animation(.spring(response: 0.32, dampingFraction: 0.64), value: isCatchingDownload)
+                .scaleEffect(isCatchingDownload ? 1.18 : 1.0)
+                .animation(.spring(response: 0.18, dampingFraction: 0.44), value: isCatchingDownload)
+                .overlay(
+                    Group {
+                        if showDownloadSuccessRing {
+                            Circle()
+                                .stroke(hairlineAccentColor.opacity(0.90), lineWidth: 1.5)
+                                .scaleEffect(downloadRingScale)
+                                .opacity(downloadRingOpacity)
+                        }
+                    }
+                )
             }
             .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
             .focusable(false)
             .help("Downloads")
             .onChange(of: browserState.downloadCatchPulseTrigger) { _, _ in
-                isCatchingDownload = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
-                    isCatchingDownload = false
+                // 1. Double heartbeat spring bounce: 1.0 -> 1.18 -> 1.0
+                showDownloadSuccessRing = true
+                downloadRingScale = 0.80
+                downloadRingOpacity = 0.90
+
+                withAnimation(.spring(response: 0.16, dampingFraction: 0.40)) {
+                    isCatchingDownload = true
+                }
+                withAnimation(.easeOut(duration: 0.55)) {
+                    downloadRingScale = 1.85
+                    downloadRingOpacity = 0.0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.58)) {
+                        isCatchingDownload = false
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.60) {
+                    showDownloadSuccessRing = false
                 }
             }
             .popover(isPresented: $isDownloadsPopoverPresented, arrowEdge: .bottom) {
@@ -294,6 +368,8 @@ struct BrowserToolbar: View {
                     isDownloadsPopoverPresented = false
                 }
             }
+
+            ShieldButton(browserState: browserState, tabId: activeTabId, theme: theme)
 
             Menu {
                 Button {
@@ -341,7 +417,17 @@ struct BrowserToolbar: View {
                 } label: {
                     Label("Copy Address", systemImage: "link")
                 }
-                .disabled(currentURL == nil)
+                .disabled(currentURL == nil || currentURL?.isLotusPage == true)
+
+                Button {
+                    browserState.toggleShield(for: activeTabId)
+                } label: {
+                    Label(
+                        browserState.isShieldActive(for: activeTabId) ? "Pause Shields on this Site" : "Resume Shields on this Site",
+                        systemImage: browserState.isShieldActive(for: activeTabId) ? "shield.slash" : "shield.checkered"
+                    )
+                }
+                .disabled(currentURL?.isLotusPage != false)
 
                 Button {
                     browserState.printPage(for: activeTabId)
@@ -440,6 +526,27 @@ struct BrowserToolbar: View {
                 }
             }
         }
+        .onChange(of: urlCopyFeedback) { _, feedback in
+            if feedback?.outcome == .copied {
+                triggerRadialBloom()
+            }
+        }
+        .onChange(of: browserState.themeBloomTrigger[activeTabId]) { _, _ in
+            triggerRadialBloom()
+        }
+    }
+
+    private func triggerRadialBloom() {
+        bloomScale = 0.6
+        bloomOpacity = 0.85
+        isBloomActive = true
+        withAnimation(.easeOut(duration: 0.68)) {
+            bloomScale = 1.65
+            bloomOpacity = 0.0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.72) {
+            isBloomActive = false
+        }
     }
 
     private var isEditingOrHovering: Bool {
@@ -452,7 +559,11 @@ struct BrowserToolbar: View {
     }
 
     private var prettifiedHost: String? {
-        guard let url = currentURL, !url.isLotusPage, let host = url.host, !host.isEmpty else { return nil }
+        guard let url = currentURL else { return nil }
+        if let lotusTitle = url.lotusPageTitle {
+            return lotusTitle
+        }
+        guard let host = url.host, !host.isEmpty else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
@@ -508,6 +619,7 @@ struct BrowserToolbar: View {
 private struct URLCopyFeedbackToast: View {
     let feedback: URLCopyFeedback
     let theme: BrowserChromeTheme
+    let accentColor: Color
 
     var body: some View {
         HStack(spacing: 6) {
@@ -517,8 +629,9 @@ private struct URLCopyFeedbackToast: View {
             Text(feedback.message)
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .foregroundColor(feedback.outcome == .copied ? theme.foregroundPrimary : .red)
+        .foregroundColor(feedback.outcome == .copied ? accentColor : .red)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
     }

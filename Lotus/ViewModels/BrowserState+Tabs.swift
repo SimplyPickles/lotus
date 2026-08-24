@@ -201,7 +201,7 @@ extension BrowserState {
     func selectTabAtIndex(_ index: Int) {
         let list = orderedTabs
         guard !list.isEmpty else { return }
-        if index == 8 && list.count <= 9 {
+        if index == 8 {
             if let last = list.last {
                 selectTab(last.id)
             }
@@ -326,7 +326,8 @@ extension BrowserState {
                 newTab.folderId = folderId
                 tabs.insert(newTab, at: firstMember)
             } else {
-                tabs.insert(newTab, at: 0)
+                let insertionIndex = tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
+                tabs.insert(newTab, at: insertionIndex)
             }
             selectTab(newTab.id)
         }
@@ -334,7 +335,41 @@ extension BrowserState {
 
     @discardableResult
     func createTab(title: String = "New Tab", url: URL) -> TabItem {
-        addTabBelow(title: title, url: url, select: true)
+        let tabPosition = UserDefaults.standard.string(forKey: "lotus.browser.newTabPosition") ?? "below"
+        let newTab: TabItem
+        if tabPosition == "end" {
+            newTab = addTabAtEnd(title: title, url: url, select: true)
+        } else {
+            newTab = addTabBelow(title: title, url: url, select: true)
+        }
+        
+        let shouldAutoCloseBlank = UserDefaults.standard.bool(forKey: "lotus.browser.autoCloseBlankTabs")
+        if shouldAutoCloseBlank {
+            autoCloseBlankTabsIfNeeded(except: newTab.id)
+        }
+        
+        return newTab
+    }
+
+    @discardableResult
+    func addTabAtEnd(title: String = "New Tab", url: URL? = nil, select: Bool = true) -> TabItem {
+        var newTab = TabItem(title: title, url: url)
+        withAnimation(Self.tabMutationAnimation) {
+            tabs.append(newTab)
+            if select {
+                selectTab(newTab.id)
+            }
+        }
+        return newTab
+    }
+
+    private func autoCloseBlankTabsIfNeeded(except keepId: UUID) {
+        let blankTabs = tabs.filter { tab in
+            tab.id != keepId && !tab.isPinned && (tab.url == nil || tab.url?.absoluteString == "about:blank")
+        }
+        for blank in blankTabs {
+            removeTab(id: blank.id)
+        }
     }
 
     @discardableResult
@@ -349,10 +384,14 @@ extension BrowserState {
                let firstMember = tabs.firstIndex(where: { $0.folderId == folderId }) {
                 newTab.folderId = folderId
                 tabs.insert(newTab, at: firstMember)
+            } else if tab(for: targetId)?.isPinned == true {
+                let insertionIndex = tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
+                tabs.insert(newTab, at: insertionIndex)
             } else if let currentIndex = tabs.firstIndex(where: { $0.id == targetId }) {
                 tabs.insert(newTab, at: currentIndex + 1)
             } else {
-                tabs.insert(newTab, at: 0)
+                let insertionIndex = tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
+                tabs.insert(newTab, at: insertionIndex)
             }
 
             if select {
@@ -375,6 +414,7 @@ extension BrowserState {
         let currentFolder = closingTab.folderId.flatMap { folder(for: $0) }
         let folderName = currentFolder?.name
         let folderColor = currentFolder?.color
+        let folderNameOrigin = currentFolder?.nameOrigin
 
         let record = ClosedTabRecord(
             id: closingTab.id,
@@ -385,6 +425,7 @@ extension BrowserState {
             folderId: closingTab.folderId,
             folderName: folderName,
             folderColor: folderColor,
+            folderNameOrigin: folderNameOrigin,
             splitPartnerId: partnerId
         )
         recentlyClosed.append(record)
@@ -397,6 +438,7 @@ extension BrowserState {
         // Automatically delete folder if it has no remaining member tabs
         if let folderId = closingTab.folderId {
             if !tabs.contains(where: { $0.folderId == folderId }) {
+                clearAutomaticFolderNameState(for: folderId)
                 folders.removeAll(where: { $0.id == folderId })
             }
         }
@@ -407,7 +449,11 @@ extension BrowserState {
         }
         let closingWebView = webViewStore.removeValue(forKey: id)
         observers.removeValue(forKey: id)
+        tabLoadingStates.removeValue(forKey: id)
+        tabEstimatedProgress.removeValue(forKey: id)
         themeColors.removeValue(forKey: id)
+        pageLoadShimmerTrigger.removeValue(forKey: id)
+        initialShimmerPlayedTabs.remove(id)
         autoPiPTabs.remove(id)
 
         if let groupIndex = splitGroups.firstIndex(where: { $0.contains(id) }) {
@@ -463,6 +509,7 @@ extension BrowserState {
                 closingWebView.stopLoading()
                 closingWebView.navigationDelegate = nil
                 closingWebView.uiDelegate = nil
+                closingWebView.configuration.userContentController.removeAllScriptMessageHandlers()
                 closingWebView.load(URLRequest(url: URL(string: "about:blank")!))
                 closingWebView.removeFromSuperview()
             }
@@ -487,7 +534,8 @@ extension BrowserState {
                 let restoredFolder = TabFolder(
                     id: folderId,
                     name: record.folderName ?? "New Folder",
-                    color: record.folderColor ?? .blue
+                    color: record.folderColor ?? .blue,
+                    nameOrigin: record.folderNameOrigin ?? .manual
                 )
                 folders.append(restoredFolder)
             }
@@ -501,7 +549,19 @@ extension BrowserState {
            let lastMember = tabs.lastIndex(where: { $0.folderId == folderId }) {
             insertAt = lastMember + 1
         } else {
-            insertAt = min(record.insertionIndex, tabs.count)
+            let minUnpinned = tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
+            var target = newTab.isPinned
+                ? min(record.insertionIndex, minUnpinned)
+                : min(max(record.insertionIndex, minUnpinned), tabs.count)
+            if !newTab.isPinned, target > 0 {
+                let prevFolderId = tabs[target - 1].folderId
+                if let prevFolderId,
+                   let lastMember = tabs.lastIndex(where: { $0.folderId == prevFolderId }),
+                   lastMember >= target {
+                    target = lastMember + 1
+                }
+            }
+            insertAt = target
         }
 
         withAnimation(Self.tabMutationAnimation) {
@@ -535,6 +595,8 @@ extension BrowserState {
     // MARK: - Sidebar
 
     func toggleSidebar() {
-        isSidebarVisible.toggle()
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+            isSidebarVisible.toggle()
+        }
     }
 }

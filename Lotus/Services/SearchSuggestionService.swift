@@ -11,12 +11,19 @@ import Combine
 struct SearchSuggestion: Identifiable, Equatable, Hashable {
     let id: String
     let text: String
+    let title: String?
+    let subtitle: String?
     let isURL: Bool
     let isInternalPage: Bool
+    let isHistory: Bool
     let systemImage: String
     let badgeText: String?
+    let faviconURL: URL?
 
     var displayText: String {
+        if let title = title, !title.isEmpty {
+            return title
+        }
         switch text.lowercased() {
         case "lotus://history": return "History"
         case "lotus://downloads": return "Downloads"
@@ -27,17 +34,27 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
 
     init(
         text: String,
+        title: String? = nil,
+        subtitle: String? = nil,
         isURL: Bool = false,
         isInternalPage: Bool = false,
+        isHistory: Bool = false,
         systemImage: String? = nil,
-        badgeText: String? = nil
+        badgeText: String? = nil,
+        faviconURL: URL? = nil
     ) {
-        self.id = text
+        self.id = (isHistory ? "hist-" : "") + text + (title ?? "")
         self.text = text
+        self.title = title
+        self.subtitle = subtitle
         self.isURL = isURL
         self.isInternalPage = isInternalPage
+        self.isHistory = isHistory
+        self.faviconURL = faviconURL
         if let systemImage {
             self.systemImage = systemImage
+        } else if isHistory {
+            self.systemImage = "clock"
         } else if isInternalPage {
             self.systemImage = "clock"
         } else if isURL {
@@ -47,6 +64,8 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
         }
         if let badgeText {
             self.badgeText = badgeText
+        } else if isHistory {
+            self.badgeText = "History"
         } else if isInternalPage {
             self.badgeText = "Lotus Page"
         } else if isURL {
@@ -62,9 +81,15 @@ final class SearchSuggestionService: ObservableObject {
     @Published var suggestions: [SearchSuggestion] = []
     @Published var isLoading: Bool = false
 
+    private struct CacheKey: Hashable {
+        let query: String
+        let searchEngine: URLInputResolver.SearchEngine
+        let allowsRemoteSuggestions: Bool
+    }
+
     private var currentTask: Task<Void, Never>?
     private let session: URLSession
-    private var cache: [String: [SearchSuggestion]] = [:]
+    private var cache: [CacheKey: [SearchSuggestion]] = [:]
 
     private static let commonDomains: [String] = [
         "google.com", "youtube.com", "github.com", "reddit.com", "twitter.com",
@@ -87,7 +112,7 @@ final class SearchSuggestionService: ObservableObject {
         self.session = URLSession(configuration: config)
     }
 
-    func update(for query: String) {
+    func update(for query: String, history: [HistoryItem] = [], allowsRemoteSuggestions: Bool = true) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         currentTask?.cancel()
@@ -99,9 +124,15 @@ final class SearchSuggestionService: ObservableObject {
         }
 
         let queryLower = trimmed.lowercased()
+        let searchEngine = URLInputResolver.selectedSearchEngine
+        let cacheKey = CacheKey(
+            query: queryLower,
+            searchEngine: searchEngine,
+            allowsRemoteSuggestions: allowsRemoteSuggestions
+        )
 
         // 1. Check in-memory cache for instant hit
-        if let cached = cache[queryLower], !cached.isEmpty {
+        if let cached = cache[cacheKey], !cached.isEmpty {
             self.suggestions = cached
             self.isLoading = false
             return
@@ -110,20 +141,43 @@ final class SearchSuggestionService: ObservableObject {
         // 2. Keep the current list on screen while fetching — replacing it
         //    with the (usually shorter) local matches on every keystroke made
         //    the dropdown flicker. Local matches only seed an empty list.
-        let localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed)
+        let localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed, history: history)
         if self.suggestions.isEmpty {
             self.suggestions = localMatches
         }
         self.isLoading = true
 
-        // 3. Fetch online completions immediately with zero debounce delay
+        // Live completions are an optional enhancement. Never substitute a
+        // different provider: the non-Google engines currently have no
+        // configured completion endpoint, so they retain local suggestions.
+        guard allowsRemoteSuggestions, searchEngine == .google else {
+            self.suggestions = localMatches
+            self.isLoading = false
+            return
+        }
+
+        // 3. Debounce remote completions so brief keystrokes never each become
+        //    a network request.
         currentTask = Task { [weak self] in
             guard let self = self else { return }
 
-            let results = await self.fetchSuggestions(for: trimmed, queryLower: queryLower, localMatches: localMatches)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            guard URLInputResolver.selectedSearchEngine == searchEngine else {
+                self.suggestions = localMatches
+                self.isLoading = false
+                return
+            }
+
+            let results = await self.fetchSuggestions(
+                for: trimmed,
+                queryLower: queryLower,
+                localMatches: localMatches,
+                searchEngine: searchEngine
+            )
             guard !Task.isCancelled else { return }
 
-            self.cache[queryLower] = results
+            self.cache[cacheKey] = results
             self.suggestions = results
             self.isLoading = false
         }
@@ -195,9 +249,28 @@ final class SearchSuggestionService: ObservableObject {
         return nil
     }
 
-    private func getLocalSuggestions(for queryLower: String, rawQuery: String) -> [SearchSuggestion] {
+    private func normalizeKey(_ urlString: String) -> String {
+        var str = urlString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if str.hasPrefix("https://") {
+            str = String(str.dropFirst(8))
+        } else if str.hasPrefix("http://") {
+            str = String(str.dropFirst(7))
+        }
+        if str.hasPrefix("www.") {
+            str = String(str.dropFirst(4))
+        }
+        while str.hasSuffix("/") {
+            str = String(str.dropLast())
+        }
+        return str
+    }
+
+    private func getLocalSuggestions(for queryLower: String, rawQuery: String, history: [HistoryItem]) -> [SearchSuggestion] {
         var results: [SearchSuggestion] = []
         var seen = Set<String>()
+        var seenNormalized = Set<String>()
+        var seenDisplayKeys = Set<String>()
+        var seenHostsWithGenericTitle = Set<String>()
 
         // 1. Check internal Lotus pages (e.g. History)
         let internalPages: [(aliases: [String], text: String, title: String, icon: String)] = [
@@ -216,16 +289,89 @@ final class SearchSuggestionService: ObservableObject {
                     badgeText: "Lotus Page"
                 ))
                 seen.insert(page.text.lowercased())
+                seenNormalized.insert(normalizeKey(page.text))
+                seenDisplayKeys.insert(page.title.lowercased())
             }
         }
 
-        // 2. Check common domains
+        // 2. Check browsing history matches (reverse chronological for recency)
+        var historyMatches: [SearchSuggestion] = []
+
+        for item in history.reversed() {
+            let itemUrlString = item.url.absoluteString
+            let itemUrlLower = itemUrlString.lowercased()
+            let normalizedURL = normalizeKey(itemUrlString)
+            guard !normalizedURL.isEmpty else { continue }
+
+            let titleLower = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let hostLower = (item.displayHost ?? item.url.host ?? "").lowercased()
+            let isGenericTitle = titleLower.isEmpty || titleLower == hostLower || titleLower == normalizedURL
+
+            // If this item has no specific page title (just the hostname), only allow ONE entry per host
+            if isGenericTitle {
+                if seenHostsWithGenericTitle.contains(hostLower) {
+                    continue
+                }
+            }
+
+            let displayTitle = isGenericTitle ? (item.displayHost ?? hostLower) : item.title
+            let subtitle = item.displayHost ?? hostLower
+
+            let displayKey = "\(displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())|\(subtitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+            let titleOnlyKey = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+            guard !seenDisplayKeys.contains(displayKey),
+                  !seenDisplayKeys.contains(titleOnlyKey),
+                  !seenNormalized.contains(normalizedURL),
+                  !seen.contains(itemUrlLower) else {
+                continue
+            }
+
+            let matchesTitle = !titleLower.isEmpty && titleLower.contains(queryLower)
+            let matchesHost = !hostLower.isEmpty && hostLower.contains(queryLower)
+            let matchesURL = itemUrlLower.contains(queryLower) || normalizedURL.contains(queryLower)
+
+            if matchesTitle || matchesHost || matchesURL {
+                seenDisplayKeys.insert(displayKey)
+                seenDisplayKeys.insert(titleOnlyKey)
+                if isGenericTitle {
+                    seenHostsWithGenericTitle.insert(hostLower)
+                }
+                seenNormalized.insert(normalizedURL)
+                seen.insert(itemUrlLower)
+                seen.insert(normalizedURL)
+                if !hostLower.isEmpty {
+                    seen.insert(hostLower)
+                    seenNormalized.insert(normalizeKey(hostLower))
+                }
+
+                historyMatches.append(SearchSuggestion(
+                    text: itemUrlString,
+                    title: displayTitle,
+                    subtitle: subtitle,
+                    isURL: true,
+                    isHistory: true,
+                    systemImage: "clock",
+                    badgeText: "History",
+                    faviconURL: item.faviconURL
+                ))
+
+                if historyMatches.count >= 4 { break }
+            }
+        }
+        results.append(contentsOf: historyMatches)
+
+        // 3. Check common domains
         for domain in Self.commonDomains {
+            let normDomain = normalizeKey(domain)
+            let domainLower = domain.lowercased()
             if domain.hasPrefix(queryLower) && domain != queryLower {
-                if !seen.contains(domain) {
+                if !seen.contains(domainLower) && !seenNormalized.contains(normDomain) && !seenDisplayKeys.contains(domainLower) {
                     results.append(SearchSuggestion(text: domain, isURL: true))
-                    seen.insert(domain)
-                    if results.count >= 3 { break }
+                    seen.insert(domainLower)
+                    seenNormalized.insert(normDomain)
+                    seenDisplayKeys.insert(domainLower)
+                    if results.count >= 6 { break }
                 }
             }
         }
@@ -233,19 +379,41 @@ final class SearchSuggestionService: ObservableObject {
         let hasTLD = Self.commonTLDs.contains { queryLower.hasSuffix($0) || queryLower.contains($0 + "/") }
         let isDirectURL = queryLower.hasPrefix("http://") || queryLower.hasPrefix("https://") || queryLower.hasPrefix("lotus://") || hasTLD
 
-        if isDirectURL && !seen.contains(queryLower) {
+        let normRaw = normalizeKey(rawQuery)
+        let rawLower = rawQuery.lowercased()
+        if isDirectURL && !seen.contains(rawLower) && !seenNormalized.contains(normRaw) && !seenDisplayKeys.contains(rawLower) {
             results.append(SearchSuggestion(text: rawQuery, isURL: true))
+            seen.insert(rawLower)
+            seenNormalized.insert(normRaw)
+            seenDisplayKeys.insert(rawLower)
         }
 
         return results
     }
 
-    private func fetchSuggestions(for query: String, queryLower: String, localMatches: [SearchSuggestion]) async -> [SearchSuggestion] {
+    private func fetchSuggestions(
+        for query: String,
+        queryLower: String,
+        localMatches: [SearchSuggestion],
+        searchEngine: URLInputResolver.SearchEngine
+    ) async -> [SearchSuggestion] {
         var results: [SearchSuggestion] = localMatches
         var seen = Set<String>(localMatches.map { $0.text.lowercased() })
+        for match in localMatches {
+            seen.insert(normalizeKey(match.text))
+            if let title = match.title {
+                seen.insert(title.lowercased())
+            }
+        }
 
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://suggestqueries.google.com/complete/search?client=firefox&q=\(encoded)") else {
+        guard searchEngine == .google else { return results }
+
+        var components = URLComponents(string: "https://suggestqueries.google.com/complete/search")
+        components?.queryItems = [
+            URLQueryItem(name: "client", value: "firefox"),
+            URLQueryItem(name: "q", value: query)
+        ]
+        guard let url = components?.url else {
             return results
         }
 
@@ -268,15 +436,17 @@ final class SearchSuggestionService: ObservableObject {
                 let trimmedItem = item.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmedItem.isEmpty else { continue }
                 let lowerItem = trimmedItem.lowercased()
-                guard !seen.contains(lowerItem) else { continue }
+                let normItem = normalizeKey(trimmedItem)
+                guard !seen.contains(lowerItem), !seen.contains(normItem) else { continue }
                 seen.insert(lowerItem)
+                seen.insert(normItem)
 
                 let isItemURL = lowerItem.hasPrefix("http://") ||
                                 lowerItem.hasPrefix("https://") ||
                                 Self.commonTLDs.contains { lowerItem.hasSuffix($0) }
 
                 results.append(SearchSuggestion(text: trimmedItem, isURL: isItemURL))
-                if results.count >= 8 { break }
+                if results.count >= 6 { break }
             }
         } catch {
             // Silently retain local matches on error

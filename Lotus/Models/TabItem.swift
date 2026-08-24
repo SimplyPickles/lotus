@@ -15,21 +15,22 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
     /// Sidebar folder this tab belongs to, if any. Pinned tabs never carry a
     /// folder (folders cannot be pinned). Optional so old sessions decode.
     var folderId: UUID?
+    /// Dynamically discovered high-res favicon URL extracted from the page DOM.
+    var customFaviconURL: URL?
 
-    init(id: UUID = UUID(), title: String, url: URL? = nil, isPinned: Bool = false, folderId: UUID? = nil) {
+    init(id: UUID = UUID(), title: String, url: URL? = nil, isPinned: Bool = false, folderId: UUID? = nil, customFaviconURL: URL? = nil) {
         self.id = id
         self.title = title
         self.url = url
         self.isPinned = isPinned
         self.folderId = folderId
+        self.customFaviconURL = customFaviconURL
     }
 
     var faviconURL: URL? {
         if url?.absoluteString.starts(with: "lotus://") == true { return nil }
+        if let custom = customFaviconURL { return custom }
         guard let host = url?.host, !host.isEmpty else { return nil }
-        // Fetch the favicon directly from the site to avoid leaking visited hosts
-        // to a third-party proxy; the extractor falls back to the proxy only if
-        // the direct request fails.
         var components = URLComponents()
         components.scheme = "https"
         components.host = host

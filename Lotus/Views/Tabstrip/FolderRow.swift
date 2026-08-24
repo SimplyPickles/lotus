@@ -32,19 +32,19 @@ struct FolderRow: View {
     }
 
     private var hoverFill: Color {
-        folder.color.color.opacity(colorScheme == .dark ? 0.16 : 0.12)
+        folder.color.color.opacity(colorScheme == .dark ? 0.20 : 0.24)
     }
 
     private var restingFill: Color {
-        folder.color.color.opacity(colorScheme == .dark ? 0.07 : 0.05)
+        folder.color.color.opacity(colorScheme == .dark ? 0.10 : 0.14)
     }
 
     private var borderStroke: Color {
-        folder.color.color.opacity(colorScheme == .dark ? 0.24 : 0.18)
+        folder.color.color.opacity(colorScheme == .dark ? 0.28 : 0.28)
     }
 
     private var headerTextColor: Color {
-        folder.color.color
+        colorScheme == .dark ? folder.color.color : folder.color.color
     }
 
     var body: some View {
@@ -109,6 +109,7 @@ struct FolderRow: View {
                 .stroke(borderStroke, lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture {
             guard !isRenaming else { return }
             onToggleCollapse()

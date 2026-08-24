@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+struct AutomaticFolderNameInput: Equatable, Sendable {
+    let memberIDs: [UUID]
+    let titles: [String]
+}
+
 extension BrowserState {
 
     // MARK: - Folder Accessors
@@ -30,11 +35,22 @@ extension BrowserState {
     }
 
     /// Creates a folder containing the given tabs (and their split partners, if
-    /// any) and returns it so callers can start inline rename.
+    /// any). New folders begin with a local title-derived fallback and are then
+    /// refined by the on-device name generator when available.
     @discardableResult
-    func createFolder(named name: String = "New Folder", with tabIds: [UUID], color: FolderColor? = nil) -> TabFolder {
+    func createFolder(
+        named name: String = "New Folder",
+        with tabIds: [UUID],
+        color: FolderColor? = nil,
+        nameOrigin: FolderNameOrigin = .automatic
+    ) -> TabFolder {
         let assignedColor = color ?? nextFolderColor()
-        let newFolder = TabFolder(name: name, color: assignedColor)
+        let effectiveOrigin: FolderNameOrigin = (nameOrigin == .automatic && !isAutoFolderNamesEnabled) ? .manual : nameOrigin
+        let newFolder = TabFolder(
+            name: initialFolderName(name, tabIds: tabIds, origin: effectiveOrigin),
+            color: assignedColor,
+            nameOrigin: effectiveOrigin
+        )
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
             folders.append(newFolder)
             moveTabs(tabIds, toFolder: newFolder.id)
@@ -43,8 +59,13 @@ extension BrowserState {
     }
 
     @discardableResult
-    func createFolder(named name: String = "New Folder", with tabId: UUID, color: FolderColor? = nil) -> TabFolder {
-        createFolder(named: name, with: [tabId], color: color)
+    func createFolder(
+        named name: String = "New Folder",
+        with tabId: UUID,
+        color: FolderColor? = nil,
+        nameOrigin: FolderNameOrigin = .automatic
+    ) -> TabFolder {
+        createFolder(named: name, with: [tabId], color: color, nameOrigin: nameOrigin)
     }
 
     func setFolderColor(id: UUID, to color: FolderColor) {
@@ -57,6 +78,8 @@ extension BrowserState {
     func renameFolder(id: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        clearAutomaticFolderNameState(for: id)
+        folders[index].nameOrigin = .manual
         folders[index].name = trimmed
     }
 
@@ -87,6 +110,10 @@ extension BrowserState {
     /// Removes folder metadata that no longer has any member tabs.
     func removeEmptyFolders() {
         let memberFolderIds = Set(tabs.compactMap(\.folderId))
+        let emptyFolderIDs = folders
+            .filter { !memberFolderIds.contains($0.id) }
+            .map(\.id)
+        emptyFolderIDs.forEach { clearAutomaticFolderNameState(for: $0) }
         folders.removeAll { !memberFolderIds.contains($0.id) }
     }
 
@@ -123,6 +150,7 @@ extension BrowserState {
     /// Deletes the folder but keeps its tabs, which become loose (ungrouped)
     /// in place.
     func deleteFolder(id: UUID) {
+        clearAutomaticFolderNameState(for: id)
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
             for index in tabs.indices where tabs[index].folderId == id {
                 tabs[index].folderId = nil
@@ -134,12 +162,157 @@ extension BrowserState {
     /// Closes every tab in the folder and automatically deletes the empty folder.
     func closeAllTabs(inFolder id: UUID) {
         let memberIds = folderTabs(id).map { $0.id }
+        clearAutomaticFolderNameState(for: id)
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
             for tabId in memberIds {
                 removeTab(id: tabId)
             }
             folders.removeAll(where: { $0.id == id })
         }
+    }
+
+    // MARK: - Automatic Naming
+
+    private static let automaticFolderNameDebounceNanoseconds: UInt64 = 2_500_000_000
+
+    /// Debounces names for auto-managed folders affected by tab-title or
+    /// membership changes. A manual name is never sent to or overwritten by
+    /// the model.
+    func scheduleAutomaticFolderNames(affectedBy previousTabs: [TabItem]) {
+        guard isAutoFolderNamesEnabled else { return }
+
+        let previousByID = Dictionary(uniqueKeysWithValues: previousTabs.map { ($0.id, $0) })
+        let currentByID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        let allIDs = Set(previousByID.keys).union(currentByID.keys)
+
+        var affectedFolderIDs = Set<UUID>()
+        for tabID in allIDs {
+            let previous = previousByID[tabID]
+            let current = currentByID[tabID]
+            guard previous?.title != current?.title || previous?.folderId != current?.folderId else {
+                continue
+            }
+            if let previousFolderID = previous?.folderId {
+                affectedFolderIDs.insert(previousFolderID)
+            }
+            if let currentFolderID = current?.folderId {
+                affectedFolderIDs.insert(currentFolderID)
+            }
+        }
+
+        affectedFolderIDs.forEach { scheduleAutomaticFolderName(for: $0) }
+    }
+
+    func cancelAutomaticFolderNameGeneration(for folderId: UUID) {
+        automaticFolderNameTasks[folderId]?.cancel()
+        automaticFolderNameTasks[folderId] = nil
+        automaticFolderNameGenerationIDs[folderId] = nil
+    }
+
+    func clearAutomaticFolderNameState(for folderId: UUID) {
+        cancelAutomaticFolderNameGeneration(for: folderId)
+        automaticFolderNameLastGeneratedInputs[folderId] = nil
+    }
+
+    private func scheduleAutomaticFolderName(for folderId: UUID) {
+        guard isAutoFolderNamesEnabled,
+              folder(for: folderId)?.nameOrigin == .automatic,
+              let input = automaticFolderNameInput(for: folderId) else {
+            cancelAutomaticFolderNameGeneration(for: folderId)
+            return
+        }
+
+        // Avoid re-running on-device generation if the input matches what was already generated
+        guard automaticFolderNameLastGeneratedInputs[folderId] != input else {
+            return
+        }
+
+        cancelAutomaticFolderNameGeneration(for: folderId)
+        let generationID = UUID()
+        automaticFolderNameGenerationIDs[folderId] = generationID
+
+        automaticFolderNameTasks[folderId] = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.automaticFolderNameDebounceNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+
+            let name = await FolderNameGenerator.suggestedName(for: input.titles)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                self?.finishAutomaticFolderNameGeneration(
+                    for: folderId,
+                    generationID: generationID,
+                    input: input,
+                    name: name
+                )
+            }
+        }
+    }
+
+    private func finishAutomaticFolderNameGeneration(
+        for folderId: UUID,
+        generationID: UUID,
+        input: AutomaticFolderNameInput,
+        name: String?
+    ) {
+        guard automaticFolderNameGenerationIDs[folderId] == generationID else { return }
+        automaticFolderNameTasks[folderId] = nil
+        automaticFolderNameGenerationIDs[folderId] = nil
+
+        guard let name,
+              let index = folders.firstIndex(where: { $0.id == folderId }),
+              folders[index].nameOrigin == .automatic,
+              automaticFolderNameInput(for: folderId) == input else {
+            return
+        }
+        automaticFolderNameLastGeneratedInputs[folderId] = input
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            folders[index].name = name
+        }
+    }
+
+    private func initialFolderName(_ requestedName: String, tabIds: [UUID], origin: FolderNameOrigin) -> String {
+        let trimmed = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard origin == .automatic, trimmed == "New Folder" else {
+            return trimmed.isEmpty ? "New Folder" : trimmed
+        }
+
+        let titles = tabIds.compactMap { tab(for: $0).flatMap(folderNameInputTitle) }
+        return FolderNameGenerator.fallbackName(for: titles) ?? "New Folder"
+    }
+
+    private func automaticFolderNameInput(for folderId: UUID) -> AutomaticFolderNameInput? {
+        // Folder names summarize membership rather than sidebar order. A
+        // stable order keeps an in-flight response valid when a person merely
+        // rearranges tabs within the same folder.
+        let members = folderTabs(folderId).sorted { $0.id.uuidString < $1.id.uuidString }
+        let titles = members.prefix(12).compactMap(folderNameInputTitle)
+        guard !titles.isEmpty else { return nil }
+        return AutomaticFolderNameInput(memberIDs: members.map(\.id), titles: titles)
+    }
+
+    private func folderNameInputTitle(for tab: TabItem) -> String? {
+        let trimmedTitle = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawTitle: String
+        if !trimmedTitle.isEmpty, trimmedTitle != "New Tab", trimmedTitle != "Lotus" {
+            rawTitle = trimmedTitle
+        } else if let host = tab.url?.host, !host.isEmpty {
+            rawTitle = host
+        } else {
+            return nil
+        }
+
+        let compactTitle = rawTitle
+            .components(separatedBy: .newlines)
+            .joined(separator: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard !compactTitle.isEmpty else { return nil }
+        return String(compactTitle.prefix(120))
     }
 
     // MARK: - Membership
@@ -192,12 +365,27 @@ extension BrowserState {
 
         if let folderId, let lastMember = newTabs.lastIndex(where: { $0.folderId == folderId }) {
             newTabs.insert(contentsOf: moved, at: lastMember + 1)
-        } else if let insertPos = originalFirstIndex, insertPos <= newTabs.count {
-            // New folder or moving in place: preserve original location in tabstrip
-            newTabs.insert(contentsOf: moved, at: insertPos)
         } else {
-            // Empty folder or ungrouping: append to the end of the list.
-            newTabs.append(contentsOf: moved)
+            let minUnpinnedIndex = newTabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
+            var insertPos = max(originalFirstIndex ?? minUnpinnedIndex, minUnpinnedIndex)
+            insertPos = min(insertPos, newTabs.count)
+
+            // If insertPos falls inside an existing folder, advance past its last member
+            // to preserve that folder's contiguity.
+            if insertPos > 0 {
+                let prevFolderId = newTabs[insertPos - 1].folderId
+                if let prevFolderId,
+                   let lastMember = newTabs.lastIndex(where: { $0.folderId == prevFolderId }),
+                   lastMember >= insertPos {
+                    insertPos = lastMember + 1
+                }
+            }
+
+            if insertPos <= newTabs.count {
+                newTabs.insert(contentsOf: moved, at: insertPos)
+            } else {
+                newTabs.append(contentsOf: moved)
+            }
         }
 
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {

@@ -93,6 +93,15 @@ extension BrowserState {
             }
             return
         }
+
+        if message.name == UserScripts.shieldDeflectHandlerName {
+            if let tabId = webViewStore.first(where: { $0.value === message.webView })?.key {
+                DispatchQueue.main.async { [weak self] in
+                    self?.triggerShieldDeflect(for: tabId)
+                }
+            }
+            return
+        }
     }
 
     func syncFocusStateForActiveTab() {
@@ -100,6 +109,6 @@ extension BrowserState {
             isWebInputFocused = false
             return
         }
-        wv.evaluateJavaScript(UserScripts.checkInputFocus) { _, _ in }
+        wv.evaluateJavaScript(UserScripts.checkInputFocus, in: nil, in: .defaultClient) { _ in }
     }
 }

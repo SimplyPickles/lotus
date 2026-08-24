@@ -41,9 +41,21 @@ final class DeleteKeyMonitorView: NSView {
         }
     }
 
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            removeMonitor()
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
     deinit {
+        removeMonitor()
+    }
+
+    private func removeMonitor() {
         if let monitor {
             NSEvent.removeMonitor(monitor)
+            self.monitor = nil
         }
     }
 }

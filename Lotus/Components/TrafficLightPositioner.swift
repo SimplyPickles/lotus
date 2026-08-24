@@ -56,8 +56,6 @@ private final class PositionerView: NSView {
 
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.isMovableByWindowBackground = true
-
         reposition()
 
         let resizeObserver = NotificationCenter.default.addObserver(

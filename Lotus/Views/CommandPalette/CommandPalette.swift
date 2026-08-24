@@ -6,6 +6,15 @@
 //
 
 import SwiftUI
+import Combine
+
+/// Reference-backed state read by the AppKit event monitor. Unlike a captured
+/// `View` value, this remains current as SwiftUI recreates `CommandPalette`.
+private final class CommandPaletteDeleteKeyState: ObservableObject {
+    @Published var unlockRequest: Int = 0
+    var isProviderLocked: Bool = false
+    var isQueryEmpty: Bool = true
+}
 
 /// The ⌘T command palette: a centered dialog over a blurred backdrop with a
 /// URL/search field and live search-engine suggestions. Submitting opens a
@@ -23,7 +32,9 @@ struct CommandPalette: View {
     /// Local key monitor for backspace: SwiftUI's `onKeyPress(.delete)` is
     /// unreliable for backspace inside macOS text fields.
     @State private var deleteKeyMonitor: Any? = nil
+    @StateObject private var deleteKeyState = CommandPaletteDeleteKeyState()
     @State private var isSubmitting: Bool = false
+    @Namespace private var selectionNamespace
     @Environment(\.colorScheme) private var colorScheme
 
     private var foregroundPrimary: Color {
@@ -58,7 +69,7 @@ struct CommandPalette: View {
 
     /// Capped list shown in the dropdown — fewer rows reads more native.
     private var visibleSuggestions: [SearchSuggestion] {
-        Array(suggestionService.suggestions.prefix(5))
+        Array(suggestionService.suggestions.prefix(6))
     }
 
     private var hasSuggestions: Bool {
@@ -114,7 +125,7 @@ struct CommandPalette: View {
                     // concentric with the card's 16pt radius, and 6+12pt row
                     // padding keeps icons aligned with the magnifying glass.
                     .padding(6)
-                    .transaction { $0.animation = nil }
+                    .animation(.spring(response: 0.22, dampingFraction: 0.82), value: selectedIndex)
                 }
             }
             .frame(width: 640)
@@ -180,14 +191,22 @@ struct CommandPalette: View {
         }
         .onChange(of: searchText) { _, newValue in
             selectedIndex = nil
-            // Trigger + Space locks site-search mode (Chrome/Arc-style),
-            // e.g. "youtube " or "!yt ".
+            deleteKeyState.isQueryEmpty = newValue.isEmpty
             if activeProvider == nil, newValue.hasSuffix(" "),
                let provider = SiteSearchProvider.exactMatch(for: newValue) {
                 lockProvider(provider)
                 return
             }
-            suggestionService.update(for: newValue)
+            let areSuggestionsEnabled = UserDefaults.standard.object(forKey: "lotus.browser.searchSuggestionsEnabled") as? Bool ?? true
+            suggestionService.update(
+                for: newValue,
+                history: browserState.historyEntries,
+                allowsRemoteSuggestions: activeProvider == nil && areSuggestionsEnabled
+            )
+        }
+        .onChange(of: deleteKeyState.unlockRequest) { _, _ in
+            guard activeProvider != nil else { return }
+            unlockProvider()
         }
         .onDisappear {
             suggestionService.clear()
@@ -235,20 +254,17 @@ struct CommandPalette: View {
             }
 
             ZStack(alignment: .leading) {
-                // Inline Ghost Autocomplete Text
+                // Inline Ghost Autocomplete Text (unified layout to eliminate character jump)
                 if let ghost = ghostRemainder {
-                    HStack(spacing: 0) {
+                    (
                         Text(searchText)
                             .foregroundColor(.clear)
-                        GhostShimmerText(
-                            text: ghost,
-                            baseColor: foregroundPlaceholder.opacity(0.80)
-                        )
-                    }
+                        +
+                        Text(ghost)
+                            .foregroundColor(foregroundPlaceholder.opacity(0.80))
+                    )
                     .font(.system(size: 18, weight: .regular))
                     .allowsHitTesting(false)
-                    .transition(.identity)
-                    .transaction { $0.animation = nil }
                 }
 
                 TextField(
@@ -266,23 +282,26 @@ struct CommandPalette: View {
                 }
                 .onKeyPress(.downArrow) {
                     guard !visibleSuggestions.isEmpty else { return .ignored }
-                    if let current = selectedIndex {
-                        selectedIndex = min(current + 1, visibleSuggestions.count - 1)
-                    } else {
-                        selectedIndex = 0
+                    withAnimation(.spring(response: 0.20, dampingFraction: 0.80)) {
+                        if let current = selectedIndex {
+                            selectedIndex = min(current + 1, visibleSuggestions.count - 1)
+                        } else {
+                            selectedIndex = 0
+                        }
                     }
                     return .handled
                 }
                 .onKeyPress(.upArrow) {
                     guard !visibleSuggestions.isEmpty else { return .ignored }
-                    if let current = selectedIndex {
-                        selectedIndex = current == 0 ? nil : current - 1
-                        return .handled
+                    withAnimation(.spring(response: 0.20, dampingFraction: 0.80)) {
+                        if let current = selectedIndex {
+                            selectedIndex = current == 0 ? nil : current - 1
+                        }
                     }
-                    return .ignored
+                    return .handled
                 }
                 .onKeyPress(.rightArrow) {
-                    if let full = fullGhostMatch {
+                    if let full = fullGhostMatch, isSearchCaretAtEnd {
                         searchText = full
                         focusSearchField()
                         return .handled
@@ -398,40 +417,56 @@ struct CommandPalette: View {
     private func suggestionRow(_ suggestion: SearchSuggestion, index: Int) -> some View {
         let isSelected = selectedIndex == index
         let isRowHovered = hoveredIndex == index
+        let isHighlighted = isSelected || isRowHovered
+        let hasSubtitle = suggestion.subtitle != nil && suggestion.subtitle != suggestion.displayText
 
         Button {
             submit(with: suggestion.text)
         } label: {
             HStack(spacing: 10) {
                 Group {
-                    if suggestion.badgeText == "Jump to URL" {
+                    if let favURL = suggestion.faviconURL ?? (suggestion.badgeText == "Jump to URL" ? faviconURL(for: suggestion.text) : nil) {
                         CachedFaviconView(
-                            url: faviconURL(for: suggestion.text),
+                            url: favURL,
                             defaultSystemName: suggestion.systemImage,
-                            fallbackColor: isSelected ? foregroundPrimary : foregroundSecondary,
+                            fallbackColor: isHighlighted ? foregroundPrimary : foregroundSecondary,
                             size: 16
                         )
                     } else {
                         Image(systemName: suggestion.systemImage)
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(isSelected ? foregroundPrimary : foregroundSecondary)
+                            .font(.system(size: 13, weight: isHighlighted ? .semibold : .regular))
+                            .foregroundColor(isHighlighted ? foregroundPrimary : foregroundSecondary)
                     }
                 }
                 .frame(width: 20)
                 .transaction { $0.animation = nil }
 
-                Text(suggestion.displayText)
-                    .font(.system(size: 14, weight: isSelected ? .medium : .regular))
-                    .foregroundColor(isSelected ? foregroundPrimary : foregroundPrimary.opacity(0.88))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 6) {
+                    Text(suggestion.displayText)
+                        .font(.system(size: 14))
+                        .fontWeight(isHighlighted ? .semibold : .regular)
+                        .foregroundColor(isHighlighted ? foregroundPrimary : foregroundPrimary.opacity(0.88))
+                        .lineLimit(1)
 
-                Spacer()
+                    if let subtitle = suggestion.subtitle, hasSubtitle {
+                        Text("— \(subtitle)")
+                            .font(.system(size: 12.5))
+                            .fontWeight(isHighlighted ? .medium : .regular)
+                            .foregroundColor(isHighlighted ? foregroundPrimary.opacity(0.70) : foregroundSecondary.opacity(0.75))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .truncationMode(.tail)
+                .animation(.easeInOut(duration: 0.15), value: isHighlighted)
+
+                Spacer(minLength: 8)
 
                 if let badge = suggestion.badgeText {
                     Text(badge)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(foregroundSecondary.opacity(0.7))
+                        .font(.system(size: 11))
+                        .fontWeight(isHighlighted ? .medium : .regular)
+                        .foregroundColor(isHighlighted ? foregroundPrimary.opacity(0.85) : foregroundSecondary.opacity(0.70))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .frame(width: 74, height: 18)
@@ -439,22 +474,29 @@ struct CommandPalette: View {
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
                                 .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
                         )
+                        .animation(.easeInOut(duration: 0.15), value: isHighlighted)
                 }
             }
             .padding(.horizontal, 12)
-            // Fixed row height — rows with badges ("Jump to URL") were taller
-            // than plain text rows, making the list jump while typing.
             .frame(height: 38)
-            .background(
-                // Radius 10 = card's 16 minus the list's 6pt inset, keeping
-                // the bottom corners concentric with the card.
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        isSelected
-                            ? (colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08))
-                            : (isRowHovered ? (colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)) : Color.clear)
-                    )
-            )
+            .background {
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(
+                                colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08)
+                            )
+                            .matchedGeometryEffect(id: "paletteSelectionCapsule", in: selectionNamespace)
+                            .shadow(color: colorScheme == .dark ? Color.black.opacity(0.22) : Color.black.opacity(0.06), radius: 3.5, y: 1)
+                    } else if isRowHovered {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(
+                                colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)
+                            )
+                            .transition(.opacity.animation(.easeInOut(duration: 0.12)))
+                    }
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -507,21 +549,24 @@ struct CommandPalette: View {
             searchText = ""
             focusSearchField()
         }
+        syncDeleteKeyMonitorState()
     }
 
     /// Unlocks the bang (like Escape) when backspace is pressed with an
     /// empty query or with the insertion point at the start of the line.
     private func installDeleteKeyMonitor() {
         guard deleteKeyMonitor == nil else { return }
-        deleteKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        let monitorState = deleteKeyState
+        deleteKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak monitorState] event in
+            guard let monitorState = monitorState else { return event }
             guard event.keyCode == 51, // backspace
                   event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
-                  activeProvider != nil else {
+                  monitorState.isProviderLocked else {
                 return event
             }
-            if searchText.isEmpty {
+            if monitorState.isQueryEmpty {
                 DispatchQueue.main.async {
-                    unlockProvider()
+                    monitorState.unlockRequest += 1
                 }
                 return nil
             }
@@ -529,7 +574,7 @@ struct CommandPalette: View {
                editor.selectedRange().location == 0,
                editor.selectedRange().length == 0 {
                 DispatchQueue.main.async {
-                    unlockProvider()
+                    monitorState.unlockRequest += 1
                 }
                 return nil
             }
@@ -542,11 +587,18 @@ struct CommandPalette: View {
         searchText = ""
         selectedIndex = nil
         suggestionService.clear()
+        syncDeleteKeyMonitorState()
         focusSearchField()
     }
 
     private func unlockProvider() {
         activeProvider = nil
+        syncDeleteKeyMonitorState()
+    }
+
+    private func syncDeleteKeyMonitorState() {
+        deleteKeyState.isProviderLocked = activeProvider != nil
+        deleteKeyState.isQueryEmpty = searchText.isEmpty
     }
 
     private func submit(with text: String? = nil) {
@@ -585,6 +637,10 @@ struct CommandPalette: View {
             return
         }
 
+        // `openTab(with:)` and `navigateActiveTab(to:)` intentionally ignore
+        // unresolvable input. Validate before latching submission so Return
+        // stays usable when that happens.
+        guard URLInputResolver.resolve(trimmed) != nil else { return }
         isSubmitting = true
         suggestionService.clear()
         selectedIndex = nil
@@ -608,39 +664,12 @@ struct CommandPalette: View {
             browserState.openTab(at: url, title: title)
         }
     }
-}
 
-// MARK: - Ghost Shimmer Text
-
-/// An inline ghost text view with a dynamic spectral shimmer wave powered by TimelineView.
-struct GhostShimmerText: View {
-    let text: String
-    let baseColor: Color
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        TimelineView(.animation) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            let progress = CGFloat((time.truncatingRemainder(dividingBy: 1.5)) / 1.5)
-            let shimmerCenter = progress * 1.6 - 0.3
-
-            Text(text)
-                .overlay(
-                    LinearGradient(
-                        stops: [
-                            .init(color: baseColor, location: max(0.0, shimmerCenter - 0.25)),
-                            .init(
-                                color: colorScheme == .dark ? Color.white.opacity(0.5) : Color.accentColor,
-                                location: max(0.0, min(1.0, shimmerCenter))
-                            ),
-                            .init(color: baseColor, location: min(1.0, shimmerCenter + 0.25))
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .mask(Text(text))
-                )
-                .foregroundColor(baseColor)
+    private var isSearchCaretAtEnd: Bool {
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else {
+            return false
         }
+        let selection = editor.selectedRange()
+        return selection.length == 0 && selection.location == searchText.utf16.count
     }
 }

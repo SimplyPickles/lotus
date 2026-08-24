@@ -18,12 +18,24 @@ struct BrowserChromeTheme {
     init(browserState: BrowserState, tabId: UUID? = nil, colorScheme: ColorScheme) {
         let id = tabId ?? browserState.selectedTabId
         let isInternal = browserState.url(for: id)?.isLotusPage == true
+        let isShieldActive = browserState.isShieldActive(for: id)
         self.isInternalPage = isInternal
-        // Internal pages always use the system appearance. The per-tab cache
-        // may still hold the previous site's theme (kept for Back), and
-        // letting it leak through mis-tints buttons/input on light/dark.
-        self.themeColor = isInternal ? nil : browserState.themeColor(for: id)
-        self.isThemeLight = isInternal ? false : browserState.isThemeLight(for: id)
+        
+        let tintMode = UserDefaults.standard.string(forKey: "lotus.browser.chromeTintingMode") ?? "adaptive"
+        
+        switch tintMode {
+        case "neutral":
+            self.themeColor = nil
+            self.isThemeLight = false
+        case "systemAccent":
+            self.themeColor = Color.accentColor
+            self.isThemeLight = false
+        default: // "adaptive"
+            let rawTheme = (isInternal || !isShieldActive) ? nil : browserState.themeColor(for: id)
+            self.themeColor = rawTheme
+            self.isThemeLight = (isInternal || !isShieldActive) ? false : browserState.isThemeLight(for: id)
+        }
+        
         self.colorScheme = colorScheme
     }
 

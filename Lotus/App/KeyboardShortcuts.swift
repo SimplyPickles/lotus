@@ -137,7 +137,7 @@ enum LotusShortcuts {
         },
 
         // MARK: Zoom
-        LotusShortcut("zoomInPlus", key: "+", modifiers: .command, usesEventMonitor: true) {
+        LotusShortcut("zoomInPlus", key: "=", modifiers: [.command, .shift], usesEventMonitor: true) {
             $0.zoomIn()
         },
         LotusShortcut("zoomInEquals", key: "=", modifiers: .command, usesEventMonitor: true) {
@@ -295,7 +295,24 @@ enum KeyboardShortcutRouter {
             return nil
         }
 
-        // 3. Find on Page dismiss on Escape
+        // 3. Popup open confirmation modal keyboard handling (Enter / Esc)
+        if browserState.pendingPopupRequest != nil {
+            if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
+                DispatchQueue.main.async {
+                    browserState.confirmOpenPopup()
+                }
+                return nil
+            }
+            if event.keyCode == 53 { // Escape
+                DispatchQueue.main.async {
+                    browserState.cancelOpenPopup()
+                }
+                return nil
+            }
+            return nil
+        }
+
+        // 4. Find on Page dismiss on Escape
         if browserState.isFindPresented && event.keyCode == 53 { // Escape
             DispatchQueue.main.async {
                 browserState.closeFind()

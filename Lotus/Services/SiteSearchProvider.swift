@@ -61,6 +61,21 @@ struct SiteSearchProvider: Identifiable, Equatable {
     // MARK: - Registry
 
     static let all: [SiteSearchProvider] = [
+        SiteSearchProvider(id: "chatgpt", name: "ChatGPT", host: "chatgpt.com",
+                           iconName: "sparkles",
+                           triggers: ["chatgpt", "gpt", "chat"],
+                           searchEndpoint: "https://chatgpt.com/", queryParameter: "q",
+                           accentColor: Color(red: 0.06, green: 0.65, blue: 0.53)),
+        SiteSearchProvider(id: "claude", name: "Claude", host: "claude.ai",
+                           iconName: "sparkles",
+                           triggers: ["claude", "cl"],
+                           searchEndpoint: "https://claude.ai/new", queryParameter: "q",
+                           accentColor: Color(red: 0.85, green: 0.45, blue: 0.30)),
+        SiteSearchProvider(id: "gemini", name: "Gemini", host: "gemini.google.com",
+                           iconName: "sparkle",
+                           triggers: ["gemini", "gem"],
+                           searchEndpoint: "https://gemini.google.com/app", queryParameter: "q",
+                           accentColor: Color(red: 0.31, green: 0.48, blue: 0.96)),
         SiteSearchProvider(id: "youtube", name: "YouTube", host: "www.youtube.com",
                            iconName: "play.rectangle.fill",
                            triggers: ["youtube", "yt"],
@@ -108,6 +123,14 @@ struct SiteSearchProvider: Identifiable, Equatable {
                            accentColor: Color(red: 0.57, green: 0.27, blue: 1.00)),
     ]
 
+    static var activeProviders: [SiteSearchProvider] {
+        let isBangsEnabled = UserDefaults.standard.object(forKey: "lotus.browser.bangsEnabled") as? Bool ?? true
+        guard isBangsEnabled else { return [] }
+        let disabledList = UserDefaults.standard.stringArray(forKey: "lotus.browser.disabledBangIDs") ?? []
+        let disabledSet = Set(disabledList)
+        return all.filter { !disabledSet.contains($0.id) }
+    }
+
     // MARK: - Matching
 
     private static func normalize(_ input: String) -> String? {
@@ -123,18 +146,18 @@ struct SiteSearchProvider: Identifiable, Equatable {
     /// Provider whose trigger exactly equals the token (ignoring a `!` prefix).
     static func exactMatch(for input: String) -> SiteSearchProvider? {
         guard let token = normalize(input) else { return nil }
-        return all.first(where: { $0.triggers.contains(token) })
+        return activeProviders.first(where: { $0.triggers.contains(token) })
     }
 
     /// Provider suggested while typing: an exact trigger, or (for 2+ typed
     /// characters, so single letters don't spam hints) a trigger prefix.
     static func match(for input: String) -> SiteSearchProvider? {
         guard let token = normalize(input) else { return nil }
-        if let exact = all.first(where: { $0.triggers.contains(token) }) {
+        if let exact = activeProviders.first(where: { $0.triggers.contains(token) }) {
             return exact
         }
         guard token.count >= 2 else { return nil }
-        return all.first(where: { provider in
+        return activeProviders.first(where: { provider in
             provider.triggers.contains { $0.hasPrefix(token) }
         })
     }
