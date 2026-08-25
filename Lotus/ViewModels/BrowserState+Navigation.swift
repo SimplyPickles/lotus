@@ -293,14 +293,30 @@ extension BrowserState {
         let targetId = tabId ?? selectedTabId
         pageLoadErrors[targetId] = nil
         let wv = getWebView(for: targetId)
-        wv.reload()
+        if wv.url != nil {
+            wv.reload()
+        } else if let targetURL = tab(for: targetId)?.url {
+            if targetURL.isFileURL {
+                wv.loadFileURL(targetURL, allowingReadAccessTo: targetURL.deletingLastPathComponent())
+            } else {
+                wv.load(URLRequest(url: targetURL))
+            }
+        }
     }
 
     func reloadFromOrigin(for tabId: UUID? = nil) {
         let targetId = tabId ?? selectedTabId
         pageLoadErrors[targetId] = nil
         let wv = getWebView(for: targetId)
-        wv.reloadFromOrigin()
+        if wv.url != nil {
+            wv.reloadFromOrigin()
+        } else if let targetURL = tab(for: targetId)?.url {
+            if targetURL.isFileURL {
+                wv.loadFileURL(targetURL, allowingReadAccessTo: targetURL.deletingLastPathComponent())
+            } else {
+                wv.load(URLRequest(url: targetURL))
+            }
+        }
     }
 
     func allowInsecureHTTPLoad(for tabId: UUID? = nil) {

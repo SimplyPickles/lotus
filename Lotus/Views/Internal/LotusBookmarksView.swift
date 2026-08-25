@@ -239,7 +239,7 @@ struct LotusBookmarksView: View {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "bookmark.fill")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(.white)
+                    .foregroundColor(foregroundPrimary)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Bookmarks")

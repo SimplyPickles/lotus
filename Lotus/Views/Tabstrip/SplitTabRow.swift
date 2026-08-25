@@ -172,15 +172,17 @@ private struct SplitTabHalf: View {
 
     private var selectedForegroundPrimary: Color {
         if isThemeLight {
-            return isFocused ? .black : Color.black.opacity(0.70)
+            let base = colorScheme == .dark ? Color.black : Color(nsColor: .labelColor)
+            return isFocused ? base : base.opacity(0.75)
         } else {
-            return isFocused ? .white : Color.white.opacity(0.72)
+            return isFocused ? .white : Color.white.opacity(0.75)
         }
     }
 
     private var selectedForegroundSecondary: Color {
         if isThemeLight {
-            return isFocused ? Color.black.opacity(0.65) : Color.black.opacity(0.45)
+            let base = colorScheme == .dark ? Color.black.opacity(0.60) : Color(nsColor: .secondaryLabelColor)
+            return isFocused ? base : base.opacity(0.70)
         } else {
             return isFocused ? Color.white.opacity(0.65) : Color.white.opacity(0.45)
         }

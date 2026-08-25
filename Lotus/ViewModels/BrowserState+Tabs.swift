@@ -300,6 +300,16 @@ extension BrowserState {
         }
     }
 
+    /// Opens a new blank tab and immediately splits it to the right of the anchor tab.
+    func openNewSplitTab(for anchorTabId: UUID? = nil) {
+        let anchorId = anchorTabId ?? selectedTabId
+        let newTab = addTabBelow(currentTabId: anchorId, title: "New Tab", url: nil, select: true)
+        openInSplit(id: newTab.id, side: .right)
+        DispatchQueue.main.async { [weak self] in
+            self?.openCommandPaletteForCurrentTab()
+        }
+    }
+
     /// Swaps the left and right pane tabs in a split view group.
     func swapSplitTabs(for group: [UUID]) {
         guard group.count == 2 else { return }

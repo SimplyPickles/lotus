@@ -65,23 +65,11 @@ struct TabButton: View {
     }
 
     private var selectedForegroundPrimary: Color {
-        if isThemeLight && !isInternalPage {
-            return .black
-        }
-        if !isInternalPage {
-            return .white
-        }
-        return sidebarForeground
+        isThemeLight ? (colorScheme == .dark ? .black : Color(nsColor: .labelColor)) : .white
     }
 
     private var selectedForegroundSecondary: Color {
-        if isThemeLight && !isInternalPage {
-            return .black.opacity(0.60)
-        }
-        if !isInternalPage {
-            return .white.opacity(0.60)
-        }
-        return sidebarForegroundSecondary
+        isThemeLight ? (colorScheme == .dark ? Color.black.opacity(0.60) : Color(nsColor: .secondaryLabelColor)) : Color.white.opacity(0.60)
     }
 
     var body: some View {

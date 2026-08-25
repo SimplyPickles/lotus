@@ -56,12 +56,42 @@ struct Tabstrip: View {
         }.count > 1
     }
 
+    @AppStorage("lotus.browser.sidebarTabTintingMode") private var sidebarTabTintingMode: String = "adaptive"
+    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
+    @Environment(\.colorScheme) private var colorScheme
+
     private var activeTabBackgroundColor: Color {
         let isInternal = browserState.activeURL?.scheme == "lotus" || browserState.activeURL?.absoluteString.hasPrefix("lotus://") == true
         if isInternal {
             return Color(nsColor: .windowBackgroundColor)
         }
-        return browserState.activeThemeColor ?? Color(nsColor: .windowBackgroundColor)
+        switch sidebarTabTintingMode {
+        case "neutral":
+            return Color(nsColor: .windowBackgroundColor)
+        case "systemAccent":
+            return Color.accentColor
+        default: // "adaptive"
+            return browserState.activeThemeColor ?? Color(nsColor: .windowBackgroundColor)
+        }
+    }
+
+    private func isTabThemeLight(for tabId: UUID) -> Bool {
+        let isInternal = browserState.url(for: tabId)?.isLotusPage == true
+        if isInternal {
+            return colorScheme == .light
+        }
+        switch sidebarTabTintingMode {
+        case "neutral":
+            return colorScheme == .light
+        case "systemAccent":
+            let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+            return accent == .yellow
+        default: // "adaptive"
+            if browserState.themeColor(for: tabId) == nil {
+                return colorScheme == .light
+            }
+            return browserState.isThemeLight(for: tabId)
+        }
     }
 
     /// Pinned-grid footprint after removing the drag payload from its source
@@ -240,7 +270,7 @@ struct Tabstrip: View {
                                     isMultiSelected: hasMultipleSelectedTabs && browserState.selectedSidebarTabIds.contains(tab.id),
                                     isInSplit: browserState.currentTabIds.contains(tab.id),
                                     isDraggingAnyTab: activeDrag != nil,
-                                    namespace: tabAnimationNamespace,
+                                    namespace: nil,
                                     isRenaming: renamingTabId == tab.id,
                                     isPlayingAudio: browserState.tabMediaStates[tab.id]?.isPlayingAudio ?? false,
                                     isMuted: browserState.tabMediaStates[tab.id]?.isMuted ?? false,
@@ -357,7 +387,7 @@ struct Tabstrip: View {
                                 isMultiSelected: hasMultipleSelectedTabs && browserState.selectedSidebarTabIds.contains(tab.id),
                                 isDragging: isBeingDragged,
                                 isDraggingAnyTab: activeDrag != nil,
-                                isThemeLight: browserState.isThemeLight(for: tab.id),
+                                isThemeLight: isTabThemeLight(for: tab.id),
                                 activeTabBackgroundColor: activeTabBackgroundColor,
                                 namespace: tabAnimationNamespace,
                                 // Foldered tabs render narrower so their right
@@ -420,7 +450,7 @@ struct Tabstrip: View {
                                 currentTabIds: highlightedCurrentTabIds,
                                 sidebarWidth: browserState.sidebarWidth - (tab1.folderId != nil ? 14 : 0),
                                 isMultiSelected: hasMultipleSelectedTabs && (browserState.selectedSidebarTabIds.contains(tab1.id) || browserState.selectedSidebarTabIds.contains(tab2.id)),
-                                isThemeLight: browserState.isThemeLight(for: highlightedTabId),
+                                isThemeLight: isTabThemeLight(for: highlightedTabId),
                                 isPlayingAudio1: browserState.tabMediaStates[tab1.id]?.isPlayingAudio ?? false,
                                 isMuted1: browserState.tabMediaStates[tab1.id]?.isMuted ?? false,
                                 isPlayingAudio2: browserState.tabMediaStates[tab2.id]?.isPlayingAudio ?? false,

@@ -27,6 +27,7 @@ struct PinnedTabButton: View {
     @State private var draftTitle: String = ""
     @FocusState private var isTitleFocused: Bool
     @ObservedObject private var colorExtractor = FaviconColorExtractor.shared
+    @AppStorage("lotus.browser.pinnedTabTintingMode") private var pinnedTabTintingMode: String = "adaptive"
     @Environment(\.colorScheme) private var colorScheme
 
     private var effectiveHovered: Bool {
@@ -34,22 +35,30 @@ struct PinnedTabButton: View {
     }
 
     private var faviconColors: [Color] {
-        if let host = tab.url?.host?.lowercased(), host.contains("apple.com") {
-            let base = colorScheme == .dark ? Color.white : Color.black
-            return [base, base.opacity(0.65)]
+        switch pinnedTabTintingMode {
+        case "neutral":
+            return [colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.12)]
+        case "systemAccent":
+            return [Color.accentColor]
+        default: // "adaptive"
+            var rawColors: [Color] = []
+            if let faviconURL = tab.faviconURL, let extracted = colorExtractor.colors(for: faviconURL), !extracted.isEmpty {
+                rawColors = extracted
+            } else if let faviconURL = tab.faviconURL, let extracted = colorExtractor.color(for: faviconURL) {
+                rawColors = [extracted]
+            }
+
+            let vibrant = rawColors.compactMap { Self.makeVibrant($0) }
+            if !vibrant.isEmpty {
+                return Array(vibrant.prefix(3))
+            }
+
+            return Self.vibrantDomainColors(for: tab)
         }
-        if let faviconURL = tab.faviconURL, let extracted = colorExtractor.colors(for: faviconURL), !extracted.isEmpty {
-            return Array(extracted.prefix(3))
-        }
-        if let faviconURL = tab.faviconURL, let extracted = colorExtractor.color(for: faviconURL) {
-            return [extracted, extracted]
-        }
-        let fallback = colorScheme == .dark ? Color.white : Color(nsColor: .labelColor)
-        return [fallback, fallback.opacity(0.65)]
     }
 
     private var primaryColor: Color {
-        faviconColors.first ?? (colorScheme == .dark ? Color.white : Color(nsColor: .labelColor))
+        faviconColors.first ?? Self.vibrantDomainColors(for: tab)[0]
     }
 
     private var secondaryColor: Color? {
@@ -60,37 +69,90 @@ struct PinnedTabButton: View {
         faviconColors.count > 2 ? faviconColors[2] : nil
     }
 
+    /// Checks if a color is non-plain (not white, gray, black, or washed out) and boosts its saturation if needed.
+    static func makeVibrant(_ color: Color) -> Color? {
+        let nsColor = NSColor(color)
+        guard let rgb = nsColor.usingColorSpace(.sRGB) else { return nil }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        rgb.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+
+        // Filter out gray, monochrome, near-white, or near-black colors
+        if s < 0.22 || b < 0.18 || (b > 0.94 && s < 0.32) {
+            return nil
+        }
+
+        // Boost saturation and brightness for luminous UI presence
+        let boostedS = max(s * 1.15, 0.60)
+        let boostedB = min(max(b, 0.72), 0.95)
+        return Color(nsColor: NSColor(hue: h, saturation: min(boostedS, 1.0), brightness: boostedB, alpha: 1.0))
+    }
+
+    /// Produces a deterministic, high-energy vibrant 3-stop palette derived from the tab's domain or title.
+    static func vibrantDomainColors(for tab: TabItem) -> [Color] {
+        let domainString = tab.url?.host?.lowercased() ?? tab.title.lowercased()
+        var hash: UInt64 = 5381
+        for byte in domainString.utf8 {
+            hash = ((hash << 5) &+ hash) &+ UInt64(byte)
+        }
+
+        // 12 curated vibrant hues: Sapphire, Emerald, Violet, Rose, Amber, Cyan, Indigo, Magenta, Coral, Teal, Amethyst, Ruby
+        let hues: [CGFloat] = [
+            0.58, // Sapphire Blue
+            0.38, // Emerald Green
+            0.78, // Vivid Violet
+            0.96, // Rose Crimson
+            0.08, // Warm Amber
+            0.48, // Azure Cyan
+            0.68, // Electric Indigo
+            0.88, // Magenta Pink
+            0.14, // Sunset Coral
+            0.44, // Mint Teal
+            0.82, // Royal Amethyst
+            0.03  // Vivid Ruby Red
+        ]
+        let selectedHueIndex = Int(hash % UInt64(hues.count))
+        let baseHue = hues[selectedHueIndex]
+        let secondaryHue = (baseHue + 0.08).truncatingRemainder(dividingBy: 1.0)
+        let tertiaryHue = (baseHue + 0.16).truncatingRemainder(dividingBy: 1.0)
+
+        let c1 = Color(nsColor: NSColor(hue: baseHue, saturation: 0.78, brightness: 0.78, alpha: 1.0))
+        let c2 = Color(nsColor: NSColor(hue: secondaryHue, saturation: 0.72, brightness: 0.84, alpha: 1.0))
+        let c3 = Color(nsColor: NSColor(hue: tertiaryHue, saturation: 0.68, brightness: 0.88, alpha: 1.0))
+
+        return [c1, c2, c3]
+    }
+
     private var backgroundGradient: LinearGradient {
         let startOpacity: Double
         let endOpacity: Double
 
         if colorScheme == .light {
             if isSelected {
-                startOpacity = 0.22
-                endOpacity = 0.10
+                startOpacity = 0.08
+                endOpacity = 0.03
             } else if isInSplit {
-                startOpacity = 0.18
-                endOpacity = 0.08
+                startOpacity = 0.06
+                endOpacity = 0.02
             } else if effectiveHovered {
-                startOpacity = 0.14
-                endOpacity = 0.06
+                startOpacity = 0.05
+                endOpacity = 0.02
             } else {
-                startOpacity = 0.10
-                endOpacity = 0.04
+                startOpacity = 0.03
+                endOpacity = 0.01
             }
         } else {
             if isSelected {
-                startOpacity = 0.24
-                endOpacity = 0.10
+                startOpacity = 0.10
+                endOpacity = 0.04
             } else if isInSplit {
-                startOpacity = 0.18
-                endOpacity = 0.07
-            } else if effectiveHovered {
-                startOpacity = 0.14
-                endOpacity = 0.05
-            } else {
-                startOpacity = 0.08
+                startOpacity = 0.07
                 endOpacity = 0.03
+            } else if effectiveHovered {
+                startOpacity = 0.05
+                endOpacity = 0.02
+            } else {
+                startOpacity = 0.03
+                endOpacity = 0.01
             }
         }
 
@@ -121,31 +183,31 @@ struct PinnedTabButton: View {
 
         if colorScheme == .light {
             if isSelected {
-                startOpacity = 0.45
-                endOpacity = 0.20
+                startOpacity = 0.75
+                endOpacity = 0.50
             } else if isInSplit {
-                startOpacity = 0.35
-                endOpacity = 0.16
+                startOpacity = 0.60
+                endOpacity = 0.40
             } else if effectiveHovered {
-                startOpacity = 0.26
-                endOpacity = 0.11
+                startOpacity = 0.50
+                endOpacity = 0.32
             } else {
-                startOpacity = 0.18
-                endOpacity = 0.07
+                startOpacity = 0.35
+                endOpacity = 0.20
             }
         } else {
             if isSelected {
-                startOpacity = 0.55
-                endOpacity = 0.26
+                startOpacity = 0.85
+                endOpacity = 0.60
             } else if isInSplit {
-                startOpacity = 0.42
-                endOpacity = 0.20
+                startOpacity = 0.70
+                endOpacity = 0.48
             } else if effectiveHovered {
-                startOpacity = 0.30
-                endOpacity = 0.14
+                startOpacity = 0.58
+                endOpacity = 0.38
             } else {
-                startOpacity = 0.20
-                endOpacity = 0.09
+                startOpacity = 0.42
+                endOpacity = 0.25
             }
         }
 
@@ -168,6 +230,22 @@ struct PinnedTabButton: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+
+    private var shadowColor: Color {
+        if colorScheme == .light {
+            return isSelected ? primaryColor.opacity(0.20) : Color.black.opacity(effectiveHovered ? 0.08 : 0.04)
+        } else {
+            return isSelected ? primaryColor.opacity(0.28) : Color.black.opacity(effectiveHovered ? 0.22 : 0.12)
+        }
+    }
+
+    private var shadowRadius: CGFloat {
+        isSelected ? 4.0 : (effectiveHovered ? 3.0 : 2.0)
+    }
+
+    private var shadowY: CGFloat {
+        isSelected ? 1.8 : 1.0
     }
 
     var body: some View {
@@ -220,38 +298,30 @@ struct PinnedTabButton: View {
                     .fill(
                         colorScheme == .light
                             ? (isSelected
-                                ? Color.white.opacity(0.85)
+                                ? Color.white.opacity(0.95)
                                 : (effectiveHovered
-                                    ? Color.white.opacity(0.70)
-                                    : Color.white.opacity(0.52)))
+                                    ? Color.white.opacity(0.85)
+                                    : Color.white.opacity(0.70)))
                             : (isSelected
                                 ? Color.white.opacity(0.10)
                                 : (effectiveHovered
                                     ? Color.white.opacity(0.06)
-                                    : Color.white.opacity(0.03)))
+                                    : Color.white.opacity(0.035)))
                     )
 
-                if isSelected, let namespace {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(backgroundGradient)
-                        .matchedGeometryEffect(id: "activeTabHighlight", in: namespace)
-                } else {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(backgroundGradient)
-                }
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(backgroundGradient)
             }
-        )
-        .shadow(
-            color: colorScheme == .light
-                ? Color.black.opacity(isSelected ? 0.06 : (effectiveHovered ? 0.03 : 0.015))
-                : Color.black.opacity(isSelected ? 0.20 : (effectiveHovered ? 0.12 : 0.06)),
-            radius: isSelected ? 3 : 1.5,
-            x: 0,
-            y: 1
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(borderGradient, lineWidth: isSelected ? 1.5 : (isInSplit ? 1.25 : 1))
+                .strokeBorder(borderGradient, lineWidth: isSelected ? 2.0 : (isInSplit ? 1.75 : (effectiveHovered ? 1.6 : 1.35)))
+        )
+        .shadow(
+            color: shadowColor,
+            radius: shadowRadius,
+            x: 0,
+            y: shadowY
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)

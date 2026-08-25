@@ -262,7 +262,7 @@ struct LotusDownloadsView: View {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "arrow.down.circle")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(.white)
+                    .foregroundColor(foregroundPrimary)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Downloads")

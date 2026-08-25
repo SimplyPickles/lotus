@@ -32,6 +32,11 @@ struct BrowserToolbar: View {
     @State private var isSecurityPopoverPresented: Bool = false
     @State private var isMediaPopoverPresented: Bool = false
     @AppStorage("lotus.browser.centerURLPreview") private var centerURLPreview: Bool = false
+    @AppStorage("lotus.browser.toolbarLayout") private var toolbarLayoutRaw: String = ToolbarItemType.serializeLayout(ToolbarItemType.defaultOrder)
+
+    private var toolbarItems: [ToolbarItemType] {
+        ToolbarItemType.parseLayout(from: toolbarLayoutRaw)
+    }
 
     private var activeTabId: UUID {
         tabId ?? browserState.selectedTabId
@@ -91,116 +96,215 @@ struct BrowserToolbar: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            ForEach(toolbarItems, id: \.id) { item in
+                toolbarItemView(for: item)
+            }
+
+            if !toolbarItems.contains(.addressBar) {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 40)
+        .background(theme.backgroundColor)
+        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: toolbarLayoutRaw)
+        .onAppear {
+            syncInputText()
+        }
+        .onChange(of: activeTabId) {
+            handleTabSwitch()
+        }
+        .onChange(of: browserState.url(for: activeTabId)) {
+            syncInputText()
+        }
+        .onChange(of: currentZoomLevel) { _, newZoomLevel in
+            if newZoomLevel != 1.0 {
+                isZoomIndicatorVisible = true
+            } else if isZoomIndicatorVisible {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    if currentZoomLevel == 1.0 {
+                        withAnimation(.easeInOut(duration: 0.30)) {
+                            isZoomIndicatorVisible = false
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: browserState.focusAddressBarTabId) { _, targetId in
+            if targetId == activeTabId {
+                browserState.focusAddressBarTabId = nil
+                browserState.openCommandPaletteForCurrentTab()
+            }
+        }
+    }
+
+    // MARK: - Toolbar Item View Builder
+
+    @ViewBuilder
+    private func toolbarItemView(for item: ToolbarItemType) -> some View {
+        switch item {
+        case .sidebarToggle:
             if isLeftmostContainer {
-                Button {
-                    browserState.toggleSidebar()
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 13, weight: .regular))
-                }
-                .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-                .focusable(false)
-                .padding(.leading, -1)
+                sidebarToggleButton
             }
+        case .back:
+            backButton
+        case .forward:
+            forwardButton
+        case .reload:
+            reloadButton
+        case .addressBar:
+            addressBarItem
+        case .splitView:
+            splitViewButton
+        case .downloads:
+            if !browserState.downloads.isEmpty || browserState.activeFlyingDownload != nil || isDownloadsPopoverPresented {
+                downloadsButton
+            }
+        case .shields:
+            ShieldButton(browserState: browserState, tabId: activeTabId, theme: theme)
+        case .media:
+            if !browserState.mediaTabs.isEmpty {
+                mediaButton
+            }
+        case .moreMenu:
+            moreMenuButton
+        }
+    }
 
-            Button {
-                backOffset = -2.5
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                    backOffset = 0
-                }
-                browserState.goBack(for: activeTabId)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .medium))
-                    .offset(x: backOffset)
-                    .animation(.spring(response: 0.28, dampingFraction: 0.62), value: backOffset)
+    // MARK: - Individual Toolbar Item Components
+
+    private var sidebarToggleButton: some View {
+        Button {
+            browserState.toggleSidebar()
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13, weight: .regular))
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .focusable(false)
+    }
+
+    private var backButton: some View {
+        Button {
+            backOffset = -2.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                backOffset = 0
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-            .disabled(!canGoBack)
-            .opacity(canGoBack ? 1.0 : 0.35)
-            .animation(.easeInOut(duration: 0.2), value: canGoBack)
-            .focusable(false)
-            .contextMenu {
-                let items = browserState.backHistoryList(for: activeTabId)
-                if !items.isEmpty {
-                    ForEach(Array(items.prefix(15).enumerated()), id: \.offset) { _, item in
-                        Button(historyItemTitle(item)) {
-                            browserState.goToBackForwardItem(item, for: activeTabId)
-                        }
+            browserState.goBack(for: activeTabId)
+        } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 12, weight: .medium))
+                .offset(x: backOffset)
+                .animation(.spring(response: 0.28, dampingFraction: 0.62), value: backOffset)
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .disabled(!canGoBack)
+        .opacity(canGoBack ? 1.0 : 0.35)
+        .animation(.easeInOut(duration: 0.2), value: canGoBack)
+        .focusable(false)
+        .contextMenu {
+            let items = browserState.backHistoryList(for: activeTabId)
+            if !items.isEmpty {
+                ForEach(Array(items.prefix(15).enumerated()), id: \.offset) { _, item in
+                    Button(historyItemTitle(item)) {
+                        browserState.goToBackForwardItem(item, for: activeTabId)
                     }
                 }
             }
+        }
+    }
 
-            Button {
-                forwardOffset = 2.5
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                    forwardOffset = 0
-                }
-                browserState.goForward(for: activeTabId)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .offset(x: forwardOffset)
-                    .animation(.spring(response: 0.28, dampingFraction: 0.62), value: forwardOffset)
+    private var forwardButton: some View {
+        Button {
+            forwardOffset = 2.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                forwardOffset = 0
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-            .disabled(!canGoForward)
-            .opacity(canGoForward ? 1.0 : 0.35)
-            .animation(.easeInOut(duration: 0.2), value: canGoForward)
-            .focusable(false)
-            .contextMenu {
-                let items = browserState.forwardHistoryList(for: activeTabId)
-                if !items.isEmpty {
-                    ForEach(Array(items.prefix(15).enumerated()), id: \.offset) { _, item in
-                        Button(historyItemTitle(item)) {
-                            browserState.goToBackForwardItem(item, for: activeTabId)
-                        }
+            browserState.goForward(for: activeTabId)
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .offset(x: forwardOffset)
+                .animation(.spring(response: 0.28, dampingFraction: 0.62), value: forwardOffset)
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .disabled(!canGoForward)
+        .opacity(canGoForward ? 1.0 : 0.35)
+        .animation(.easeInOut(duration: 0.2), value: canGoForward)
+        .focusable(false)
+        .contextMenu {
+            let items = browserState.forwardHistoryList(for: activeTabId)
+            if !items.isEmpty {
+                ForEach(Array(items.prefix(15).enumerated()), id: \.offset) { _, item in
+                    Button(historyItemTitle(item)) {
+                        browserState.goToBackForwardItem(item, for: activeTabId)
                     }
                 }
             }
+        }
+    }
 
-            Button {
+    private var reloadButton: some View {
+        Button {
+            if isLoading {
+                browserState.stopLoading(for: activeTabId)
+            } else {
+                browserState.reload(for: activeTabId)
+            }
+        } label: {
+            ZStack {
                 if isLoading {
-                    browserState.stopLoading(for: activeTabId)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .frame(width: 14, height: 14, alignment: .center)
+                        .transition(.reloadTransition)
                 } else {
-                    browserState.reload(for: activeTabId)
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11.5, weight: .regular))
+                        .frame(width: 14, height: 14, alignment: .center)
+                        .transition(.reloadTransition)
                 }
+            }
+            .animation(.spring(response: 0.30, dampingFraction: 0.76), value: isLoading)
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .disabled(currentURL?.isLotusPage == true)
+        .opacity(currentURL?.isLotusPage == true ? 0.35 : 1.0)
+        .focusable(false)
+        .contextMenu {
+            Button {
+                browserState.reload(for: activeTabId)
             } label: {
-                ZStack {
-                    if isLoading {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .frame(width: 14, height: 14, alignment: .center)
-                            .transition(.reloadTransition)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11.5, weight: .regular))
-                            .frame(width: 14, height: 14, alignment: .center)
-                            .transition(.reloadTransition)
-                    }
-                }
-                .animation(.spring(response: 0.30, dampingFraction: 0.76), value: isLoading)
-            }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-            .disabled(currentURL?.isLotusPage == true)
-            .opacity(currentURL?.isLotusPage == true ? 0.35 : 1.0)
-            .focusable(false)
-            .contextMenu {
-                Button {
-                    browserState.reload(for: activeTabId)
-                } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-
-                Button {
-                    browserState.reloadFromOrigin(for: activeTabId)
-                } label: {
-                    Label("Force Reload (Bypass Cache)", systemImage: "arrow.clockwise.circle")
-                }
+                Label("Reload", systemImage: "arrow.clockwise")
             }
 
+            Button {
+                browserState.reloadFromOrigin(for: activeTabId)
+            } label: {
+                Label("Force Reload (Bypass Cache)", systemImage: "arrow.clockwise.circle")
+            }
+        }
+    }
+
+    private var addressBarTrailingPadding: CGFloat {
+        var padding: CGFloat = 8
+        if isZoomIndicatorVisible || currentZoomLevel != 1.0 {
+            padding += 50
+        }
+        let isCurrentBookmarked = browserState.isBookmarked(url: currentURL)
+        let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
+        if shouldShowBookmark {
+            padding += 22
+        }
+        return padding
+    }
+
+    private var addressBarItem: some View {
+        HStack(spacing: 0) {
             if browserState.isPrivate {
                 PrivateBadgeView()
+                    .padding(.trailing, 6)
             }
 
             ZStack(alignment: .trailing) {
@@ -235,7 +339,6 @@ struct BrowserToolbar: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
                     .opacity(urlCopyFeedback != nil ? 0 : 1)
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
                 } else {
@@ -253,9 +356,8 @@ struct BrowserToolbar: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .padding(.leading, shouldShowSecurityLock ? 4 : 8)
-                                .padding(.trailing, 8)
+                                .padding(.trailing, addressBarTrailingPadding)
                                 .padding(.vertical, 5)
-                                .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
                                 .opacity(urlCopyFeedback != nil ? 0 : 1)
                         } else if let host = prettifiedHost {
                             HStack(spacing: 4) {
@@ -276,18 +378,16 @@ struct BrowserToolbar: View {
                                 }
                             }
                             .padding(.leading, shouldShowSecurityLock ? 4 : 8)
-                            .padding(.trailing, 8)
+                            .padding(.trailing, addressBarTrailingPadding)
                             .padding(.vertical, 5)
-                            .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
                             .opacity(urlCopyFeedback != nil ? 0 : 1)
                         } else {
                             Text("Search the web or type a URL")
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundColor(theme.foregroundSecondary)
                                 .padding(.leading, shouldShowSecurityLock ? 4 : 8)
-                                .padding(.trailing, 8)
+                                .padding(.trailing, addressBarTrailingPadding)
                                 .padding(.vertical, 5)
-                                .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
                                 .opacity(urlCopyFeedback != nil ? 0 : 1)
                         }
 
@@ -394,201 +494,241 @@ struct BrowserToolbar: View {
                 }
             }
 
-            Button {
-                isDownloadsPopoverPresented.toggle()
-            } label: {
-                ZStack {
-                    if browserState.hasActiveDownloads {
-                        let activeColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : hairlineAccentColor
-                        ZStack {
-                            Circle()
-                                .stroke(activeColor.opacity(0.25), lineWidth: 2.0)
-                                .frame(width: 15, height: 15)
+        }
+    }
 
-                            Circle()
-                                .trim(from: 0.0, to: clampedDownloadProgress)
-                                .stroke(
-                                    activeColor,
-                                    style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
-                                )
-                                .rotationEffect(.degrees(-90))
-                                .frame(width: 15, height: 15)
-                                .animation(.linear(duration: 0.12), value: browserState.overallDownloadProgress)
+    private var downloadsButton: some View {
+        Button {
+            isDownloadsPopoverPresented.toggle()
+        } label: {
+            ZStack {
+                if browserState.hasActiveDownloads {
+                    let activeColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : hairlineAccentColor
+                    ZStack {
+                        Circle()
+                            .stroke(activeColor.opacity(0.25), lineWidth: 2.0)
+                            .frame(width: 15, height: 15)
 
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(activeColor)
-                        }
-                        .frame(width: 16, height: 16)
-                    } else {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.system(size: 13, weight: .regular))
+                        Circle()
+                            .trim(from: 0.0, to: clampedDownloadProgress)
+                            .stroke(
+                                activeColor,
+                                style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 15, height: 15)
+                            .animation(.linear(duration: 0.12), value: browserState.overallDownloadProgress)
+
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(activeColor)
+                    }
+                    .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.system(size: 13, weight: .regular))
+                }
+            }
+            .scaleEffect(isCatchingDownload ? 1.18 : 1.0)
+            .animation(.spring(response: 0.18, dampingFraction: 0.44), value: isCatchingDownload)
+            .overlay(
+                Group {
+                    if showDownloadSuccessRing {
+                        Circle()
+                            .stroke(hairlineAccentColor.opacity(0.90), lineWidth: 1.5)
+                            .scaleEffect(downloadRingScale)
+                            .opacity(downloadRingOpacity)
                     }
                 }
-                .scaleEffect(isCatchingDownload ? 1.18 : 1.0)
-                .animation(.spring(response: 0.18, dampingFraction: 0.44), value: isCatchingDownload)
-                .overlay(
-                    Group {
-                        if showDownloadSuccessRing {
-                            Circle()
-                                .stroke(hairlineAccentColor.opacity(0.90), lineWidth: 1.5)
-                                .scaleEffect(downloadRingScale)
-                                .opacity(downloadRingOpacity)
-                        }
-                    }
+            )
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .focusable(false)
+        .help("Downloads")
+        .transition(.asymmetric(
+            insertion: .scale(scale: 0.75).combined(with: .opacity),
+            removal: .scale(scale: 0.75).combined(with: .opacity)
+        ))
+        .onChange(of: browserState.downloadCatchPulseTrigger) { _, _ in
+            // 1. Double heartbeat spring bounce: 1.0 -> 1.18 -> 1.0
+            showDownloadSuccessRing = true
+            downloadRingScale = 0.80
+            downloadRingOpacity = 0.90
+
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.40)) {
+                isCatchingDownload = true
+            }
+            withAnimation(.easeOut(duration: 0.55)) {
+                downloadRingScale = 1.85
+                downloadRingOpacity = 0.0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.58)) {
+                    isCatchingDownload = false
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.60) {
+                showDownloadSuccessRing = false
+            }
+        }
+        .popover(isPresented: $isDownloadsPopoverPresented, arrowEdge: .bottom) {
+            RecentDownloadsPopover(browserState: browserState) {
+                isDownloadsPopoverPresented = false
+            }
+        }
+    }
+
+    private var mediaButton: some View {
+        Button {
+            isMediaPopoverPresented.toggle()
+        } label: {
+            Image(systemName: browserState.hasActiveAudioPlaying ? "waveform" : "play.tv")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(browserState.hasActiveAudioPlaying ? (theme.isThemeLight ? .black : .white) : theme.foregroundSecondary)
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .focusable(false)
+        .help("Media Playback Controls")
+        .popover(isPresented: $isMediaPopoverPresented, arrowEdge: .bottom) {
+            GlobalMediaPopover(browserState: browserState)
+        }
+    }
+
+    private var moreMenuButton: some View {
+        Menu {
+            Button {
+                browserState.toggleSidebar()
+            } label: {
+                Label(
+                    browserState.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
+                    systemImage: "sidebar.left"
                 )
             }
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-            .focusable(false)
-            .help("Downloads")
-            .onChange(of: browserState.downloadCatchPulseTrigger) { _, _ in
-                // 1. Double heartbeat spring bounce: 1.0 -> 1.18 -> 1.0
-                showDownloadSuccessRing = true
-                downloadRingScale = 0.80
-                downloadRingOpacity = 0.90
+            
+            Divider()
+            
+            Button {
+                browserState.addTabBelow(title: "Downloads", url: .lotusDownloads)
+            } label: {
+                Label("Downloads", systemImage: "arrow.down.circle")
+            }
 
-                withAnimation(.spring(response: 0.16, dampingFraction: 0.40)) {
-                    isCatchingDownload = true
+            Button {
+                browserState.addTabBelow(title: "History", url: .lotusHistory)
+            } label: {
+                Label("History", systemImage: "clock")
+            }
+
+            Button {
+                browserState.addTabBelow(title: "Bookmarks", url: .lotusBookmarks)
+            } label: {
+                Label("Bookmarks", systemImage: "bookmark")
+            }
+
+            Button {
+                browserState.addTabBelow(title: "Settings", url: .lotusSettings)
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+
+            Divider()
+
+            Button {
+                browserState.printPage(for: activeTabId)
+            } label: {
+                Label("Print", systemImage: "printer")
+            }
+            .disabled(currentURL?.isLotusPage != false)
+
+            Button {
+                browserState.togglePictureInPicture(for: activeTabId)
+            } label: {
+                Label("Picture in Picture", systemImage: "pip")
+            }
+            .disabled(currentURL?.isLotusPage != false)
+            
+            Button {
+                browserState.openFind(for: activeTabId)
+            } label: {
+                Label("Find in Page", systemImage: "magnifyingglass")
+            }
+            .disabled(currentURL?.isLotusPage != false)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .regular))
+        }
+        .menuStyle(.button)
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .focusable(false)
+    }
+
+    private var splitViewButton: some View {
+        let isSplitActive = browserState.isSplit(id: activeTabId)
+        let group = browserState.splitGroup(containing: activeTabId)
+        let otherTabs = browserState.tabs.filter { (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
+
+        return Menu {
+            if isSplitActive {
+                Button {
+                    browserState.closeSplit(id: activeTabId)
+                } label: {
+                    Label("Close Split View", systemImage: "rectangle.portrait.and.arrow.right")
                 }
-                withAnimation(.easeOut(duration: 0.55)) {
-                    downloadRingScale = 1.85
-                    downloadRingOpacity = 0.0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-                    withAnimation(.spring(response: 0.22, dampingFraction: 0.58)) {
-                        isCatchingDownload = false
+
+                if let group = group {
+                    Button {
+                        browserState.swapSplitTabs(for: group)
+                    } label: {
+                        Label("Swap Left & Right Sides", systemImage: "arrow.left.and.right.square")
                     }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.60) {
-                    showDownloadSuccessRing = false
-                }
-            }
-            .popover(isPresented: $isDownloadsPopoverPresented, arrowEdge: .bottom) {
-                RecentDownloadsPopover(browserState: browserState) {
-                    isDownloadsPopoverPresented = false
-                }
-            }
 
-            ShieldButton(browserState: browserState, tabId: activeTabId, theme: theme)
-
-            if !browserState.mediaTabs.isEmpty {
+                if !otherTabs.isEmpty {
+                    Divider()
+                    Menu("Replace Split Partner") {
+                        ForEach(otherTabs) { otherTab in
+                            Button(otherTab.title.isEmpty ? (otherTab.url?.host ?? "New Tab") : otherTab.title) {
+                                browserState.openInSplit(id: otherTab.id, side: .right)
+                            }
+                        }
+                    }
+                }
+            } else {
                 Button {
-                    isMediaPopoverPresented.toggle()
+                    browserState.openNewSplitTab(for: activeTabId)
                 } label: {
-                    Image(systemName: browserState.hasActiveAudioPlaying ? "waveform" : "play.tv")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(browserState.hasActiveAudioPlaying ? (theme.isThemeLight ? .black : .white) : theme.foregroundSecondary)
-                }
-                .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-                .focusable(false)
-                .help("Media Playback Controls")
-                .popover(isPresented: $isMediaPopoverPresented, arrowEdge: .bottom) {
-                    GlobalMediaPopover(browserState: browserState)
-                }
-            }
-
-            Menu {
-                Button {
-                    browserState.toggleSidebar()
-                } label: {
-                    Label(
-                        browserState.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
-                        systemImage: "sidebar.left"
-                    )
-                }
-                
-                Divider()
-                
-                Button {
-                    browserState.addTabBelow(title: "Downloads", url: .lotusDownloads)
-                } label: {
-                    Label("Downloads", systemImage: "arrow.down.circle")
+                    Label("Split Right with New Tab", systemImage: "rectangle.righthalf.filled")
                 }
 
-                Button {
-                    browserState.addTabBelow(title: "History", url: .lotusHistory)
-                } label: {
-                    Label("History", systemImage: "clock")
-                }
-
-                Button {
-                    browserState.addTabBelow(title: "Bookmarks", url: .lotusBookmarks)
-                } label: {
-                    Label("Bookmarks", systemImage: "bookmark")
-                }
-
-                Button {
-                    browserState.addTabBelow(title: "Settings", url: .lotusSettings)
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-
-                Divider()
-
-                Button {
-                    browserState.printPage(for: activeTabId)
-                } label: {
-                    Label("Print", systemImage: "printer")
-                }
-                .disabled(currentURL?.isLotusPage != false)
-
-                Button {
-                    browserState.togglePictureInPicture(for: activeTabId)
-                } label: {
-                    Label("Picture in Picture", systemImage: "pip")
-                }
-                .disabled(currentURL?.isLotusPage != false)
-
-                Button {
-                    browserState.openFind(for: activeTabId)
-                } label: {
-                    Label("Find in Page", systemImage: "magnifyingglass")
-                }
-                .disabled(currentURL?.isLotusPage != false)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .regular))
-            }
-            .menuStyle(.button)
-            .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .focusable(false)
-            .padding(.trailing, -8)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 40)
-        .background(theme.backgroundColor)
-        .onAppear {
-            syncInputText()
-        }
-        .onChange(of: activeTabId) {
-            handleTabSwitch()
-        }
-        .onChange(of: browserState.url(for: activeTabId)) {
-            syncInputText()
-        }
-        .onChange(of: currentZoomLevel) { _, newZoomLevel in
-            if newZoomLevel != 1.0 {
-                isZoomIndicatorVisible = true
-            } else if isZoomIndicatorVisible {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
-                    if currentZoomLevel == 1.0 {
-                        withAnimation(.easeInOut(duration: 0.30)) {
-                            isZoomIndicatorVisible = false
+                if !otherTabs.isEmpty {
+                    Menu("Split with Open Tab") {
+                        ForEach(otherTabs) { otherTab in
+                            Button(otherTab.title.isEmpty ? (otherTab.url?.host ?? "Untitled") : otherTab.title) {
+                                browserState.openInSplit(id: otherTab.id, side: .right)
+                            }
                         }
                     }
                 }
             }
-        }
-        .onChange(of: browserState.focusAddressBarTabId) { _, targetId in
-            if targetId == activeTabId {
-                browserState.focusAddressBarTabId = nil
-                browserState.openCommandPaletteForCurrentTab()
+        } label: {
+            Image(systemName: isSplitActive ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+                .font(.system(size: 12.5, weight: .regular))
+                .foregroundColor(isSplitActive ? (theme.themeColor != nil ? (theme.isThemeLight ? .black : .white) : Color.accentColor) : (theme.themeColor != nil ? (theme.isThemeLight ? .black.opacity(0.85) : .white.opacity(0.90)) : Color.primary))
+        } primaryAction: {
+            if isSplitActive {
+                browserState.closeSplit(id: activeTabId)
+            } else {
+                browserState.openNewSplitTab(for: activeTabId)
             }
         }
+        .menuStyle(.button)
+        .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .focusable(false)
+        .help(isSplitActive ? "Split View Active (Click to close, hold for options)" : "Split View (Click to split right, hold for options)")
     }
 
     private func historyItemTitle(_ item: WKBackForwardListItem) -> String {

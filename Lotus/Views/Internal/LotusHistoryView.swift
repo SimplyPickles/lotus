@@ -273,7 +273,7 @@ struct LotusHistoryView: View {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "clock")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(.white)
+                    .foregroundColor(foregroundPrimary)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("History")

@@ -19,14 +19,6 @@ extension BrowserState {
         let targetURL = tab?.url
 
         if let existing = webViewStore[tabId] {
-            if let targetURL = targetURL,
-               existing.url == nil && existing.backForwardList.currentItem == nil {
-                if targetURL.isFileURL {
-                    existing.loadFileURL(targetURL, allowingReadAccessTo: targetURL.deletingLastPathComponent())
-                } else {
-                    existing.load(URLRequest(url: targetURL))
-                }
-            }
             return existing
         }
 

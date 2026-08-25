@@ -21,7 +21,9 @@ struct BrowserChromeTheme {
         let isShieldActive = browserState.isShieldActive(for: id)
         self.isInternalPage = isInternal
         
-        let tintMode = UserDefaults.standard.string(forKey: "lotus.browser.chromeTintingMode") ?? "adaptive"
+        let tintMode = UserDefaults.standard.string(forKey: "lotus.browser.titlebarChromeTintingMode")
+            ?? UserDefaults.standard.string(forKey: "lotus.browser.chromeTintingMode")
+            ?? "adaptive"
         
         switch tintMode {
         case "neutral":

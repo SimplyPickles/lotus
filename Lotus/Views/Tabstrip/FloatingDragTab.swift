@@ -20,12 +20,21 @@ struct FloatingDragTab: View {
     var folderTabCount: Int = 0
     var previewCount: Int = 1
 
+    @AppStorage("lotus.browser.sidebarTabTintingMode") private var sidebarTabTintingMode: String = "adaptive"
+
     private var activeTabBackgroundColor: Color {
         let isInternal = tab.url?.scheme == "lotus" || tab.url?.absoluteString.hasPrefix("lotus://") == true
         if isInternal {
             return Color(nsColor: .windowBackgroundColor)
         }
-        return activeThemeColor ?? Color(nsColor: .windowBackgroundColor)
+        switch sidebarTabTintingMode {
+        case "neutral":
+            return Color(nsColor: .windowBackgroundColor)
+        case "systemAccent":
+            return Color.accentColor
+        default: // "adaptive"
+            return activeThemeColor ?? Color(nsColor: .windowBackgroundColor)
+        }
     }
 
     var body: some View {

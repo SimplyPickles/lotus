@@ -67,7 +67,7 @@ struct LotusSettingsView: View {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(.white)
+                    .foregroundColor(foregroundPrimary)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Settings")
