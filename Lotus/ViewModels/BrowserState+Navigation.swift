@@ -139,33 +139,23 @@ extension BrowserState {
         }
 
         let targetURL = navigationAction.request.url
-
         let isCmdPressed = navigationAction.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.command)
-        if isCmdPressed {
-            WebViewFactory.configurePopup(configuration)
-            let newTab = openTabFromCmdClick(sourceTabId: sourceTabId, title: targetURL?.host ?? "New Tab", url: targetURL, select: true)
-            let newWebView = WebViewFactory.makeWebView(configuration: configuration, delegate: self)
-            webViewStore[newTab.id] = newWebView
-            setupObservers(for: newTab.id, webView: newWebView)
-            return newWebView
+
+        WebViewFactory.configurePopup(configuration)
+        let tabTitle = targetURL?.host ?? "New Tab"
+        let newTab = isCmdPressed
+            ? openTabFromCmdClick(sourceTabId: sourceTabId, title: tabTitle, url: targetURL, select: true)
+            : addTabBelow(currentTabId: sourceTabId, title: tabTitle, url: targetURL, select: true)
+
+        let newWebView = WebViewFactory.makeWebView(configuration: configuration, delegate: self)
+        webViewStore[newTab.id] = newWebView
+        setupObservers(for: newTab.id, webView: newWebView)
+
+        if let targetURL = targetURL, targetURL.absoluteString != "about:blank" && !targetURL.absoluteString.isEmpty {
+            newWebView.load(URLRequest(url: targetURL))
         }
 
-        // Popup confirmation prompt for automated/script popups and new window requests
-        let sourceHost = sourceURL.flatMap { DomainNormalizer.normalize(url: $0) } ?? "Current Page"
-        let targetHost = targetURL.flatMap { DomainNormalizer.normalize(url: $0) } ?? (targetURL?.absoluteString ?? "New Tab")
-
-        DispatchQueue.main.async { [weak self] in
-            withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
-                self?.pendingPopupRequest = PopupConfirmationRequest(
-                    sourceTabId: sourceTabId,
-                    sourceHost: sourceHost,
-                    targetURL: targetURL,
-                    targetHost: targetHost
-                )
-            }
-        }
-
-        return nil
+        return newWebView
     }
 
     func confirmOpenPopup() {

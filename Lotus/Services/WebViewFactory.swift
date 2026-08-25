@@ -22,9 +22,9 @@ enum WebViewFactory {
             return chromeUserAgent
         case "custom":
             let custom = UserDefaults.standard.string(forKey: "lotus.browser.customUserAgentString") ?? ""
-            return custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : custom
+            return custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? safariUserAgent : custom
         default:
-            return nil
+            return safariUserAgent
         }
     }
 
@@ -39,7 +39,7 @@ enum WebViewFactory {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.isElementFullscreenEnabled = true
-        configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+        configuration.applicationNameForUserAgent = ""
 
         // Autoplay Policy
         let autoplayPolicy = UserDefaults.standard.string(forKey: "lotus.browser.autoplayPolicy") ?? "audio"
@@ -62,7 +62,15 @@ enum WebViewFactory {
             "setWebAuthenticationLocalAuthenticatorEnabled:",
             "_setWebAuthenticationLocalAuthenticatorEnabled:",
             "setWebAuthenticationPanelEnabled:",
-            "_setWebAuthenticationPanelEnabled:"
+            "_setWebAuthenticationPanelEnabled:",
+            "setWebAuthenticationHybridTransportEnabled:",
+            "_setWebAuthenticationHybridTransportEnabled:",
+            "setWebAuthenticationClientExtensionsEnabled:",
+            "_setWebAuthenticationClientExtensionsEnabled:",
+            "setWebAuthenticationConditionalMediationEnabled:",
+            "_setWebAuthenticationConditionalMediationEnabled:",
+            "setWebAuthenticationAppIdEnabled:",
+            "_setWebAuthenticationAppIdEnabled:"
         ]
         for selStr in webAuthnSelectors {
             let sel = NSSelectorFromString(selStr)
