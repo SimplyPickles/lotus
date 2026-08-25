@@ -26,7 +26,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .tabs: return "sidebar.left"
         case .media: return "bolt"
-        case .shields: return "shield.checkered"
+        case .shields: return "shield.fill"
         case .privacy: return "lock.shield"
         case .downloads: return "arrow.down.circle"
         case .shortcuts: return "keyboard"

@@ -41,7 +41,7 @@ private struct ShieldsMasterSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "shield.checkered")
+            Image(systemName: "shield.fill")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)

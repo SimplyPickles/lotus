@@ -55,6 +55,10 @@ struct ShieldPopover: View {
         return accent.color
     }
 
+    private var activeShieldColor: Color {
+        Color(nsColor: browserState.detectedAccentNSColor(for: tabId))
+    }
+
     private var cardFill: Color {
         colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)
     }
@@ -67,9 +71,9 @@ struct ShieldPopover: View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 10) {
-                Image(systemName: isShieldActive ? "shield.checkered" : "shield.slash")
+                Image(systemName: isShieldActive ? "shield.fill" : "shield.slash.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isShieldActive ? Color.accentColor : foregroundSecondary)
+                    .foregroundColor(isShieldActive ? activeShieldColor : foregroundSecondary)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Shields")

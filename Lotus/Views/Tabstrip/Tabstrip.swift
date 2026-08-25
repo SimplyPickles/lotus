@@ -463,6 +463,10 @@ struct Tabstrip: View {
                             .animation(activeDrag == nil ? nil : .spring(response: 0.28, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
                         }
                     }
+
+                    // Native window drag area in empty space below tabs
+                    WindowDragArea()
+                        .frame(maxWidth: .infinity, minHeight: 40)
                 }
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
@@ -470,6 +474,7 @@ struct Tabstrip: View {
                 .frame(width: browserState.sidebarWidth, alignment: .topLeading)
             }
             .frame(width: browserState.sidebarWidth, alignment: .leading)
+            .background(WindowDragArea())
             .scrollBounceBehavior(.basedOnSize)
             .scrollContentBackground(.hidden)
             .onScrollGeometryChange(

@@ -19,6 +19,15 @@ struct WindowDragArea: NSViewRepresentable {
 }
 
 final class WindowDragNSView: NSView {
+    override var mouseDownCanMoveWindow: Bool {
+        true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.isMovableByWindowBackground = true
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             window?.zoom(nil)
@@ -32,6 +41,6 @@ final class WindowDragNSView: NSView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        return true
+        true
     }
 }
