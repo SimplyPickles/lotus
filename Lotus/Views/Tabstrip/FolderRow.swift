@@ -32,15 +32,15 @@ struct FolderRow: View {
     }
 
     private var hoverFill: Color {
-        folder.color.color.opacity(colorScheme == .dark ? 0.20 : 0.24)
+        folder.color.color.opacity(colorScheme == .dark ? 0.20 : 0.40)
     }
 
     private var restingFill: Color {
-        folder.color.color.opacity(colorScheme == .dark ? 0.10 : 0.14)
+        folder.color.color.opacity(colorScheme == .dark ? 0.10 : 0.30)
     }
 
     private var borderStroke: Color {
-        folder.color.color.opacity(colorScheme == .dark ? 0.28 : 0.28)
+        folder.color.color.opacity(colorScheme == .dark ? 0.28 : 0.48)
     }
 
     private var headerTextColor: Color {
@@ -52,7 +52,7 @@ struct FolderRow: View {
         // tracking, which starves the tabstrip's DragGesture and breaks
         // folder dragging. Tap handling mirrors TabButton's onTapGesture.
         HStack(spacing: 8) {
-            Image(systemName: folder.isCollapsed ? "folder.fill" : "folder")
+            Image(systemName: folder.isArchive ? (folder.isCollapsed ? "archivebox.fill" : "archivebox") : (folder.isCollapsed ? "folder.fill" : "folder"))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(folder.color.color)
                 .frame(width: 16, height: 16)

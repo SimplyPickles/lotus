@@ -373,6 +373,15 @@ struct LotusDownloadsView: View {
                         },
                         onCancel: {
                             browserState.cancelDownload(id: item.id)
+                        },
+                        onPause: {
+                            browserState.pauseDownload(id: item.id)
+                        },
+                        onResume: {
+                            browserState.resumeDownload(id: item.id)
+                        },
+                        onRetry: {
+                            browserState.retryDownload(id: item.id)
                         }
                     )
 
@@ -610,6 +619,9 @@ private struct DownloadRowView: View {
     let onClick: () -> Void
     let onDelete: () -> Void
     let onCancel: () -> Void
+    let onPause: () -> Void
+    let onResume: () -> Void
+    let onRetry: () -> Void
 
     @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
@@ -670,13 +682,33 @@ private struct DownloadRowView: View {
                         }
 
                         if item.state == .downloading {
-                            Text("• Downloading...")
+                            if let speed = item.formattedSpeed {
+                                Text("• \(speed)")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color.accentColor)
+                            } else {
+                                Text("• Downloading...")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color.accentColor)
+                            }
+
+                            if let eta = item.formattedETA {
+                                Text("(\(eta))")
+                                    .font(.system(size: 11, weight: .regular))
+                                    .foregroundColor(foregroundSecondary)
+                            }
+                        } else if item.state == .paused {
+                            Text("• Paused")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color.accentColor)
+                                .foregroundColor(Color.orange.opacity(0.9))
                         } else if item.state == .failed {
                             Text("• Failed")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color.red.opacity(0.85))
+                        } else if item.state == .cancelled {
+                            Text("• Cancelled")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(foregroundSecondary)
                         }
                     }
                 }
@@ -700,6 +732,21 @@ private struct DownloadRowView: View {
 
                     if item.state == .downloading {
                         Button {
+                            onPause()
+                        } label: {
+                            Image(systemName: "pause.fill")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundColor(foregroundSecondary)
+                                .padding(6)
+                                .background(
+                                    Circle()
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Pause Download")
+
+                        Button {
                             onCancel()
                         } label: {
                             Image(systemName: "xmark")
@@ -713,6 +760,51 @@ private struct DownloadRowView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Cancel Download")
+                    } else if item.state == .paused {
+                        Button {
+                            onResume()
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundColor(Color.accentColor)
+                                .padding(6)
+                                .background(
+                                    Circle()
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Resume Download")
+
+                        Button {
+                            onCancel()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(foregroundSecondary)
+                                .padding(6)
+                                .background(
+                                    Circle()
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Cancel Download")
+                    } else if item.state == .failed || item.state == .cancelled {
+                        Button {
+                            onRetry()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color.accentColor)
+                                .padding(6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Retry Download")
                     } else {
                         Button {
                             item.revealInFinder()
@@ -756,8 +848,24 @@ private struct DownloadRowView: View {
         }
         .contextMenu {
             if item.state == .downloading {
+                Button("Pause Download") {
+                    onPause()
+                }
                 Button("Cancel Download", role: .destructive) {
                     onCancel()
+                }
+                Divider()
+            } else if item.state == .paused {
+                Button("Resume Download") {
+                    onResume()
+                }
+                Button("Cancel Download", role: .destructive) {
+                    onCancel()
+                }
+                Divider()
+            } else if item.state == .failed || item.state == .cancelled {
+                Button("Retry Download") {
+                    onRetry()
                 }
                 Divider()
             }

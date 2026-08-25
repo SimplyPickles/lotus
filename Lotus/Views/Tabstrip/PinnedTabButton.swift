@@ -16,6 +16,9 @@ struct PinnedTabButton: View {
     var isDraggingAnyTab: Bool = false
     var namespace: Namespace.ID? = nil
     var isRenaming: Bool = false
+    var isPlayingAudio: Bool = false
+    var isMuted: Bool = false
+    var onToggleMute: () -> Void = {}
     var onCommitRename: (String) -> Void = { _ in }
     var onCancelRename: () -> Void = {}
     let onSelect: () -> Void
@@ -184,7 +187,28 @@ struct PinnedTabButton: View {
                         return .handled
                     }
             } else {
-                faviconView
+                ZStack {
+                    faviconView
+                        .opacity((isMuted || tab.isMuted || (isPlayingAudio && effectiveHovered)) ? 0 : 1)
+
+                    if isMuted || tab.isMuted {
+                        Button(action: onToggleMute) {
+                            Image(systemName: "speaker.slash.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Unmute Tab")
+                    } else if isPlayingAudio && effectiveHovered {
+                        Button(action: onToggleMute) {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(colorScheme == .dark ? .white : .primary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Mute Tab")
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -256,7 +280,7 @@ struct PinnedTabButton: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(colorScheme == .dark ? .white : .black)
         } else if tab.url?.scheme == "lotus" || tab.url?.absoluteString.hasPrefix("lotus://") == true {
-            Image(systemName: tab.url?.host == "history" ? "clock" : (tab.url?.host == "downloads" ? "arrow.down.circle" : (tab.url?.host == "settings" ? "gearshape" : "camera.macro")))
+            Image(systemName: tab.url?.internalPageSystemImage ?? "globe")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.85) : Color(nsColor: .labelColor))
         } else if let faviconURL = tab.faviconURL {

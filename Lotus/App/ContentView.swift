@@ -9,7 +9,14 @@ import SwiftUI
 import AppKit
 
 struct ContentView: View {
-    @StateObject private var browserState = BrowserState()
+    @StateObject private var browserState: BrowserState
+    let isPrivate: Bool
+
+    init(isPrivate: Bool = false) {
+        self.isPrivate = isPrivate
+        _browserState = StateObject(wrappedValue: BrowserState(isPrivate: isPrivate))
+    }
+
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("lotus.browser.showsBrowserFrame") private var showsBrowserFrame: Bool = true
     @AppStorage("lotus.browser.showsRoundedWebCorners") private var showsRoundedWebCorners: Bool = true
@@ -368,18 +375,18 @@ private struct SplitDropZoneCard: View {
         let distance = hypot(dx, dy)
 
         // Expanded magnetic radius
-        let magneticRadius: CGFloat = 500.0
+        let magneticRadius: CGFloat = 350.0
         guard distance < magneticRadius else { return .zero }
 
         let proximity = 1.0 - (distance / magneticRadius)
         let smoothFactor = proximity * (2.0 - proximity)
 
         // The card leans harder into the cursor once it's actually hovered.
-        let pullStrength: CGFloat = isHovered ? 0.16 : 0.10
+        let pullStrength: CGFloat = isHovered ? 0.40 : 0.25
         let pullX = dx * pullStrength * smoothFactor
         let pullY = dy * pullStrength * smoothFactor
-        let maxOffsetX: CGFloat = isHovered ? 26 : 18
-        let maxOffsetY: CGFloat = isHovered ? 22 : 16
+        let maxOffsetX: CGFloat = isHovered ? 50 : 25
+        let maxOffsetY: CGFloat = isHovered ? 50 : 25
         return CGSize(
             width: max(-maxOffsetX, min(maxOffsetX, pullX)),
             height: max(-maxOffsetY, min(maxOffsetY, pullY))
@@ -465,10 +472,4 @@ private struct SplitDropZoneCard: View {
             .allowsHitTesting(false)
         }
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    ContentView()
 }

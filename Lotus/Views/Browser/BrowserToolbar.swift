@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import WebKit
 
 struct BrowserToolbar: View {
     @ObservedObject var browserState: BrowserState
@@ -14,7 +15,6 @@ struct BrowserToolbar: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var urlInputText: String = ""
-    @FocusState private var isInputFocused: Bool
     @State private var isInputHovered: Bool = false
 
     @State private var backOffset: CGFloat = 0
@@ -29,9 +29,9 @@ struct BrowserToolbar: View {
     @State private var downloadRingScale: CGFloat = 0.85
     @State private var downloadRingOpacity: Double = 0.0
     @State private var isZoomIndicatorVisible: Bool = false
-    @State private var isBloomActive: Bool = false
-    @State private var bloomScale: CGFloat = 0.6
-    @State private var bloomOpacity: Double = 0.0
+    @State private var isSecurityPopoverPresented: Bool = false
+    @State private var isMediaPopoverPresented: Bool = false
+    @AppStorage("lotus.browser.centerURLPreview") private var centerURLPreview: Bool = false
 
     private var activeTabId: UUID {
         tabId ?? browserState.selectedTabId
@@ -120,6 +120,16 @@ struct BrowserToolbar: View {
             .opacity(canGoBack ? 1.0 : 0.35)
             .animation(.easeInOut(duration: 0.2), value: canGoBack)
             .focusable(false)
+            .contextMenu {
+                let items = browserState.backHistoryList(for: activeTabId)
+                if !items.isEmpty {
+                    ForEach(Array(items.prefix(15).enumerated()), id: \.offset) { _, item in
+                        Button(historyItemTitle(item)) {
+                            browserState.goToBackForwardItem(item, for: activeTabId)
+                        }
+                    }
+                }
+            }
 
             Button {
                 forwardOffset = 2.5
@@ -138,6 +148,16 @@ struct BrowserToolbar: View {
             .opacity(canGoForward ? 1.0 : 0.35)
             .animation(.easeInOut(duration: 0.2), value: canGoForward)
             .focusable(false)
+            .contextMenu {
+                let items = browserState.forwardHistoryList(for: activeTabId)
+                if !items.isEmpty {
+                    ForEach(Array(items.prefix(15).enumerated()), id: \.offset) { _, item in
+                        Button(historyItemTitle(item)) {
+                            browserState.goToBackForwardItem(item, for: activeTabId)
+                        }
+                    }
+                }
+            }
 
             Button {
                 if isLoading {
@@ -165,11 +185,33 @@ struct BrowserToolbar: View {
             .disabled(currentURL?.isLotusPage == true)
             .opacity(currentURL?.isLotusPage == true ? 0.35 : 1.0)
             .focusable(false)
+            .contextMenu {
+                Button {
+                    browserState.reload(for: activeTabId)
+                } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
+                }
+
+                Button {
+                    browserState.reloadFromOrigin(for: activeTabId)
+                } label: {
+                    Label("Force Reload (Bypass Cache)", systemImage: "arrow.clockwise.circle")
+                }
+            }
+
+            if browserState.isPrivate {
+                PrivateBadgeView()
+            }
 
             ZStack(alignment: .trailing) {
-                ZStack(alignment: .leading) {
-                    if !isEditingOrHovering, let host = prettifiedHost {
-                        HStack(spacing: 4) {
+                if centerURLPreview && !isInputHovered {
+                    // Centered prettified preview with lock icon
+                    HStack(spacing: 4) {
+                        if shouldShowSecurityLock, let url = currentURL {
+                            securityLockButton(for: url)
+                        }
+
+                        if let host = prettifiedHost {
                             Text(host)
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundColor(theme.foregroundPrimary)
@@ -185,98 +227,138 @@ struct BrowserToolbar: View {
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                             }
+                        } else {
+                            Text("Search the web or type a URL")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(theme.foregroundSecondary)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .padding(.trailing, currentZoomLevel != 1.0 ? 54 : 0)
-                        .opacity(urlCopyFeedback != nil ? 0 : 1)
-                        .allowsHitTesting(false)
                     }
-
-                    TextField(
-                        "",
-                        text: $urlInputText,
-                        prompt: Text("Search the web or type a URL").foregroundColor(theme.foregroundSecondary)
-                    )
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(theme.foregroundPrimary)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1)
-                    .focused($isInputFocused)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .padding(.trailing, currentZoomLevel != 1.0 ? 54 : 0)
-                    .opacity((!isEditingOrHovering && prettifiedHost != nil) || urlCopyFeedback != nil ? 0 : 1)
-                    .allowsHitTesting(false)
-                    .onKeyPress(.escape) {
-                        syncInputText()
-                        isInputFocused = false
-                        return .handled
-                    }
-
-                    if let feedback = urlCopyFeedback {
-                        URLCopyFeedbackToast(feedback: feedback, theme: theme, accentColor: hairlineAccentColor)
-                            .id(feedback.id)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .offset(y: 12).combined(with: .opacity),
-                                    removal: .offset(y: -12).combined(with: .opacity)
-                                )
-                            )
-                            .allowsHitTesting(false)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    browserState.openCommandPaletteForCurrentTab()
-                }
-
-                // Keep the pill mounted through the reset so numericText can
-                // animate the final value to 100% before it fades out.
-                if isZoomIndicatorVisible || currentZoomLevel != 1.0 {
-                    ZoomIndicatorPill(
-                        zoomLevel: currentZoomLevel,
-                        isZoomingIn: browserState.lastZoomChangeDirection[activeTabId] ?? true,
-                        theme: theme,
-                        onReset: {
-                            isZoomIndicatorVisible = true
-                            browserState.resetZoom(for: activeTabId)
+                    .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
+                    .opacity(urlCopyFeedback != nil ? 0 : 1)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                } else {
+                    // Left-aligned layout (when hovering to see real URL or center preview is off)
+                    HStack(spacing: 0) {
+                        if shouldShowSecurityLock, let url = currentURL {
+                            securityLockButton(for: url)
+                                .padding(.leading, 7)
                         }
-                    )
-                    .padding(.trailing, 4)
-                    .transition(
-                        .opacity.animation(.easeInOut(duration: 0.30))
-                            .combined(with: .scale(scale: 0.90).animation(.easeInOut(duration: 0.30)))
-                    )
+
+                        if isInputHovered && !urlInputText.isEmpty {
+                            Text(urlInputText)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(theme.foregroundPrimary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .padding(.leading, shouldShowSecurityLock ? 4 : 8)
+                                .padding(.trailing, 8)
+                                .padding(.vertical, 5)
+                                .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
+                                .opacity(urlCopyFeedback != nil ? 0 : 1)
+                        } else if let host = prettifiedHost {
+                            HStack(spacing: 4) {
+                                Text(host)
+                                    .font(.system(size: 13, weight: .regular))
+                                    .foregroundColor(theme.foregroundPrimary)
+
+                                if let detail = prettifiedDetail {
+                                    Text("/")
+                                        .font(.system(size: 13, weight: .light))
+                                        .foregroundColor(theme.foregroundSecondary.opacity(0.3))
+
+                                    Text(detail)
+                                        .font(.system(size: 13, weight: .regular))
+                                        .foregroundColor(theme.foregroundSecondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                            }
+                            .padding(.leading, shouldShowSecurityLock ? 4 : 8)
+                            .padding(.trailing, 8)
+                            .padding(.vertical, 5)
+                            .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
+                            .opacity(urlCopyFeedback != nil ? 0 : 1)
+                        } else {
+                            Text("Search the web or type a URL")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(theme.foregroundSecondary)
+                                .padding(.leading, shouldShowSecurityLock ? 4 : 8)
+                                .padding(.trailing, 8)
+                                .padding(.vertical, 5)
+                                .padding(.trailing, (currentZoomLevel != 1.0 || isZoomIndicatorVisible ? 54 : 0) + 26)
+                                .opacity(urlCopyFeedback != nil ? 0 : 1)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 }
+
+                if let feedback = urlCopyFeedback {
+                    URLCopyFeedbackToast(feedback: feedback, theme: theme, accentColor: hairlineAccentColor)
+                        .id(feedback.id)
+                        .transition(
+                            .asymmetric(
+                                insertion: .offset(y: 12).combined(with: .opacity),
+                                removal: .offset(y: -12).combined(with: .opacity)
+                            )
+                        )
+                        .allowsHitTesting(false)
+                }
+
+                // Trailing embedded elements (Zoom pill + Bookmark button)
+                HStack(spacing: 4) {
+                    if isZoomIndicatorVisible || currentZoomLevel != 1.0 {
+                        ZoomIndicatorPill(
+                            zoomLevel: currentZoomLevel,
+                            isZoomingIn: browserState.lastZoomChangeDirection[activeTabId] ?? true,
+                            theme: theme,
+                            onReset: {
+                                isZoomIndicatorVisible = true
+                                browserState.resetZoom(for: activeTabId)
+                            }
+                        )
+                        .padding(.trailing, 2)
+                        .transition(
+                            .opacity.animation(.easeInOut(duration: 0.30))
+                                .combined(with: .scale(scale: 0.90).animation(.easeInOut(duration: 0.30)))
+                        )
+                    }
+
+                    let isCurrentBookmarked = browserState.isBookmarked(url: currentURL)
+                    let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
+                    Button {
+                        browserState.toggleBookmark(for: activeTabId)
+                    } label: {
+                        Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
+                            .font(.system(size: 11.5, weight: isCurrentBookmarked ? .semibold : .regular))
+                            .foregroundColor(hairlineAccentColor)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .disabled(!shouldShowBookmark)
+                    .opacity(shouldShowBookmark ? 1.0 : 0.0)
+                    .allowsHitTesting(shouldShowBookmark)
+                    .animation(.easeInOut(duration: 0.14), value: shouldShowBookmark)
+                    .help(isCurrentBookmarked ? "Remove Bookmark (⌘D)" : "Bookmark Page (⌘D)")
+                }
+                .padding(.trailing, 4)
+            }
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                browserState.openCommandPaletteForCurrentTab()
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .background(
                 ZStack(alignment: .bottomLeading) {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(theme.inputBackground(isFocused: isInputFocused, isHovered: isInputHovered))
+                        .fill(theme.inputBackground(isFocused: false, isHovered: isInputHovered))
                         .animation(.easeInOut(duration: 0.15), value: isInputHovered)
-                        .animation(.easeInOut(duration: 0.15), value: isInputFocused)
-
-                    // Delicate radial tint bloom matching the site's theme color, radiating from the left
-                    if isBloomActive {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(
-                                RadialGradient(
-                                    gradient: Gradient(colors: [
-                                        hairlineAccentColor.opacity(0.42),
-                                        hairlineAccentColor.opacity(0.18),
-                                        Color.clear
-                                    ]),
-                                    center: .leading,
-                                    startRadius: 0,
-                                    endRadius: 280
-                                )
-                            )
-                            .scaleEffect(x: bloomScale, y: 1.0, anchor: .leading)
-                            .opacity(bloomOpacity)
-                    }
 
                     HairlineProgressIndicator(browserState: browserState, tabId: activeTabId)
                 }
@@ -286,12 +368,30 @@ struct BrowserToolbar: View {
             .onHover { hovering in
                 isInputHovered = hovering
             }
-            .onSubmit {
-                submit(with: urlInputText)
-            }
-            .onExitCommand {
-                syncInputText()
-                isInputFocused = false
+            .contextMenu {
+                Button {
+                    browserState.copyCleanPageURL(for: activeTabId)
+                } label: {
+                    Label("Copy Clean Address", systemImage: "sparkles")
+                }
+                .disabled(currentURL == nil || currentURL?.isLotusPage == true)
+
+                Button {
+                    browserState.copyPageURL(for: activeTabId, forceClean: false)
+                } label: {
+                    Label("Copy Full Address", systemImage: "link")
+                }
+                .disabled(currentURL == nil || currentURL?.isLotusPage == true)
+
+                Divider()
+
+                Button {
+                    if let string = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !string.isEmpty {
+                        browserState.navigateTab(id: activeTabId, to: string)
+                    }
+                } label: {
+                    Label("Paste and Go", systemImage: "arrow.right.circle")
+                }
             }
 
             Button {
@@ -371,21 +471,34 @@ struct BrowserToolbar: View {
 
             ShieldButton(browserState: browserState, tabId: activeTabId, theme: theme)
 
+            if !browserState.mediaTabs.isEmpty {
+                Button {
+                    isMediaPopoverPresented.toggle()
+                } label: {
+                    Image(systemName: browserState.hasActiveAudioPlaying ? "waveform" : "play.tv")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundColor(browserState.hasActiveAudioPlaying ? (theme.isThemeLight ? .black : .white) : theme.foregroundSecondary)
+                }
+                .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+                .focusable(false)
+                .help("Media Playback Controls")
+                .popover(isPresented: $isMediaPopoverPresented, arrowEdge: .bottom) {
+                    GlobalMediaPopover(browserState: browserState)
+                }
+            }
+
             Menu {
                 Button {
-                    browserState.openCommandPalette()
+                    browserState.toggleSidebar()
                 } label: {
-                    Label("New Tab", systemImage: "plus")
+                    Label(
+                        browserState.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
+                        systemImage: "sidebar.left"
+                    )
                 }
-
-                Button {
-                    openWindow(id: "main")
-                } label: {
-                    Label("New Window", systemImage: "macwindow.badge.plus")
-                }
-
+                
                 Divider()
-
+                
                 Button {
                     browserState.addTabBelow(title: "Downloads", url: .lotusDownloads)
                 } label: {
@@ -399,35 +512,18 @@ struct BrowserToolbar: View {
                 }
 
                 Button {
+                    browserState.addTabBelow(title: "Bookmarks", url: .lotusBookmarks)
+                } label: {
+                    Label("Bookmarks", systemImage: "bookmark")
+                }
+
+                Button {
                     browserState.addTabBelow(title: "Settings", url: .lotusSettings)
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
 
-                Button {
-                    browserState.reopenLastClosedTab()
-                } label: {
-                    Label("Reopen Closed Tab", systemImage: "arrow.uturn.left")
-                }
-
                 Divider()
-
-                Button {
-                    browserState.copyPageURL(for: activeTabId)
-                } label: {
-                    Label("Copy Address", systemImage: "link")
-                }
-                .disabled(currentURL == nil || currentURL?.isLotusPage == true)
-
-                Button {
-                    browserState.toggleShield(for: activeTabId)
-                } label: {
-                    Label(
-                        browserState.isShieldActive(for: activeTabId) ? "Pause Shields on this Site" : "Resume Shields on this Site",
-                        systemImage: browserState.isShieldActive(for: activeTabId) ? "shield.slash" : "shield.checkered"
-                    )
-                }
-                .disabled(currentURL?.isLotusPage != false)
 
                 Button {
                     browserState.printPage(for: activeTabId)
@@ -449,15 +545,6 @@ struct BrowserToolbar: View {
                     Label("Find in Page", systemImage: "magnifyingglass")
                 }
                 .disabled(currentURL?.isLotusPage != false)
-
-                Button {
-                    browserState.toggleSidebar()
-                } label: {
-                    Label(
-                        browserState.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
-                        systemImage: "sidebar.left"
-                    )
-                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .regular))
@@ -476,7 +563,6 @@ struct BrowserToolbar: View {
         .background(theme.backgroundColor)
         .onAppear {
             syncInputText()
-            isInputFocused = false
         }
         .onChange(of: activeTabId) {
             handleTabSwitch()
@@ -497,65 +583,53 @@ struct BrowserToolbar: View {
                 }
             }
         }
-        .onChange(of: isInputFocused) { _, isFocused in
-            if isFocused {
-                if isSwitchingTabs {
-                    // Spurious re-focus while the tab switch is still settling.
-                    isInputFocused = false
-                    return
-                }
-                syncInputText()
-                DispatchQueue.main.async {
-                    // Re-verify before selecting: focus may already have been
-                    // lost again during this runloop tick.
-                    guard isInputFocused, !isSwitchingTabs else { return }
-                    NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
-                }
-            } else {
-                syncInputText()
-            }
-        }
         .onChange(of: browserState.focusAddressBarTabId) { _, targetId in
             if targetId == activeTabId {
-                isInputFocused = true
-                DispatchQueue.main.async {
-                    isInputFocused = true
-                    if browserState.focusAddressBarTabId == activeTabId {
-                        browserState.focusAddressBarTabId = nil
-                    }
-                }
+                browserState.focusAddressBarTabId = nil
+                browserState.openCommandPaletteForCurrentTab()
             }
-        }
-        .onChange(of: urlCopyFeedback) { _, feedback in
-            if feedback?.outcome == .copied {
-                triggerRadialBloom()
-            }
-        }
-        .onChange(of: browserState.themeBloomTrigger[activeTabId]) { _, _ in
-            triggerRadialBloom()
         }
     }
 
-    private func triggerRadialBloom() {
-        bloomScale = 0.6
-        bloomOpacity = 0.85
-        isBloomActive = true
-        withAnimation(.easeOut(duration: 0.68)) {
-            bloomScale = 1.65
-            bloomOpacity = 0.0
+    private func historyItemTitle(_ item: WKBackForwardListItem) -> String {
+        if let title = item.title, !title.isEmpty {
+            return title
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.72) {
-            isBloomActive = false
+        if let host = item.url.host, !host.isEmpty {
+            return host
         }
+        return item.url.absoluteString
     }
 
     private var isEditingOrHovering: Bool {
-        isInputFocused || isInputHovered
+        isInputHovered
     }
 
     private var urlCopyFeedback: URLCopyFeedback? {
         guard let feedback = browserState.urlCopyFeedback, feedback.tabId == activeTabId else { return nil }
         return feedback
+    }
+
+    @ViewBuilder
+    private func securityLockButton(for url: URL) -> some View {
+        Button {
+            isSecurityPopoverPresented.toggle()
+        } label: {
+            Image(systemName: url.scheme?.lowercased() == "https" ? "lock.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(url.scheme?.lowercased() == "https" ? theme.foregroundSecondary.opacity(0.65) : .orange)
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .popover(isPresented: $isSecurityPopoverPresented, arrowEdge: .bottom) {
+            SecurityDetailsPopover(browserState: browserState, tabId: activeTabId)
+        }
+    }
+
+    private var shouldShowSecurityLock: Bool {
+        guard let url = currentURL else { return false }
+        return !url.isLotusPage
     }
 
     private var prettifiedHost: String? {
@@ -578,23 +652,8 @@ struct BrowserToolbar: View {
         return nil
     }
 
-    /// Ends address-bar editing synchronously and arms the spurious-focus guard
-    /// for the rest of the current runloop tick.
-    ///
-    /// Deferring the resign to SwiftUI's own update cycle left a stale field
-    /// editor installed on the URL field across tab switches, which both made
-    /// the bar look selected and caused WebTabHostNSView's deferred
-    /// first-responder pass to bail out. Ending the edit here is deterministic.
     private func handleTabSwitch() {
-        isSwitchingTabs = true
-        if isInputFocused {
-            NSApp.keyWindow?.makeFirstResponder(nil)
-            isInputFocused = false
-        }
         syncInputText()
-        DispatchQueue.main.async {
-            isSwitchingTabs = false
-        }
     }
 
     private func syncInputText() {
@@ -611,7 +670,6 @@ struct BrowserToolbar: View {
     private func submit(with text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        isInputFocused = false
         browserState.navigateTab(id: activeTabId, to: trimmed)
     }
 }
@@ -622,18 +680,13 @@ private struct URLCopyFeedbackToast: View {
     let accentColor: Color
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: feedback.systemImage)
-                .font(.system(size: 12, weight: .semibold))
-
-            Text(feedback.message)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .foregroundColor(feedback.outcome == .copied ? accentColor : .red)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        Text(feedback.message)
+            .font(.system(size: 12.5, weight: .regular))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundColor((feedback.outcome == .copied || feedback.outcome == .cleanCopied) ? theme.foregroundSecondary : .red.opacity(0.85))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
     }
 }
 

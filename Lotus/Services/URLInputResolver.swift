@@ -76,8 +76,14 @@ enum URLInputResolver {
         if lower == "lotus://downloads" || lower == "downloads" || lower == "lotus:downloads" {
             return .lotusDownloads
         }
-        if lower == "lotus://settings" || lower == "settings" || lower == "lotus:settings" {
+        if lower == "lotus://settings" || lower == "settings" || lower == "lotus:settings" || lower == "preferences" {
             return .lotusSettings
+        }
+        if lower == "lotus://bookmarks" || lower == "bookmarks" || lower == "lotus:bookmarks" {
+            return .lotusBookmarks
+        }
+        if lower == "lotus://shortcuts" || lower == "shortcuts" || lower == "lotus:shortcuts" || lower == "keyboard shortcuts" || lower == "keyboardshortcuts" || lower == "hotkeys" || lower == "keybindings" {
+            return .lotusShortcuts
         }
         if lower.hasPrefix("lotus://") {
             return URL(string: trimmed)
@@ -97,7 +103,9 @@ enum URLInputResolver {
             if url.host == "history" { return "History" }
             if url.host == "downloads" { return "Downloads" }
             if url.host == "settings" { return "Settings" }
-            return "New Tab"
+            if url.host == "bookmarks" { return "Bookmarks" }
+            if url.host == "shortcuts" || url.host == "keyboardshortcuts" { return "Keyboard Shortcuts" }
+            return url.lotusPageTitle ?? "New Tab"
         }
         return url.host ?? input
     }

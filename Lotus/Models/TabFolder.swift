@@ -97,23 +97,26 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
     var isCollapsed: Bool
     var color: FolderColor
     var nameOrigin: FolderNameOrigin
+    var isArchive: Bool
 
     init(
         id: UUID = UUID(),
         name: String = "New Folder",
         isCollapsed: Bool = false,
         color: FolderColor = .blue,
-        nameOrigin: FolderNameOrigin = .automatic
+        nameOrigin: FolderNameOrigin = .automatic,
+        isArchive: Bool = false
     ) {
         self.id = id
         self.name = name
         self.isCollapsed = isCollapsed
         self.color = color
         self.nameOrigin = nameOrigin
+        self.isArchive = isArchive
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, isCollapsed, color, nameOrigin
+        case id, name, isCollapsed, color, nameOrigin, isArchive
     }
 
     init(from decoder: Decoder) throws {
@@ -122,8 +125,7 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
         self.name = try container.decode(String.self, forKey: .name)
         self.isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
         self.color = try container.decodeIfPresent(FolderColor.self, forKey: .color) ?? .blue
-        // Folders saved before automatic naming were all person-provided
-        // labels, so preserve them rather than retroactively renaming them.
         self.nameOrigin = try container.decodeIfPresent(FolderNameOrigin.self, forKey: .nameOrigin) ?? .manual
+        self.isArchive = try container.decodeIfPresent(Bool.self, forKey: .isArchive) ?? false
     }
 }

@@ -35,6 +35,7 @@ extension BrowserState {
     }
 
     func saveSession(immediate: Bool = false) {
+        guard !isPrivate else { return }
         if immediate {
             pendingSaveWorkItem?.cancel()
             pendingSaveWorkItem = nil

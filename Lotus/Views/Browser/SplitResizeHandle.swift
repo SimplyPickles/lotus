@@ -49,8 +49,8 @@ struct SplitResizeHandle: View {
             }
             .onTapGesture(count: 2) {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-                withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-                    browserState.setSplitRatio(0.5, for: group, save: true)
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    browserState.swapSplitTabs(for: group)
                 }
             }
             .gesture(
@@ -73,12 +73,12 @@ struct SplitResizeHandle: View {
                         let maxRatio = 1.0 - minRatio
                         let clampedRatio = min(max(rawRatio, minRatio), maxRatio)
 
-                        // Magnetic anchor points: 50% (strong primary snap), 33.3% (1/3), 66.7% (2/3), 25% (1/4), 75% (3/4)
+                        // Magnetic anchor points: 50% (strong primary snap), 70/30 (0.70), 30/70 (0.30)
                         let primarySnapRadius: CGFloat = 28.0 / availableWidth
-                        let secondarySnapRadius: CGFloat = 20.0 / availableWidth
+                        let secondarySnapRadius: CGFloat = 22.0 / availableWidth
 
                         var snappedRatio: CGFloat = clampedRatio
-                        var currentlySnappedToCenter = false
+                        var currentlySnapped = false
 
                         if abs(clampedRatio - 0.5) <= primarySnapRadius {
                             let diff = clampedRatio - 0.5
@@ -89,19 +89,32 @@ struct SplitResizeHandle: View {
                             } else {
                                 snappedRatio = 0.5 + diff * (pullFactor * pullFactor)
                             }
-                            currentlySnappedToCenter = true
-                        } else if abs(clampedRatio - 0.3333) <= secondarySnapRadius {
-                            snappedRatio = 0.3333
-                        } else if abs(clampedRatio - 0.6667) <= secondarySnapRadius {
-                            snappedRatio = 0.6667
+                            currentlySnapped = true
+                        } else if abs(clampedRatio - 0.30) <= secondarySnapRadius {
+                            let diff = clampedRatio - 0.30
+                            let pullFactor = abs(diff) / secondarySnapRadius
+                            if pullFactor < 0.65 {
+                                snappedRatio = 0.30
+                            } else {
+                                snappedRatio = 0.30 + diff * (pullFactor * pullFactor)
+                            }
+                            currentlySnapped = true
+                        } else if abs(clampedRatio - 0.70) <= secondarySnapRadius {
+                            let diff = clampedRatio - 0.70
+                            let pullFactor = abs(diff) / secondarySnapRadius
+                            if pullFactor < 0.65 {
+                                snappedRatio = 0.70
+                            } else {
+                                snappedRatio = 0.70 + diff * (pullFactor * pullFactor)
+                            }
+                            currentlySnapped = true
                         }
 
-                        let isNearCenter = currentlySnappedToCenter
-                        if isNearCenter != isSnappedToCenter {
-                            if isNearCenter {
+                        if currentlySnapped != isSnappedToCenter {
+                            if currentlySnapped {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                             }
-                            isSnappedToCenter = isNearCenter
+                            isSnappedToCenter = currentlySnapped
                         }
 
                         browserState.setSplitRatio(snappedRatio, for: group, save: false)

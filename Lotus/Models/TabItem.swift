@@ -17,14 +17,50 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
     var folderId: UUID?
     /// Dynamically discovered high-res favicon URL extracted from the page DOM.
     var customFaviconURL: URL?
+    /// Timestamp of when the user last switched to or interacted with this tab.
+    var lastViewedAt: Date?
+    /// Whether audio playback is muted for this tab.
+    var isMuted: Bool = false
+    /// Whether this tab's webview resources are currently suspended to save memory.
+    var isSnoozed: Bool = false
 
-    init(id: UUID = UUID(), title: String, url: URL? = nil, isPinned: Bool = false, folderId: UUID? = nil, customFaviconURL: URL? = nil) {
+    init(
+        id: UUID = UUID(),
+        title: String,
+        url: URL? = nil,
+        isPinned: Bool = false,
+        folderId: UUID? = nil,
+        customFaviconURL: URL? = nil,
+        lastViewedAt: Date? = Date(),
+        isMuted: Bool = false,
+        isSnoozed: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.url = url
         self.isPinned = isPinned
         self.folderId = folderId
         self.customFaviconURL = customFaviconURL
+        self.lastViewedAt = lastViewedAt
+        self.isMuted = isMuted
+        self.isSnoozed = isSnoozed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, url, isPinned, folderId, customFaviconURL, lastViewedAt, isMuted, isSnoozed
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.url = try container.decodeIfPresent(URL.self, forKey: .url)
+        self.isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        self.folderId = try container.decodeIfPresent(UUID.self, forKey: .folderId)
+        self.customFaviconURL = try container.decodeIfPresent(URL.self, forKey: .customFaviconURL)
+        self.lastViewedAt = try container.decodeIfPresent(Date.self, forKey: .lastViewedAt)
+        self.isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        self.isSnoozed = try container.decodeIfPresent(Bool.self, forKey: .isSnoozed) ?? false
     }
 
     var faviconURL: URL? {

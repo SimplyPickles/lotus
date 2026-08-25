@@ -1,140 +1,24 @@
 //
-//  LotusHistoryView.swift
+//  LotusWebsiteDataView.swift
 //  Lotus
 //
-//  Created by Dylan Fraser on 8/22/26.
+//  Created by Dylan Fraser on 8/24/26.
 //
 
 import SwiftUI
 import AppKit
+import WebKit
 
-// MARK: - Models
-
-struct HistorySection: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let items: [HistoryItem]
-}
-
-// MARK: - Date Formatting
-
-private enum HistoryDateFormatter {
-    private static let dayFormatterSameYear: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter
-    }()
-
-    private static let dayFormatterDifferentYear: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d, yyyy"
-        return formatter
-    }()
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }()
-
-    static func dayLabel(for date: Date, relativeTo referenceDate: Date = Date(), calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(date) {
-            return "Today"
-        } else if calendar.isDateInYesterday(date) {
-            return "Yesterday"
-        } else {
-            let currentYear = calendar.component(.year, from: referenceDate)
-            let dateYear = calendar.component(.year, from: date)
-            if dateYear == currentYear {
-                return dayFormatterSameYear.string(from: date)
-            } else {
-                return dayFormatterDifferentYear.string(from: date)
-            }
-        }
-    }
-
-    static func relativeTime(for date: Date, relativeTo referenceDate: Date = Date()) -> String {
-        let interval = referenceDate.timeIntervalSince(date)
-        if interval < 60 {
-            return "Just now"
-        } else if interval < 3600 {
-            let minutes = max(1, Int(interval / 60))
-            return "\(minutes)m ago"
-        } else if interval < 86400 {
-            let hours = max(1, Int(interval / 3600))
-            return "\(hours)h ago"
-        } else {
-            return timeFormatter.string(from: date)
-        }
-    }
-}
-
-// MARK: - Grouping Helper
-
-private enum HistoryGrouping {
-    static func filterAndGroup(
-        from entries: [HistoryItem],
-        query: String,
-        limit: Int
-    ) -> (sections: [HistorySection], totalFilteredCount: Int) {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered: [HistoryItem]
-        if trimmed.isEmpty {
-            filtered = entries
-        } else {
-            filtered = entries.filter {
-                $0.title.localizedCaseInsensitiveContains(trimmed) ||
-                $0.url.absoluteString.localizedCaseInsensitiveContains(trimmed) ||
-                ($0.displayHost?.localizedCaseInsensitiveContains(trimmed) == true)
-            }
-        }
-
-        let totalCount = filtered.count
-        guard totalCount > 0 else {
-            return (sections: [], totalFilteredCount: 0)
-        }
-
-        let sorted = filtered.sorted { $0.visitedAt > $1.visitedAt }
-        let windowed = Array(sorted.prefix(limit))
-
-        let calendar = Calendar.current
-        let now = Date()
-
-        var dayMap: [Date: [HistoryItem]] = [:]
-        for item in windowed {
-            let day = calendar.startOfDay(for: item.visitedAt)
-            dayMap[day, default: []].append(item)
-        }
-
-        let sortedDays = dayMap.keys.sorted(by: >)
-        var sections: [HistorySection] = []
-
-        for day in sortedDays {
-            guard let itemsInDay = dayMap[day], !itemsInDay.isEmpty else { continue }
-            let dayTitle = HistoryDateFormatter.dayLabel(for: day, relativeTo: now, calendar: calendar)
-            sections.append(HistorySection(
-                id: "\(day.timeIntervalSinceReferenceDate)",
-                title: dayTitle,
-                items: itemsInDay
-            ))
-        }
-
-        return (sections: sections, totalFilteredCount: totalCount)
-    }
-}
-
-// MARK: - Main View
-
-struct LotusHistoryView: View {
+struct LotusWebsiteDataView: View {
     @ObservedObject var browserState: BrowserState
     var tabId: UUID? = nil
+
+    @State private var records: [WKWebsiteDataRecord] = []
+    @State private var isLoading: Bool = true
     @State private var searchText: String = ""
-    @State private var selectedIds: Set<UUID> = []
-    @State private var selectionAnchorId: UUID?
-    @State private var sections: [HistorySection] = []
-    @State private var totalFilteredCount: Int = 0
-    @State private var displayLimit: Int = 60
-    @State private var confirmationType: HistoryConfirmationType? = nil
+    @State private var selectedDomainNames: Set<String> = []
+    @State private var selectionAnchorName: String?
+    @State private var confirmationType: WebsiteDataConfirmationType? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeTabId: UUID {
@@ -142,7 +26,19 @@ struct LotusHistoryView: View {
     }
 
     private var isSelecting: Bool {
-        !selectedIds.isEmpty
+        !selectedDomainNames.isEmpty
+    }
+
+    private var filteredRecords: [WKWebsiteDataRecord] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let sorted = records.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        if trimmed.isEmpty {
+            return sorted
+        }
+        return sorted.filter { record in
+            record.displayName.lowercased().contains(trimmed) ||
+            dataTypesSummary(for: record).contains(where: { $0.lowercased().contains(trimmed) })
+        }
     }
 
     // MARK: - Colors
@@ -181,22 +77,14 @@ struct LotusHistoryView: View {
                         .padding(.top, 40)
                         .padding(.bottom, -4)
 
-                    if sections.isEmpty {
+                    if isLoading {
+                        loadingState
+                            .padding(.top, 60)
+                    } else if filteredRecords.isEmpty {
                         emptyState
                             .padding(.top, 60)
                     } else {
-                        ForEach(sections) { section in
-                            daySection(section)
-                        }
-
-                        if totalFilteredCount > displayLimit {
-                            Color.clear
-                                .frame(height: 32)
-                                .onAppear {
-                                    displayLimit += 60
-                                    refreshSections()
-                                }
-                        }
+                        recordsSection
 
                         Spacer(minLength: 40)
                     }
@@ -211,7 +99,7 @@ struct LotusHistoryView: View {
         .transaction { $0.animation = nil }
         .overlay {
             if let confirmation = confirmationType {
-                HistoryConfirmationView(
+                WebsiteDataConfirmationView(
                     confirmation: confirmation,
                     onCancel: {
                         confirmationType = nil
@@ -219,11 +107,19 @@ struct LotusHistoryView: View {
                     onConfirm: {
                         switch confirmation {
                         case .clearAll:
-                            browserState.clearHistory()
-                            selectedIds.removeAll()
-                        case .deleteSelected(let ids):
-                            browserState.removeHistoryEntries(ids: ids)
-                            selectedIds.subtract(ids)
+                            let allRecords = records
+                            records.removeAll()
+                            selectedDomainNames.removeAll()
+                            browserState.removeWebsiteData(records: allRecords) {
+                                refreshRecords()
+                            }
+                        case .deleteSelected(let domains):
+                            let targetRecords = records.filter { domains.contains($0.displayName) }
+                            records.removeAll { domains.contains($0.displayName) }
+                            selectedDomainNames.subtract(domains)
+                            browserState.removeWebsiteData(records: targetRecords) {
+                                refreshRecords()
+                            }
                         }
                         confirmationType = nil
                     }
@@ -232,38 +128,29 @@ struct LotusHistoryView: View {
         }
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: confirmationType != nil)
         .onAppear {
-            refreshSections()
-        }
-        .onChange(of: browserState.historyEntries) { _, entries in
-            let valid = Set(entries.map { $0.id })
-            selectedIds = selectedIds.intersection(valid)
-            refreshSections()
-        }
-        .onChange(of: searchText) { _, _ in
-            displayLimit = 60
-            refreshSections()
+            refreshRecords()
         }
         .onDeleteCommand {
-            guard !selectedIds.isEmpty else { return }
-            confirmationType = .deleteSelected(ids: selectedIds)
+            guard !selectedDomainNames.isEmpty else { return }
+            confirmationType = .deleteSelected(domains: selectedDomainNames)
         }
         .background {
             DeleteKeyMonitor {
-                guard !selectedIds.isEmpty else { return }
-                confirmationType = .deleteSelected(ids: selectedIds)
+                guard !selectedDomainNames.isEmpty else { return }
+                confirmationType = .deleteSelected(domains: selectedDomainNames)
             }
             .frame(width: 0, height: 0)
         }
     }
 
-    private func refreshSections() {
-        let result = HistoryGrouping.filterAndGroup(
-            from: browserState.historyEntries,
-            query: searchText,
-            limit: displayLimit
-        )
-        sections = result.sections
-        totalFilteredCount = result.totalFilteredCount
+    private func refreshRecords() {
+        isLoading = records.isEmpty
+        browserState.fetchWebsiteDataRecords { fetched in
+            records = fetched
+            let valid = Set(fetched.map { $0.displayName })
+            selectedDomainNames = selectedDomainNames.intersection(valid)
+            isLoading = false
+        }
     }
 
     // MARK: - Header
@@ -271,7 +158,7 @@ struct LotusHistoryView: View {
     private var headerSection: some View {
         VStack(spacing: 18) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "clock")
+                Image(systemName: "server.rack")
                     .font(.system(size: 24, weight: .light))
                     .foregroundStyle(
                         LinearGradient(
@@ -284,11 +171,11 @@ struct LotusHistoryView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("History")
+                    Text("Website Data")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundColor(foregroundPrimary)
 
-                    Text("\(browserState.historyEntries.count) pages")
+                    Text(isLoading ? "Scanning storage…" : "\(records.count) site\(records.count == 1 ? "" : "s")")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(foregroundSecondary)
                 }
@@ -297,19 +184,19 @@ struct LotusHistoryView: View {
 
                 if isSelecting {
                     HeaderActionButton(
-                        title: "Delete \(selectedIds.count)",
+                        title: "Delete \(selectedDomainNames.count)",
                         systemImage: "trash",
                         isDestructive: true
                     ) {
-                        confirmationType = .deleteSelected(ids: selectedIds)
+                        confirmationType = .deleteSelected(domains: selectedDomainNames)
                     }
 
                     HeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
-                        selectedIds.removeAll()
+                        selectedDomainNames.removeAll()
                     }
-                } else if !browserState.historyEntries.isEmpty {
+                } else if !records.isEmpty {
                     HeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: browserState.historyEntries.count)
+                        confirmationType = .clearAll(totalCount: records.count)
                     }
                 }
             }
@@ -323,7 +210,7 @@ struct LotusHistoryView: View {
                 TextField(
                     "",
                     text: $searchText,
-                    prompt: Text("Search history").foregroundColor(foregroundPlaceholder)
+                    prompt: Text("Search website data").foregroundColor(foregroundPlaceholder)
                 )
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(foregroundPrimary)
@@ -353,40 +240,50 @@ struct LotusHistoryView: View {
         }
     }
 
-    // MARK: - Day Section
+    // MARK: - Records Section
 
-    private func daySection(_ section: HistorySection) -> some View {
+    private var recordsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(section.title)
+            Text("Stored Sites")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(foregroundSecondary)
                 .padding(.leading, 14)
 
             VStack(spacing: 0) {
-                ForEach(Array(section.items.enumerated()), id: \.element.id) { index, entry in
-                    HistoryRowView(
-                        entry: entry,
+                ForEach(Array(filteredRecords.enumerated()), id: \.element.displayName) { index, record in
+                    WebsiteDataRowView(
+                        record: record,
+                        dataTypes: dataTypesSummary(for: record),
                         isAlternate: index % 2 == 1,
-                        isSelected: selectedIds.contains(entry.id),
+                        isSelected: selectedDomainNames.contains(record.displayName),
                         isSelecting: isSelecting,
-                        onToggleSelect: { toggleSelection(entry.id) },
+                        onToggleSelect: { toggleSelection(record.displayName) },
                         onDelete: {
-                            confirmationType = .deleteSelected(ids: [entry.id])
+                            confirmationType = .deleteSelected(domains: [record.displayName])
                         },
                         onClick: {
                             if NSEvent.modifierFlags.contains(.shift) {
-                                selectRange(to: entry.id)
+                                selectRange(to: record.displayName)
                             } else if isSelecting {
-                                toggleSelection(entry.id)
+                                toggleSelection(record.displayName)
                             } else if NSEvent.modifierFlags.contains(.command) {
-                                browserState.openTabFromCmdClick(sourceTabId: activeTabId, title: entry.title, url: entry.url, select: false)
+                                if let url = URL(string: "https://\(record.displayName)") {
+                                    browserState.openTabFromCmdClick(sourceTabId: activeTabId, title: record.displayName, url: url, select: false)
+                                }
                             } else {
-                                browserState.loadURL(entry.url, in: activeTabId)
+                                if let url = URL(string: "https://\(record.displayName)") {
+                                    browserState.loadURL(url, in: activeTabId)
+                                }
+                            }
+                        },
+                        onOpenInNewTab: {
+                            if let url = URL(string: "https://\(record.displayName)") {
+                                browserState.openTabFromCmdClick(sourceTabId: activeTabId, title: record.displayName, url: url, select: true)
                             }
                         }
                     )
 
-                    if index < section.items.count - 1 {
+                    if index < filteredRecords.count - 1 {
                         Rectangle()
                             .fill(separatorColor)
                             .frame(height: 1)
@@ -408,44 +305,54 @@ struct LotusHistoryView: View {
 
     // MARK: - Selection
 
-    private func toggleSelection(_ id: UUID) {
-        if selectedIds.contains(id) {
-            selectedIds.remove(id)
+    private func toggleSelection(_ domain: String) {
+        if selectedDomainNames.contains(domain) {
+            selectedDomainNames.remove(domain)
         } else {
-            selectedIds.insert(id)
+            selectedDomainNames.insert(domain)
         }
-        selectionAnchorId = id
+        selectionAnchorName = domain
     }
 
-    private func selectRange(to id: UUID) {
-        let orderedItems = sections.flatMap(\.items)
-        guard let targetIndex = orderedItems.firstIndex(where: { $0.id == id }) else { return }
+    private func selectRange(to domain: String) {
+        guard let targetIndex = filteredRecords.firstIndex(where: { $0.displayName == domain }) else { return }
 
-        guard let anchorId = selectionAnchorId,
-              let anchorIndex = orderedItems.firstIndex(where: { $0.id == anchorId }) else {
-            selectedIds.insert(id)
-            selectionAnchorId = id
+        guard let anchorName = selectionAnchorName,
+              let anchorIndex = filteredRecords.firstIndex(where: { $0.displayName == anchorName }) else {
+            selectedDomainNames.insert(domain)
+            selectionAnchorName = domain
             return
         }
 
-        let range = orderedItems[min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)]
-        selectedIds.formUnion(range.map(\.id))
+        let range = filteredRecords[min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)]
+        selectedDomainNames.formUnion(range.map(\.displayName))
     }
 
-    // MARK: - Empty State
+    // MARK: - Empty & Loading States
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(0.9)
+            Text("Scanning website storage…")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(foregroundSecondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "clock")
+            Image(systemName: "server.rack")
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundColor(foregroundSecondary.opacity(0.5))
 
             if searchText.isEmpty {
-                Text("No browsing history")
+                Text("No stored website data")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(foregroundSecondary)
 
-                Text("Pages you visit will appear here")
+                Text("Websites that store cookies, cache, or local data will appear here")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(foregroundSecondary.opacity(0.7))
             } else {
@@ -460,18 +367,32 @@ struct LotusHistoryView: View {
         }
         .frame(maxWidth: .infinity)
     }
+
+    private func dataTypesSummary(for record: WKWebsiteDataRecord) -> [String] {
+        var summary: [String] = []
+        let types = record.dataTypes
+        if types.contains(WKWebsiteDataTypeCookies) { summary.append("Cookies") }
+        if types.contains(WKWebsiteDataTypeLocalStorage) { summary.append("Local Storage") }
+        if types.contains(WKWebsiteDataTypeIndexedDBDatabases) { summary.append("IndexedDB") }
+        if types.contains(WKWebsiteDataTypeDiskCache) || types.contains(WKWebsiteDataTypeMemoryCache) { summary.append("Cache") }
+        if types.contains(WKWebsiteDataTypeServiceWorkerRegistrations) { summary.append("Service Workers") }
+        if types.contains(WKWebsiteDataTypeSessionStorage) { summary.append("Session Storage") }
+        return summary.isEmpty ? ["Data"] : summary
+    }
 }
 
-// MARK: - History Row View
+// MARK: - Website Data Row View
 
-private struct HistoryRowView: View {
-    let entry: HistoryItem
+private struct WebsiteDataRowView: View {
+    let record: WKWebsiteDataRecord
+    let dataTypes: [String]
     let isAlternate: Bool
     let isSelected: Bool
     let isSelecting: Bool
     let onToggleSelect: () -> Void
     let onDelete: () -> Void
     let onClick: () -> Void
+    let onOpenInNewTab: () -> Void
 
     @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
@@ -492,6 +413,10 @@ private struct HistoryRowView: View {
         colorScheme == .dark ? Color.black.opacity(0.10) : Color.black.opacity(0.025)
     }
 
+    private var domainFaviconURL: URL? {
+        URL(string: "https://\(record.displayName)/favicon.ico")
+    }
+
     var body: some View {
         Button(action: onClick) {
             HStack(spacing: 12) {
@@ -501,7 +426,7 @@ private struct HistoryRowView: View {
                         SelectionCheckbox(isSelected: isSelected, action: onToggleSelect)
                     } else {
                         CachedFaviconView(
-                            url: entry.faviconURL,
+                            url: domainFaviconURL,
                             defaultSystemName: "globe",
                             fallbackColor: foregroundSecondary,
                             size: 16
@@ -510,29 +435,48 @@ private struct HistoryRowView: View {
                 }
                 .frame(width: 18, height: 18)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.title.isEmpty ? (entry.displayHost ?? entry.url.absoluteString) : entry.title)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(record.displayName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(foregroundPrimary.opacity(isSelected ? 1.0 : 0.92))
                         .lineLimit(1)
-                        .truncationMode(.tail)
+                        .truncationMode(.middle)
 
-                    if let host = entry.displayHost {
-                        Text(host)
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundColor(foregroundSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        ForEach(dataTypes, id: \.self) { badge in
+                            Text(badge)
+                                .font(.system(size: 9.5, weight: .medium))
+                                .foregroundColor(foregroundSecondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                                )
+                        }
                     }
                 }
 
-                Text(HistoryDateFormatter.relativeTime(for: entry.visitedAt))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(foregroundSecondary.opacity(0.75))
-                    .monospacedDigit()
+                Spacer(minLength: 12)
+
+                if isHovered && !isSelecting {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundColor(Color.red.opacity(0.85))
+                            .padding(6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete stored data for \(record.displayName)")
+                    .transition(.opacity)
+                }
             }
             .padding(.horizontal, 14)
-            .frame(height: 44)
+            .frame(height: 48)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Rectangle()
@@ -547,6 +491,28 @@ private struct HistoryRowView: View {
         .onHover { hovering in
             if isHovered != hovering {
                 isHovered = hovering
+            }
+        }
+        .contextMenu {
+            Button("Open Website") {
+                onClick()
+            }
+
+            Button("Open in New Tab") {
+                onOpenInNewTab()
+            }
+
+            Divider()
+
+            Button("Copy Domain Name") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(record.displayName, forType: .string)
+            }
+
+            Divider()
+
+            Button("Delete Stored Data", role: .destructive) {
+                onDelete()
             }
         }
     }

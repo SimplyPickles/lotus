@@ -17,7 +17,7 @@ struct FolderContextMenuHeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "folder.fill")
+                Image(systemName: folder.isArchive ? "archivebox.fill" : "folder.fill")
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundColor(folder.color.color)
 

@@ -17,6 +17,11 @@ struct SplitTabRow: View {
     var isThemeLight: Bool = false
     var isThemeLight1: Bool = false
     var isThemeLight2: Bool = false
+    var isPlayingAudio1: Bool = false
+    var isMuted1: Bool = false
+    var isPlayingAudio2: Bool = false
+    var isMuted2: Bool = false
+    var onToggleMute: (TabItem) -> Void = { _ in }
     let activeTabBackgroundColor: Color
     var namespace: Namespace.ID? = nil
     var activeDrag: TabDragState? = nil
@@ -48,6 +53,9 @@ struct SplitTabRow: View {
                 isSplitActive: isSplitActive,
                 isDraggingAnyTab: isDraggingAnyTab || activeDrag != nil,
                 isThemeLight: isThemeLight,
+                isPlayingAudio: isPlayingAudio1,
+                isMuted: isMuted1,
+                onToggleMute: { onToggleMute(tab1) },
                 onSelect: { onSelect(tab1) },
                 onClose: { onClose(tab1) }
             )
@@ -67,6 +75,9 @@ struct SplitTabRow: View {
                 isSplitActive: isSplitActive,
                 isDraggingAnyTab: isDraggingAnyTab || activeDrag != nil,
                 isThemeLight: isThemeLight,
+                isPlayingAudio: isPlayingAudio2,
+                isMuted: isMuted2,
+                onToggleMute: { onToggleMute(tab2) },
                 onSelect: { onSelect(tab2) },
                 onClose: { onClose(tab2) }
             )
@@ -128,6 +139,9 @@ private struct SplitTabHalf: View {
     let isSplitActive: Bool
     var isDraggingAnyTab: Bool = false
     let isThemeLight: Bool
+    var isPlayingAudio: Bool = false
+    var isMuted: Bool = false
+    var onToggleMute: () -> Void = {}
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -176,8 +190,31 @@ private struct SplitTabHalf: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            faviconView
-                .frame(width: 16, height: 16, alignment: .center)
+            ZStack {
+                faviconView
+                    .opacity((isMuted || tab.isMuted || (isPlayingAudio && effectiveHovered)) ? 0 : 1)
+
+                if isMuted || tab.isMuted {
+                    Button(action: onToggleMute) {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Unmute Tab")
+                } else if isPlayingAudio && effectiveHovered {
+                    Button(action: onToggleMute) {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(isSplitActive ? selectedForegroundPrimary : sidebarForeground)
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Mute Tab")
+                }
+            }
+            .frame(width: 16, height: 16, alignment: .center)
 
             Text(tab.title)
                 .font(.system(size: 12, weight: .medium))
@@ -225,7 +262,7 @@ private struct SplitTabHalf: View {
     private var faviconView: some View {
         ZStack {
             if isInternalPage {
-                Image(systemName: tab.url?.host == "history" ? "clock" : (tab.url?.host == "downloads" ? "arrow.down.circle" : (tab.url?.host == "settings" ? "gearshape" : "camera.macro")))
+                Image(systemName: tab.url?.internalPageSystemImage ?? "globe")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(foregroundPrimary.opacity(0.85))
                     .frame(width: 16, height: 16, alignment: .center)

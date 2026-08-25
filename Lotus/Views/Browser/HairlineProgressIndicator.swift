@@ -67,7 +67,7 @@ struct HairlineProgressIndicator: View {
                     LinearGradient(
                         stops: [
                             .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.10 : 0.06), location: 0.0),
-                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.05 : 0.03), location: 0.70),
+                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.05 : 0.03), location: 0.50),
                             .init(color: detectedAccentColor.opacity(0.0), location: 1.0)
                         ],
                         startPoint: .leading,

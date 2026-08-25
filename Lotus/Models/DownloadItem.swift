@@ -11,6 +11,7 @@ import AppKit
 /// Lifecycle status for a browser download.
 enum DownloadState: String, Codable, Equatable {
     case downloading
+    case paused
     case completed
     case failed
     case cancelled
@@ -24,11 +25,13 @@ struct DownloadItem: Identifiable, Codable, Equatable {
     var destinationURL: URL
     var fileSize: Int64?
     var bytesReceived: Int64
-    let startedAt: Date
+    var startedAt: Date
     var completedAt: Date?
     var state: DownloadState
     var mimeType: String?
     var errorMessage: String?
+    var bytesPerSecond: Double?
+    var resumeData: Data?
 
     init(
         id: UUID = UUID(),
@@ -41,7 +44,9 @@ struct DownloadItem: Identifiable, Codable, Equatable {
         completedAt: Date? = nil,
         state: DownloadState = .downloading,
         mimeType: String? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        bytesPerSecond: Double? = nil,
+        resumeData: Data? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -54,6 +59,8 @@ struct DownloadItem: Identifiable, Codable, Equatable {
         self.state = state
         self.mimeType = mimeType
         self.errorMessage = errorMessage
+        self.bytesPerSecond = bytesPerSecond
+        self.resumeData = resumeData
     }
 
     // MARK: - Computed Properties
@@ -64,6 +71,32 @@ struct DownloadItem: Identifiable, Codable, Equatable {
         formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
         return formatter
     }()
+
+    var formattedSpeed: String? {
+        guard let bps = bytesPerSecond, bps > 100, state == .downloading else { return nil }
+        return "\(Self.byteFormatter.string(fromByteCount: Int64(bps)))/s"
+    }
+
+    var formattedETA: String? {
+        guard let bps = bytesPerSecond, bps > 1024,
+              let total = fileSize, total > bytesReceived,
+              state == .downloading else { return nil }
+        let remainingBytes = Double(total - bytesReceived)
+        let seconds = remainingBytes / bps
+        if seconds < 5 {
+            return "A few seconds left"
+        } else if seconds < 60 {
+            return "\(Int(seconds))s left"
+        } else if seconds < 3600 {
+            let minutes = Int(seconds / 60)
+            let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+            return secs > 0 ? "\(minutes)m \(secs)s left" : "\(minutes)m left"
+        } else {
+            let hours = Int(seconds / 3600)
+            let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+            return "\(hours)h \(minutes)m left"
+        }
+    }
 
     var formattedSize: String {
         if let total = fileSize, total > 0 {

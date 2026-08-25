@@ -20,12 +20,7 @@ final class LotusSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "lotus"
 
     private static func pageTitle(for url: URL) -> String {
-        switch url.host {
-        case "history": return "History"
-        case "downloads": return "Downloads"
-        case "settings": return "Settings"
-        default: return "Lotus"
-        }
+        url.lotusPageTitle ?? "Lotus"
     }
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {

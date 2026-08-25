@@ -80,13 +80,19 @@ enum WebViewFactory {
             || prefs.responds(to: NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")) {
             prefs.setValue(true, forKey: "allowsPictureInPictureMediaPlayback")
         }
+
+        // Enable developer tools & Web Inspector
+        if prefs.responds(to: NSSelectorFromString("setDeveloperExtrasEnabled:"))
+            || prefs.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+            prefs.setValue(true, forKey: "developerExtrasEnabled")
+        }
     }
 
     /// Builds the full configuration for a new tab's webview.
-    static func makeConfiguration(messageHandler: WKScriptMessageHandler) -> WKWebViewConfiguration {
+    static func makeConfiguration(messageHandler: WKScriptMessageHandler, isPrivate: Bool = false) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        config.processPool = sharedProcessPool
-        config.websiteDataStore = WKWebsiteDataStore.default()
+        config.processPool = isPrivate ? WKProcessPool() : sharedProcessPool
+        config.websiteDataStore = isPrivate ? WKWebsiteDataStore.nonPersistent() : WKWebsiteDataStore.default()
         configure(config, messageHandler: messageHandler)
         return config
     }
@@ -119,6 +125,36 @@ enum WebViewFactory {
             weakMessageHandler,
             contentWorld: .defaultClient,
             name: UserScripts.shieldDeflectHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .page,
+            name: UserScripts.notificationHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .defaultClient,
+            name: UserScripts.notificationHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .page,
+            name: UserScripts.mediaHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .defaultClient,
+            name: UserScripts.mediaHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .page,
+            name: UserScripts.openSearchHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .defaultClient,
+            name: UserScripts.openSearchHandlerName
         )
         configuration.userContentController.addUserScript(
             WKUserScript(
@@ -169,6 +205,22 @@ enum WebViewFactory {
                 source: UserScripts.youtubeAdBlockScript,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false,
+                in: .page
+            )
+        )
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: UserScripts.mediaPlaybackObserverScriptlet,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false,
+                in: .page
+            )
+        )
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: UserScripts.openSearchDiscoveryScriptlet,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true,
                 in: .page
             )
         )

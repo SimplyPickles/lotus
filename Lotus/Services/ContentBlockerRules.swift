@@ -13,7 +13,7 @@ enum ContentBlockerRules {
 
     static let ruleListIdentifier = "LotusAdBlockRules"
     static let allowlistRuleListIdentifier = "LotusAllowlistRules"
-    static let rulesVersion = "3.1.0"
+    static let rulesVersion = "4.0.0"
 
     // MARK: - Ad Networks, Ad Exchanges, & Video Ad Domains
 
@@ -36,7 +36,47 @@ enum ContentBlockerRules {
         "admeld.com",
         "admob.com",
 
-        // Popups, Popunders & Interstitials
+        // Video Ad Networks & Video DSPs
+        "aniview.com",
+        "aniview.tv",
+        "telaria.com",
+        "freewheel.tv",
+        "fwmrm.net",
+        "tremorhub.com",
+        "tremormedia.com",
+        "spotx.tv",
+        "spotxchange.com",
+        "springserve.com",
+        "vidoomy.com",
+        "videologygroup.com",
+        "unruly.co",
+        "teads.tv",
+        "teads.com",
+        "jwpsrv.com",
+        "streamrail.com",
+        "playwire.com",
+        "brid.tv",
+        "vungle.com",
+        "unityads.unity3d.com",
+        "applovin.com",
+        "chartboost.com",
+        "mintegral.com",
+        "inmobi.com",
+        "adcolony.com",
+        "tapjoy.com",
+        "fyber.com",
+        "smaato.net",
+        "innovid.com",
+        "dynadmic.com",
+        "vidazoo.com",
+        "undertone.com",
+        "showheroes.com",
+        "primis.tech",
+        "ex.co",
+        "anyclip.com",
+        "connatix.com",
+
+        // Popups, Popunders, Redirects & Interstitials
         "adsterra.com",
         "clickadu.com",
         "hilltopads.com",
@@ -65,8 +105,16 @@ enum ContentBlockerRules {
         "spopup.com",
         "wigetmedia.com",
         "yepads.com",
+        "galaksion.com",
+        "clickaine.com",
+        "ezmob.com",
+        "adxad.com",
+        "ero-advertising.com",
+        "tubecorporate.com",
+        "trafficfactory.biz",
+        "runative-syndicate.com",
 
-        // Web Push Ad Networks
+        // Web Push Ad Networks & Notification Spam
         "pushengage.com",
         "subscribers.com",
         "pushassist.com",
@@ -81,6 +129,8 @@ enum ContentBlockerRules {
         "pushprompts.com",
         "push-notification.org",
         "p-n.io",
+        "gravitec.net",
+        "izooto.com",
 
         // Major DSPs, Exchanges & SSPs
         "adnxs.com",
@@ -116,7 +166,6 @@ enum ContentBlockerRules {
         "yieldmo.com",
         "zedo.com",
         "adform.net",
-        "adcolony.com",
         "adpushup.com",
         "adblade.com",
         "adcell.com",
@@ -134,7 +183,6 @@ enum ContentBlockerRules {
         "adzerk.com",
         "affinity.com",
         "alexametrics.com",
-        "applovin.com",
         "audience2media.com",
         "clickfuse.com",
         "conversantmedia.com",
@@ -144,10 +192,7 @@ enum ContentBlockerRules {
         "ezoic.net",
         "gumgum.com",
         "indexexchange.com",
-        "innovid.com",
-        "inmobi.com",
         "intentiq.com",
-        "ironsrc.com",
         "kargo.com",
         "kevel.com",
         "komoona.com",
@@ -155,25 +200,15 @@ enum ContentBlockerRules {
         "mgid.com",
         "nativo.com",
         "onetag.com",
-        "playwire.com",
         "powerlinks.com",
         "pulsepoint.com",
         "richaudience.com",
         "seedtag.com",
         "simpli.fi",
-        "smaato.net",
         "sonobi.com",
-        "spotxchange.com",
-        "spotx.tv",
-        "springserve.com",
         "stackadapt.com",
-        "teads.tv",
         "themonetizer.com",
         "triplelift.com",
-        "unruly.co",
-        "undertone.com",
-        "vidoomy.com",
-        "vungle.com",
         "widespace.com",
         "yieldlab.net",
         "yieldone.com",
@@ -214,7 +249,14 @@ enum ContentBlockerRules {
         "mediaplex.com",
         "tribalfusion.com",
         "valueclick.com",
-        "zergnet.com"
+        "zergnet.com",
+        "mediavine.com",
+        "raptive.com",
+        "monumetric.com",
+        "shemedia.com",
+        "gwallet.com",
+        "contextweb.com",
+        "directrev.com"
     ]
 
     // MARK: - Trackers, Telemetry, Fingerprinting & Behavioral Analytics
@@ -224,15 +266,20 @@ enum ContentBlockerRules {
         "analytics.google.com",
         "googletagmanager.com",
         "googletagservices.com",
+        "stats.g.doubleclick.net",
         "hotjar.com",
         "hotjar.io",
+        "script.hotjar.com",
         "scorecardresearch.com",
         "quantserve.com",
         "quantcount.com",
         "mixpanel.com",
+        "api.mixpanel.com",
         "segment.io",
         "segment.com",
+        "cdn.segment.com",
         "optimizely.com",
+        "logx.optimizely.com",
         "crazyegg.com",
         "chartbeat.com",
         "chartbeat.net",
@@ -245,7 +292,12 @@ enum ContentBlockerRules {
         "adjust.com",
         "appsflyer.com",
         "datadoghq-browser-agent.com",
+        "browser-http-intake.logs.datadoghq.com",
+        "browser-intake-datadoghq.com",
         "clarity.ms",
+        "c.clarity.ms",
+        "c.bing.com",
+        "bat.bing.com",
         "yandex.ru/metrika",
         "mc.yandex.ru",
         "cxense.com",
@@ -279,6 +331,7 @@ enum ContentBlockerRules {
         "gemius.pl",
         "sensic.net",
         "amplitude.com",
+        "api.amplitude.com",
         "braze.com",
         "appboy.com",
         "kissmetrics.com",
@@ -289,13 +342,31 @@ enum ContentBlockerRules {
         "sessioncam.com",
         "vgo.io",
         "vwo.com",
+        "smartlook.com",
+        "logrocket.io",
+        "lr-ingest.io",
+        "sentry.io",
+        "browser.sentry-cdn.com",
+        "sdk.split.io",
+        "launchdarkly.com",
+        "events.launchdarkly.com",
+        "posthog.com",
+        "eu.posthog.com",
+        "app.posthog.com",
+
+        // Fingerprinting Endpoints & Anti-Adblock Scripts
         "fingerprint.com",
         "fpjs.io",
         "api.fpjs.io",
         "api.fingerprint.com",
         "fpjs.pro",
         "fingerprintjs.com",
-        "openfpcdn.io"
+        "openfpcdn.io",
+        "fundingchoicesmessages.google.com",
+        "adblock-analytics.com",
+        "antiadblocksystems.com",
+        "admiral.com",
+        "getadmiral.com"
     ]
 
     // MARK: - Cryptominers & Malicious Hosts
@@ -311,20 +382,46 @@ enum ContentBlockerRules {
         "authedmine.com"
     ]
 
-    // MARK: - Pattern Based Ad & Pixel Endpoints
+    // MARK: - Pattern Based Ad, Pixel & Video Telemetry Endpoints
 
     private static let adURLRegexPatterns: [String] = [
+        // YouTube Ad & Tracking Endpoints (leaves video playback streams intact)
+        "^https?://.*youtube\\.com/api/stats/ads",
+        "^https?://.*youtube\\.com/pagead/",
+        "^https?://.*youtube\\.com/get_midroll_info",
+        "^https?://.*youtube\\.com/ptracking",
+        "^https?://.*youtube\\.com/api/stats/qoe",
+        "^https?://.*youtube\\.com/youtubei/v1/player/ad_break",
+        "^https?://.*youtube\\.com/api/stats/playback",
+        "^https?://.*youtube\\.com/api/stats/atr",
+
+        // Google & DoubleClick Ad Endpoints
         "^https?://.*googleads\\.g\\.doubleclick\\.net/pagead/",
+        "^https?://.*googleads\\.g\\.doubleclick\\.net/pcs/view",
+        "^https?://.*pagead2\\.googlesyndication\\.com/pagead/",
+        "^https?://.*pagead2\\.google\\.",
+        "^https?://.*adservice\\.google\\.",
+
+        // Social Media Tracking & Pixel Endpoints
         "^https?://.*facebook\\.com/tr\\?",
         "^https?://.*connect\\.facebook\\.net/.*/fbevents\\.js",
         "^https?://.*tiktok\\.com/api/.*/pixel",
+        "^https?://.*analytics\\.tiktok\\.com/",
         "^https?://.*analytics\\.twitter\\.com/i/adsct",
         "^https?://.*ads-twitter\\.com/",
+        "^https?://.*t\\.co/i/adsct",
         "^https?://.*linkedin\\.com/li/track",
+        "^https?://.*px\\.ads\\.linkedin\\.com/",
+        "^https?://.*snap\\.licdn\\.com/",
         "^https?://.*ct\\.pinterest\\.com/v3/",
         "^https?://.*redditstatic\\.com/ads/",
-        "^https?://.*pagead2\\.google\\.",
-        "^https?://.*adservice\\.google\\."
+        "^https?://.*ads\\.reddit\\.com/",
+        "^https?://.*events\\.reddit\\.com/",
+        "^https?://.*tr\\.snapchat\\.com/",
+        "^https?://.*sc-static\\.net/scevent\\.min\\.js",
+        "^https?://.*q\\.quora\\.com/_/ad/",
+        "^https?://.*bat\\.bing\\.com/action/",
+        "^https?://.*c\\.clarity\\.ms/c\\.gif"
     ]
 
     // MARK: - Cosmetic CSS Element Hiding Selectors
@@ -343,7 +440,7 @@ enum ContentBlockerRules {
         "[data-dfp-id]",
         ".dfp-ad-slot",
 
-        // Generic Ad Containers & Banners
+        // Generic Ad Containers, Banners & Sponsored Units
         "[class*='ad-container']",
         "[class*='ad-banner']",
         "[class*='ad-wrapper']",
@@ -382,6 +479,11 @@ enum ContentBlockerRules {
         "[data-ad-placeholder]",
         "[data-ad-wrapper]",
         "[data-ad-container]",
+        "[data-ad-layout]",
+        ".trc_rbox_header",
+        ".mediavine-video-wrapper",
+        ".ad-placement",
+        ".ad-placeholder",
 
         // Push Notification Prompts & In-Page Dialogs
         "[class*='onesignal']",
@@ -411,8 +513,10 @@ enum ContentBlockerRules {
         "[class*='top-sticky-ad']",
         ".ad-interstitial",
         ".interstitial-wrapper",
+        "div[class*='ad-sticky']",
+        "div[id*='ad-sticky']",
 
-        // Taboola & Outbrain & Content Recommendations
+        // Taboola, Outbrain & Content Recommendation Networks
         "[class*='taboola-']",
         "[class*='outbrain-']",
         "[id*='taboola-']",
@@ -421,6 +525,8 @@ enum ContentBlockerRules {
         ".trc_rbox_div",
         ".ob-smartfeed-wrapper",
         ".ob-widget",
+        ".mgbox",
+        ".mgid-container",
 
         // Carbon Ads
         "#carbonads",
@@ -433,13 +539,28 @@ enum ContentBlockerRules {
         ".ytp-ad-overlay-container",
         ".ytp-ad-message-container",
         ".ytp-ad-player-overlay",
+        ".ytp-ad-action-interstitial",
         ".ytp-ad-module",
+        ".ytp-ad-text-overlay",
         "ytd-promoted-video-renderer",
         "ytd-banner-promo-renderer",
         "ytd-statement-banner-renderer",
         "ytd-in-feed-ad-layout-renderer",
         "ytd-ad-slot-renderer",
-        ".ad-placeholder",
+        "ytd-display-ad-renderer",
+        "ytd-primetime-promo-renderer",
+        "ytd-compact-promoted-video-renderer",
+        "ytd-video-masthead-ad-v3-renderer",
+        "#masthead-ad",
+        "#player-ads",
+        ".ytd-mealbar-promo-renderer",
+        "ytd-rich-item-renderer:has(ytd-ad-slot-renderer)",
+        "ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer)",
+        "ytd-rich-section-renderer:has(ytd-ad-slot-renderer)",
+        "ytd-rich-section-renderer:has(ytd-statement-banner-renderer)",
+        "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']",
+        "tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)",
+        "ytd-enforcement-message-view-model",
 
         // Ad Iframes
         "iframe[src*='doubleclick']",

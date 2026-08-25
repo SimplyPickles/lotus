@@ -13,7 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         super.init()
+        NSWindow.allowsAutomaticWindowTabbing = false
         NSResponder.suppressUnhandledKeyBeep()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = false
     }
 
     static func forceTerminate() {

@@ -151,7 +151,7 @@ struct FlyingDownloadView: View {
                         )
                     )
                     .frame(width: 260 * max(0.4, scale), height: 80 * max(0.4, scale))
-                    .blur(radius: 28)
+                    .blur(radius: 64)
 
                 // Layer 2: Mid-range diffused glow
                 Capsule()
@@ -167,7 +167,7 @@ struct FlyingDownloadView: View {
                         )
                     )
                     .frame(width: 180 * max(0.4, scale), height: 50 * max(0.4, scale))
-                    .blur(radius: 14)
+                    .blur(radius: 32)
 
                 // Layer 3: Inner soft core streak trailing behind
                 Capsule()

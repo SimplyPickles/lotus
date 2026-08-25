@@ -22,14 +22,18 @@ struct LotusSettingsView: View {
     @AppStorage("lotus.browser.showsBrowserFrame") private var showsBrowserFrame: Bool = true
     @AppStorage("lotus.browser.showsRoundedWebCorners") private var showsRoundedWebCorners: Bool = true
     @AppStorage("lotus.browser.showsWebpageShimmer") private var showsWebpageShimmer: Bool = true
+    @AppStorage("lotus.browser.centerURLPreview") private var centerURLPreview: Bool = false
+    @AppStorage("lotus.browser.centerCommandPaletteOverWebview") private var centerCommandPaletteOverWebview: Bool = false
     @AppStorage("lotus.browser.topBarVisibility") private var topBarVisibility: String = "always"
     @AppStorage("lotus.browser.startupBehavior") private var startupBehavior: String = "restore"
     @AppStorage("lotus.browser.newTabPosition") private var newTabPosition: String = "below"
     @AppStorage("lotus.browser.autoCloseBlankTabs") private var autoCloseBlankTabs: Bool = false
+    @AppStorage("lotus.browser.autoArchiveInterval") private var autoArchiveInterval: String = "never"
     @AppStorage("lotus.browser.userAgentMode") private var userAgentMode: String = "safari"
     @AppStorage("lotus.browser.customUserAgentString") private var customUserAgentString: String = ""
     @AppStorage("lotus.browser.autoplayPolicy") private var autoplayPolicy: String = "audio"
     @AppStorage("lotus.browser.autoPiPEnabled") private var autoPiPEnabled: Bool = true
+    @AppStorage("lotus.browser.tabSnoozeInterval") private var tabSnoozeInterval: String = "never"
     @AppStorage("lotus.browser.lowPowerModeShimmerDisabled") private var lowPowerModeShimmerDisabled: Bool = false
 
     private var foregroundPrimary: Color {
@@ -45,7 +49,7 @@ struct LotusSettingsView: View {
     }
 
     private var cardStroke: Color {
-        colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
+        colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)
     }
 
     var body: some View {
@@ -53,40 +57,26 @@ struct LotusSettingsView: View {
             VStack(alignment: .leading, spacing: 28) {
                 header
 
-                settingsSection("General & Startup") {
-                    SearchEngineSettingsRow(searchEngine: $searchEngine)
-
+                settingsSection("General & Search") {
                     StartupBehaviorSettingsRow(startupBehavior: $startupBehavior)
 
-                    UserAgentSettingsRow(userAgentMode: $userAgentMode, customUserAgentString: $customUserAgentString)
-                }
+                    SearchEngineSettingsRow(searchEngine: $searchEngine)
 
-                settingsSection("Search & Command Palette") {
                     SearchSuggestionsSettingsRow(searchSuggestionsEnabled: $searchSuggestionsEnabled)
 
                     BangsSettingsRow(bangsEnabled: $bangsEnabled)
-                }
 
-                settingsSection("Navigation & Tabs") {
-                    NewTabPositionSettingsRow(newTabPosition: $newTabPosition)
-
-                    AutoFolderNamesSettingsRow(autoFolderNames: $autoFolderNames)
-
-                    AutoCloseBlankTabsSettingsRow(autoCloseBlankTabs: $autoCloseBlankTabs)
-                }
-
-                settingsSection("Media & Performance") {
-                    AutoplayPolicySettingsRow(autoplayPolicy: $autoplayPolicy)
-
-                    AutoPiPSettingsRow(autoPiPEnabled: $autoPiPEnabled)
-
-                    LowPowerPerformanceSettingsRow(lowPowerModeShimmerDisabled: $lowPowerModeShimmerDisabled)
+                    UserAgentSettingsRow(userAgentMode: $userAgentMode, customUserAgentString: $customUserAgentString)
                 }
 
                 settingsSection("Appearance") {
                     AppearanceSettingsRow(appearanceMode: $appearanceMode)
 
                     ChromeTintingSettingsRow(chromeTintingMode: $chromeTintingMode)
+
+                    CenterURLPreviewSettingsRow(centerURLPreview: $centerURLPreview)
+
+                    CenterCommandPaletteSettingsRow(centerCommandPaletteOverWebview: $centerCommandPaletteOverWebview)
 
                     TopBarSettingsRow(topBarVisibility: $topBarVisibility)
 
@@ -97,7 +87,29 @@ struct LotusSettingsView: View {
                     WebpageShimmerSettingsRow(showsWebpageShimmer: $showsWebpageShimmer)
                 }
 
-                settingsSection("Shields & Privacy") {
+                settingsSection("Tabs & Sidebar") {
+                    NewTabPositionSettingsRow(newTabPosition: $newTabPosition)
+
+                    AutoFolderNamesSettingsRow(autoFolderNames: $autoFolderNames)
+
+                    AutoCloseBlankTabsSettingsRow(autoCloseBlankTabs: $autoCloseBlankTabs)
+
+                    AutoArchiveSettingsRow(autoArchiveInterval: $autoArchiveInterval, browserState: browserState)
+
+                    ArchiveAllTabsSettingsRow(browserState: browserState)
+                }
+
+                settingsSection("Media & Performance") {
+                    AutoplayPolicySettingsRow(autoplayPolicy: $autoplayPolicy)
+
+                    AutoPiPSettingsRow(autoPiPEnabled: $autoPiPEnabled)
+
+                    TabSnoozeSettingsRow(tabSnoozeInterval: $tabSnoozeInterval, browserState: browserState)
+
+                    LowPowerPerformanceSettingsRow(lowPowerModeShimmerDisabled: $lowPowerModeShimmerDisabled)
+                }
+
+                settingsSection("Shields & Content Blocking") {
                     ShieldsMasterSettingsRow(contentBlocker: contentBlocker)
 
                     ShieldsTrackingSettingsRow(contentBlocker: contentBlocker)
@@ -112,13 +124,19 @@ struct LotusSettingsView: View {
 
                     ShieldsDNTSettingsRow(contentBlocker: contentBlocker)
 
-                    ShieldsAllowlistSettingsRow(contentBlocker: contentBlocker)
+                    ShieldsCopyCleanURLSettingsRow(contentBlocker: contentBlocker)
 
                     ShieldsStrictPopupBlockedSettingsRow(contentBlocker: contentBlocker)
+
+                    ShieldsAllowlistSettingsRow(contentBlocker: contentBlocker)
                 }
 
-                settingsSection("History") {
+                settingsSection("Privacy & Website Data") {
                     OpenHistorySettingsRow(browserState: browserState, tabId: tabId)
+
+                    ManageWebsiteDataSettingsRow(browserState: browserState, tabId: tabId)
+
+                    ClearDataOnQuitSettingsRow(contentBlocker: contentBlocker)
                 }
 
                 settingsSection("Downloads") {
@@ -129,14 +147,16 @@ struct LotusSettingsView: View {
                     OpenDownloadsSettingsRow(browserState: browserState, tabId: tabId)
                 }
 
+                settingsSection("Keyboard Shortcuts") {
+                    KeyboardShortcutsSettingsRow(browserState: browserState, tabId: tabId)
+                }
+
                 settingsSection("About") {
                     SettingsRow(
                         systemImage: "info.circle",
-                        title: "Lotus",
-                        detail: "Pre-Release 1.0"
+                        title: "Lotus Browser",
+                        detail: "Version 1.0 (macOS)"
                     )
-
-                    ClearDataOnQuitSettingsRow(contentBlocker: contentBlocker)
 
                     ClearDataSettingsRow(browserState: browserState)
                 }
@@ -467,6 +487,70 @@ private struct WebpageShimmerSettingsRow: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
+    }
+}
+
+private struct CenterURLPreviewSettingsRow: View {
+    @Binding var centerURLPreview: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "text.aligncenter")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Center URL preview")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Centers the domain preview and lock icon in the address bar when not hovering")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Toggle("Center URL preview", isOn: $centerURLPreview)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
+private struct CenterCommandPaletteSettingsRow: View {
+    @Binding var centerCommandPaletteOverWebview: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Center command palette over webview")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Aligns the command palette to the web content area instead of the full window when sidebar is open")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Toggle("Center command palette over webview", isOn: $centerCommandPaletteOverWebview)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
     }
 }
 
@@ -934,6 +1018,51 @@ private struct OpenDownloadsSettingsRow: View {
     }
 }
 
+private struct ArchiveAllTabsSettingsRow: View {
+    @ObservedObject var browserState: BrowserState
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var archivableCount: Int {
+        let archiveId = browserState.folders.first(where: { $0.isArchive })?.id
+        return browserState.tabs.filter {
+            !$0.isPinned && (archiveId == nil || $0.folderId != archiveId)
+        }.count
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Archive all tabs")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Moves all unpinned inactive tabs into the Archive folder")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Button {
+                browserState.archiveAllTabs()
+            } label: {
+                Text("Archive All Tabs")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .disabled(archivableCount == 0)
+            .frame(width: 150, height: 28, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
 private struct ClearDataSettingsRow: View {
     @ObservedObject var browserState: BrowserState
     @Environment(\.colorScheme) private var colorScheme
@@ -964,6 +1093,44 @@ private struct ClearDataSettingsRow: View {
             } label: {
                 Text("Clear All Data…")
                     .foregroundColor(Color.red)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .frame(width: 150, height: 28, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
+private struct ManageWebsiteDataSettingsRow: View {
+    @ObservedObject var browserState: BrowserState
+    var tabId: UUID?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "server.rack")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Website data & cookies")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Inspect and delete cookies, caches, and local storage per site")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Button("Open Website Data") {
+                if let url = URL(string: "lotus://data") {
+                    browserState.loadURL(url, in: tabId)
+                }
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
@@ -1030,6 +1197,38 @@ private struct ShieldsDNTSettingsRow: View {
             Spacer()
 
             Toggle("Do Not Track & GPC", isOn: $contentBlocker.dntEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
+private struct ShieldsCopyCleanURLSettingsRow: View {
+    @ObservedObject var contentBlocker: ContentBlockerService
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Copy clean URLs (strip tracking parameters)")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Automatically removes UTM, Facebook, Google, and tracking tags when copying links (⇧⌘C)")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Toggle("Copy clean URLs", isOn: $contentBlocker.copyCleanURLAutomatically)
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -1229,6 +1428,92 @@ private struct AutoCloseBlankTabsSettingsRow: View {
     }
 }
 
+private struct AutoArchiveSettingsRow: View {
+    @Binding var autoArchiveInterval: String
+    @ObservedObject var browserState: BrowserState
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Auto-archive inactive tabs")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Automatically moves unviewed tabs into the Archive folder")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Picker("Auto-archive inactive tabs", selection: $autoArchiveInterval) {
+                Text("Never").tag("never")
+                Text("After 6 hours").tag("6h")
+                Text("After 12 hours").tag("12h")
+                Text("After 24 hours").tag("24h")
+                Text("After 7 days").tag("7d")
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 170, alignment: .trailing)
+            .onChange(of: autoArchiveInterval) { _, _ in
+                browserState.archiveInactiveTabsIfNeeded()
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
+private struct TabSnoozeSettingsRow: View {
+    @Binding var tabSnoozeInterval: String
+    @ObservedObject var browserState: BrowserState
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "moon.zzz")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Tab snoozing (memory saver)")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Frees RAM by suspending background tabs until you switch to them")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Picker("Tab snoozing", selection: $tabSnoozeInterval) {
+                Text("Never").tag("never")
+                Text("After 15 minutes").tag("15m")
+                Text("After 30 minutes").tag("30m")
+                Text("After 1 hour").tag("1h")
+                Text("After 2 hours").tag("2h")
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 170, alignment: .trailing)
+            .onChange(of: tabSnoozeInterval) { _, _ in
+                browserState.snoozeInactiveTabsIfNeeded()
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
 private struct AutoplayPolicySettingsRow: View {
     @Binding var autoplayPolicy: String
     @Environment(\.colorScheme) private var colorScheme
@@ -1403,7 +1688,12 @@ private struct BangsSettingsRow: View {
     @Binding var bangsEnabled: Bool
     @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded: Bool = false
+    @State private var isAddSheetPresented: Bool = false
+    @State private var newBangName: String = ""
+    @State private var newBangTrigger: String = ""
+    @State private var newBangURLTemplate: String = ""
     @State private var disabledList: [String] = (UserDefaults.standard.stringArray(forKey: "lotus.browser.disabledBangIDs") ?? [])
+    @ObservedObject private var bangsStore = CustomBangsStore.shared
 
     private var allProviders: [SiteSearchProvider] {
         SiteSearchProvider.all
@@ -1422,16 +1712,12 @@ private struct BangsSettingsRow: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                    Text("Direct site search using prefixes like !yt, !gh, !w, !r")
+                    Text("Direct site search using prefixes like !yt, !gh, !w, !r or custom engines")
                         .font(.system(size: 11, weight: .regular))
                         .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
                 }
 
                 Spacer()
-
-                Toggle("Site search shortcuts (!bangs)", isOn: $bangsEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
 
                 Button {
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -1446,6 +1732,10 @@ private struct BangsSettingsRow: View {
                 .buttonStyle(.plain)
                 .disabled(!bangsEnabled)
                 .opacity(bangsEnabled ? 1.0 : 0.45)
+                
+                Toggle("Site search shortcuts (!bangs)", isOn: $bangsEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
             }
             .padding(.horizontal, 14)
             .frame(height: 50)
@@ -1456,9 +1746,36 @@ private struct BangsSettingsRow: View {
                         .overlay(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
                         .padding(.horizontal, 14)
 
+                    HStack {
+                        Text("Configured Engines")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Button {
+                            newBangName = ""
+                            newBangTrigger = ""
+                            newBangURLTemplate = ""
+                            isAddSheetPresented = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("Add Custom Bang")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+
                     VStack(spacing: 2) {
                         ForEach(allProviders) { provider in
                             let isProviderEnabled = !disabledList.contains(provider.id)
+                            let isCustom = bangsStore.customBangs.contains(where: { $0.id.uuidString == provider.id })
                             HStack(spacing: 10) {
                                 Image(systemName: provider.iconName)
                                     .font(.system(size: 12))
@@ -1475,6 +1792,21 @@ private struct BangsSettingsRow: View {
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.40) : .secondary)
                                     .padding(.trailing, 8)
+
+                                if isCustom {
+                                    Button {
+                                        if let customBang = bangsStore.customBangs.first(where: { $0.id.uuidString == provider.id }) {
+                                            bangsStore.removeBang(id: customBang.id)
+                                        }
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.red.opacity(0.7))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.trailing, 4)
+                                    .help("Delete Custom Bang")
+                                }
 
                                 Toggle("", isOn: Binding(
                                     get: { isProviderEnabled },
@@ -1500,6 +1832,50 @@ private struct BangsSettingsRow: View {
                     .padding(.bottom, 6)
                 }
             }
+        }
+        .sheet(isPresented: $isAddSheetPresented) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Add Custom Search Bang")
+                    .font(.system(size: 16, weight: .semibold))
+
+                Text("Enter a search engine name, trigger keyword (without !), and URL template with {searchTerms}.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Name (e.g. GitHub)", text: $newBangName)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Trigger (e.g. gh)", text: $newBangTrigger)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Search URL (e.g. https://github.com/search?q={searchTerms})", text: $newBangURLTemplate)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                HStack {
+                    Button("Cancel") {
+                        isAddSheetPresented = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Spacer()
+
+                    Button("Add Bang") {
+                        let cleanName = newBangName.trimmingCharacters(in: .whitespaces)
+                        let cleanTrigger = newBangTrigger.trimmingCharacters(in: CharacterSet(charactersIn: "!").union(.whitespaces))
+                        let cleanURL = newBangURLTemplate.trimmingCharacters(in: .whitespaces)
+                        guard !cleanName.isEmpty, !cleanTrigger.isEmpty, !cleanURL.isEmpty else { return }
+
+                        bangsStore.addBang(trigger: cleanTrigger, name: cleanName, searchURLTemplate: cleanURL)
+                        isAddSheetPresented = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newBangName.isEmpty || newBangTrigger.isEmpty || newBangURLTemplate.isEmpty)
+                }
+            }
+            .padding(20)
+            .frame(width: 420)
         }
     }
 }
@@ -1536,6 +1912,46 @@ private struct ShieldsStrictCanvasBlockSettingsRow: View {
             .frame(width: 180, alignment: .trailing)
             .disabled(!contentBlocker.fingerprintProtectionEnabled || !contentBlocker.isAdBlockingEnabled)
             .opacity((contentBlocker.fingerprintProtectionEnabled && contentBlocker.isAdBlockingEnabled) ? 1.0 : 0.45)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
+
+// MARK: - Keyboard Shortcuts Reference Row
+
+private struct KeyboardShortcutsSettingsRow: View {
+    @ObservedObject var browserState: BrowserState
+    var tabId: UUID?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "keyboard")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Keyboard shortcuts")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Customize shortcuts and key bindings")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Button("Customize Shortcuts") {
+                if let url = URL(string: "lotus://shortcuts") {
+                    browserState.loadURL(url, in: tabId)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .frame(width: 160, height: 28, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .frame(height: 50)

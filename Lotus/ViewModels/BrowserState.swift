@@ -31,10 +31,14 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     }
     @Published var selectedTabId: UUID {
         didSet {
+            wakeTab(id: selectedTabId)
             updateNavigationState()
             syncFocusStateForActiveTab()
             handlePictureInPictureOnTabSwitch(from: oldValue, to: selectedTabId)
             syncFindOnTabSwitch(from: oldValue, to: selectedTabId)
+            updateLastViewedTimestamp(for: selectedTabId)
+            archiveInactiveTabsIfNeeded()
+            snoozeInactiveTabsIfNeeded()
             saveSession()
         }
     }
@@ -109,6 +113,13 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
     @Published var lastZoomChangeDirection: [UUID: Bool] = [:]
+    @Published var pageLoadErrors: [UUID: PageLoadError] = [:]
+    @Published var httpAllowedDomains: Set<String> = []
+    @Published var tabMediaStates: [UUID: TabMediaState] = [:]
+    @Published var detectedOpenSearch: [UUID: OpenSearchDescriptor] = [:]
+    var tabServerTrusts: [UUID: SecTrust] = [:]
+    let isPrivate: Bool
+
 
     static let zoomSteps: [CGFloat] = [
         0.50, 0.67, 0.75, 0.80, 0.90, 1.0, 1.10, 1.25, 1.50, 1.75, 2.0, 2.50, 3.0
@@ -175,7 +186,13 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     let historyStore = HistoryStore()
     @Published var historyEntries: [HistoryItem] = []
     let downloadStore = DownloadStore()
-    @Published var downloads: [DownloadItem] = []
+    @Published var downloads: [DownloadItem] = [] {
+        didSet {
+            updateDockProgress()
+        }
+    }
+    let bookmarkStore = BookmarkStore()
+    @Published var bookmarks: [BookmarkItem] = []
     @Published var activeFlyingDownload: FlyingDownloadPayload? = nil
     @Published var downloadCatchPulseTrigger: Int = 0
     @Published var themeBloomTrigger: [UUID: Int] = [:]
@@ -219,6 +236,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     var lastContextMenuImageURL: URL?
     var lastContextMenuLinkURL: URL?
+    var lastContextMenuSelectedText: String?
 
     func triggerFlyingDownloadAnimation(filename: String, iconName: String, startLocation: CGPoint? = nil) {
         let start = startLocation ?? FlyingDownloadView.currentMouseWindowLocation()
@@ -282,12 +300,20 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     // MARK: - Lifecycle
 
-    init(tabs: [TabItem]? = nil, initialSelectedId: UUID? = nil) {
+    init(tabs: [TabItem]? = nil, initialSelectedId: UUID? = nil, isPrivate: Bool = false) {
+        self.isPrivate = isPrivate
         let store = SessionStore()
-        let restoredSession = (tabs == nil) ? store.load() : nil
-        let startupBehavior = UserDefaults.standard.string(forKey: "lotus.browser.startupBehavior") ?? "restore"
+        let restoredSession = (!isPrivate && tabs == nil) ? store.load() : nil
+        let startupBehavior = isPrivate ? "empty" : (UserDefaults.standard.string(forKey: "lotus.browser.startupBehavior") ?? "restore")
 
-        if let explicitTabs = tabs {
+        if isPrivate {
+            self.tabs = []
+            self.folders = []
+            self.selectedTabId = UUID()
+            self.splitGroups = []
+            self.currentTabIds = []
+            self.isCommandPaletteOpen = true
+        } else if let explicitTabs = tabs {
             self.tabs = explicitTabs
             let sel = initialSelectedId ?? explicitTabs.first?.id ?? UUID()
             self.selectedTabId = sel
@@ -363,6 +389,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         super.init()
         self.historyEntries = historyStore.load()
         self.downloads = downloadStore.load()
+        self.bookmarks = bookmarkStore.load()
         self.restoreDownloadLocation()
         self.updateNavigationState()
         // Initialize webviews for the currently visible tab(s) so they begin loading immediately
@@ -384,12 +411,59 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
 
+    // MARK: - Granular Website Data Management
+
+    /// Fetches all stored website data records (cookies, cache, localStorage, IndexedDB) from WebKit.
+    func fetchWebsiteDataRecords(completion: @escaping ([WKWebsiteDataRecord]) -> Void) {
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        WKWebsiteDataStore.default().fetchDataRecords(ofTypes: types) { records in
+            DispatchQueue.main.async {
+                completion(records)
+            }
+        }
+    }
+
+    /// Removes data for specific website data records.
+    func removeWebsiteData(records: [WKWebsiteDataRecord], completion: (() -> Void)? = nil) {
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        WKWebsiteDataStore.default().removeData(ofTypes: types, for: records) {
+            DispatchQueue.main.async {
+                completion?()
+            }
+        }
+    }
+
+    /// Removes cookies and stored data for a specific domain host name.
+    func removeWebsiteData(for host: String, completion: (() -> Void)? = nil) {
+        let cleanHost = host.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let domainOnly = cleanHost.hasPrefix("www.") ? String(cleanHost.dropFirst(4)) : cleanHost
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        WKWebsiteDataStore.default().fetchDataRecords(ofTypes: types) { [weak self] records in
+            let matched = records.filter { record in
+                let recordHost = record.displayName.lowercased()
+                return recordHost == cleanHost || recordHost == domainOnly || recordHost.hasSuffix("." + domainOnly)
+            }
+            guard !matched.isEmpty else {
+                DispatchQueue.main.async { completion?() }
+                return
+            }
+            WKWebsiteDataStore.default().removeData(ofTypes: types, for: matched) {
+                DispatchQueue.main.async {
+                    if let activeWV = self?.webViewStore[self?.selectedTabId ?? UUID()],
+                       let url = activeWV.url, url.host?.lowercased().contains(domainOnly) == true {
+                        activeWV.reload()
+                    }
+                    completion?()
+                }
+            }
+        }
+    }
+
     // MARK: - Clear All Data
 
     /// Clears all browsing data: WebKit website data (cookies, cache, IndexedDB, local storage, WebAuthn credentials),
     /// browsing history, downloads records, and favicon/color caches.
     func clearAllBrowserData(completion: (() -> Void)? = nil) {
-        // 1. Clear WebKit website data store
         let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
         let sinceDate = Date.distantPast
         WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, modifiedSince: sinceDate) { [weak self] in
@@ -399,14 +473,10 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                     return
                 }
 
-                // 2. Clear history and downloads
                 self.historyStore.clearAll(entries: &self.historyEntries)
                 self.downloadStore.clearAll(entries: &self.downloads)
-
-                // 3. Clear favicon and color caches
                 FaviconColorExtractor.shared.clearCache()
 
-                // 4. Reload active webviews so pages reset state cleanly
                 for webView in self.webViewStore.values {
                     webView.reload()
                 }

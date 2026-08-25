@@ -157,11 +157,28 @@ struct Tabstrip: View {
     var unpinnedRows: [UnpinnedTabRow] {
         let unpinned = browserState.unpinnedTabs
         var rows: [UnpinnedTabRow] = []
+        var archiveRows: [UnpinnedTabRow] = []
         var handledIds = Set<UUID>()
         var emittedFolders = Set<UUID>()
 
+        let archiveFolder = browserState.folders.first(where: { $0.isArchive })
+        let archiveFolderId = archiveFolder?.id
+
         for tab in unpinned {
             if handledIds.contains(tab.id) {
+                continue
+            }
+
+            // If tab belongs to archive folder, route to archiveRows
+            if let folderId = tab.folderId, folderId == archiveFolderId, let folder = archiveFolder {
+                var isCollapsed = folder.isCollapsed
+                if emittedFolders.insert(folderId).inserted {
+                    archiveRows.append(.folderHeader(folder))
+                }
+                handledIds.insert(tab.id)
+                if !isCollapsed {
+                    archiveRows.append(.single(tab))
+                }
                 continue
             }
 
@@ -195,13 +212,16 @@ struct Tabstrip: View {
             }
         }
 
-        // Folders with no member tabs still render (at the end) so they can
-        // receive drops and be managed.
+        // Folders with no member tabs still render so they can receive drops and be managed.
         for folder in browserState.folders where !emittedFolders.contains(folder.id) {
-            rows.append(.folderHeader(folder))
+            if folder.isArchive {
+                archiveRows.append(.folderHeader(folder))
+            } else {
+                rows.append(.folderHeader(folder))
+            }
         }
 
-        return rows
+        return rows + archiveRows
     }
 
     var body: some View {
@@ -226,6 +246,11 @@ struct Tabstrip: View {
                                     isDraggingAnyTab: activeDrag != nil,
                                     namespace: tabAnimationNamespace,
                                     isRenaming: renamingTabId == tab.id,
+                                    isPlayingAudio: browserState.tabMediaStates[tab.id]?.isPlayingAudio ?? false,
+                                    isMuted: browserState.tabMediaStates[tab.id]?.isMuted ?? false,
+                                    onToggleMute: {
+                                        browserState.toggleMuteTab(id: tab.id)
+                                    },
                                     onCommitRename: { title in
                                         browserState.renameTab(id: tab.id, to: title)
                                         renamingTabId = nil
@@ -343,6 +368,11 @@ struct Tabstrip: View {
                                 // edge stays aligned while indented.
                                 sidebarWidth: browserState.sidebarWidth - (tab.folderId != nil ? 14 : 0),
                                 isRenaming: renamingTabId == tab.id,
+                                isPlayingAudio: browserState.tabMediaStates[tab.id]?.isPlayingAudio ?? false,
+                                isMuted: browserState.tabMediaStates[tab.id]?.isMuted ?? false,
+                                onToggleMute: {
+                                    browserState.toggleMuteTab(id: tab.id)
+                                },
                                 onCommitRename: { title in
                                     browserState.renameTab(id: tab.id, to: title)
                                     renamingTabId = nil
@@ -395,6 +425,13 @@ struct Tabstrip: View {
                                 sidebarWidth: browserState.sidebarWidth - (tab1.folderId != nil ? 14 : 0),
                                 isMultiSelected: hasMultipleSelectedTabs && (browserState.selectedSidebarTabIds.contains(tab1.id) || browserState.selectedSidebarTabIds.contains(tab2.id)),
                                 isThemeLight: browserState.isThemeLight(for: highlightedTabId),
+                                isPlayingAudio1: browserState.tabMediaStates[tab1.id]?.isPlayingAudio ?? false,
+                                isMuted1: browserState.tabMediaStates[tab1.id]?.isMuted ?? false,
+                                isPlayingAudio2: browserState.tabMediaStates[tab2.id]?.isPlayingAudio ?? false,
+                                isMuted2: browserState.tabMediaStates[tab2.id]?.isMuted ?? false,
+                                onToggleMute: { tab in
+                                    browserState.toggleMuteTab(id: tab.id)
+                                },
                                 activeTabBackgroundColor: activeTabBackgroundColor,
                                 namespace: tabAnimationNamespace,
                                 activeDrag: activeDrag,
@@ -495,6 +532,44 @@ struct Tabstrip: View {
             browserState.tab(for: id)?.isPinned == false
         }
 
+        if !isMulti {
+            Button("Duplicate Tab") {
+                browserState.duplicateTab(id: tab.id)
+            }
+
+            Button("Reload Tab") {
+                browserState.reload(for: tab.id)
+            }
+
+            Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") {
+                browserState.toggleMuteTab(id: tab.id)
+            }
+
+            if tab.url != nil {
+                Button("Copy Tab URL") {
+                    browserState.copyTabURL(id: tab.id)
+                }
+            }
+
+            Button("Move Tab to New Window") {
+                browserState.moveTabToNewWindow(id: tab.id)
+            }
+
+            if !tab.isPinned && tab.id != browserState.selectedTabId && !browserState.currentTabIds.contains(tab.id) && tab.url?.isLotusPage == false {
+                if tab.isSnoozed {
+                    Button("Wake Tab") {
+                        browserState.wakeTab(id: tab.id)
+                    }
+                } else {
+                    Button("Snooze Tab (Free Memory)") {
+                        browserState.snoozeTab(id: tab.id)
+                    }
+                }
+            }
+
+            Divider()
+        }
+
         if browserState.isSplit(id: tab.id) {
             Button("Separate Views") {
                 withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
@@ -532,25 +607,37 @@ struct Tabstrip: View {
             let removeTitle = count > 1 ? "Remove \(count) Tabs from Folder" : "Remove from Folder"
 
             Menu(moveTitle) {
+                Button(newFolderTitle) {
+                    browserState.createFolder(with: folderTargetIds)
+                }
+
+                if !browserState.folders.isEmpty {
+                    Divider()
+                }
+                
                 ForEach(browserState.folders) { folder in
                     Button(folder.name) {
                         browserState.moveTabs(folderTargetIds, toFolder: folder.id)
                     }
                     .disabled(folderTargetIds.allSatisfy { browserState.tab(for: $0)?.folderId == folder.id })
                 }
-
-                if !browserState.folders.isEmpty {
-                    Divider()
-                }
-
-                Button(newFolderTitle) {
-                    browserState.createFolder(with: folderTargetIds)
-                }
             }
 
             if folderTargetIds.contains(where: { browserState.tab(for: $0)?.folderId != nil }) {
                 Button(removeTitle) {
                     browserState.moveTabs(folderTargetIds, toFolder: nil)
+                }
+            }
+
+            if !isMulti {
+                Divider()
+
+                Button("Close Other Tabs") {
+                    browserState.closeOtherTabs(id: tab.id)
+                }
+
+                Button("Close Tabs Below") {
+                    browserState.closeTabsBelow(id: tab.id)
                 }
             }
         }
@@ -564,9 +651,3 @@ struct Tabstrip: View {
     }
 }
 
-// MARK: - Preview
-
-#Preview {
-    Tabstrip(browserState: BrowserState())
-        .frame(height: 500)
-}

@@ -10,7 +10,32 @@ import WebKit
 import AppKit
 import CoreServices
 
-// MARK: - Active Download Cache
+// MARK: - Active Download Cache & Speed Tracker
+
+private final class DownloadSpeedTracker {
+    private var lastBytes: Int64 = 0
+    private var lastTime: Date = Date()
+    private var currentSpeed: Double = 0
+
+    func update(bytesReceived: Int64) -> Double {
+        let now = Date()
+        let timeDelta = now.timeIntervalSince(lastTime)
+        guard timeDelta >= 0.20 else { return currentSpeed }
+
+        let bytesDelta = bytesReceived - lastBytes
+        guard bytesDelta >= 0 else {
+            lastBytes = bytesReceived
+            lastTime = now
+            return currentSpeed
+        }
+
+        let instantaneous = Double(bytesDelta) / timeDelta
+        currentSpeed = currentSpeed > 0 ? (currentSpeed * 0.65 + instantaneous * 0.35) : instantaneous
+        lastBytes = bytesReceived
+        lastTime = now
+        return currentSpeed
+    }
+}
 
 private final class ActiveDownloadTracker {
     static let shared = ActiveDownloadTracker()
@@ -18,18 +43,36 @@ private final class ActiveDownloadTracker {
     private var items = [ObjectIdentifier: DownloadItem]()
     private var downloadsById = [UUID: WKDownload]()
     private var tasksById = [UUID: URLSessionDownloadTask]()
+    private var progressObservers = [UUID: NSKeyValueObservation]()
+    private var speedTrackers = [UUID: DownloadSpeedTracker]()
 
     func set(_ item: DownloadItem, for download: WKDownload) {
         lock.lock()
         items[ObjectIdentifier(download)] = item
         downloadsById[item.id] = download
+        speedTrackers[item.id] = DownloadSpeedTracker()
         lock.unlock()
     }
 
     func setTask(_ task: URLSessionDownloadTask, for id: UUID) {
         lock.lock()
         tasksById[id] = task
+        speedTrackers[id] = DownloadSpeedTracker()
         lock.unlock()
+    }
+
+    func setObserver(_ observer: NSKeyValueObservation, for id: UUID) {
+        lock.lock()
+        progressObservers[id]?.invalidate()
+        progressObservers[id] = observer
+        lock.unlock()
+    }
+
+    func updateSpeed(for id: UUID, bytes: Int64) -> Double {
+        lock.lock()
+        let tracker = speedTrackers[id]
+        lock.unlock()
+        return tracker?.update(bytesReceived: bytes) ?? 0
     }
 
     func get(for download: WKDownload) -> DownloadItem? {
@@ -46,14 +89,54 @@ private final class ActiveDownloadTracker {
         if let id = item?.id {
             downloadsById.removeValue(forKey: id)
             tasksById.removeValue(forKey: id)
+            progressObservers.removeValue(forKey: id)?.invalidate()
+            speedTrackers.removeValue(forKey: id)
         }
         return item
+    }
+
+    func remove(id: UUID) {
+        lock.lock()
+        let download = downloadsById.removeValue(forKey: id)
+        tasksById.removeValue(forKey: id)
+        progressObservers.removeValue(forKey: id)?.invalidate()
+        speedTrackers.removeValue(forKey: id)
+        if let download = download {
+            items.removeValue(forKey: ObjectIdentifier(download))
+        }
+        lock.unlock()
+    }
+
+    func pause(id: UUID, completion: @escaping (Data?) -> Void) {
+        lock.lock()
+        let download = downloadsById.removeValue(forKey: id)
+        let task = tasksById.removeValue(forKey: id)
+        progressObservers.removeValue(forKey: id)?.invalidate()
+        speedTrackers.removeValue(forKey: id)
+        if let download = download {
+            items.removeValue(forKey: ObjectIdentifier(download))
+        }
+        lock.unlock()
+
+        if let download = download {
+            download.cancel { resumeData in
+                completion(resumeData)
+            }
+        } else if let task = task {
+            task.cancel(byProducingResumeData: { resumeData in
+                completion(resumeData)
+            })
+        } else {
+            completion(nil)
+        }
     }
 
     func cancel(id: UUID) {
         lock.lock()
         let download = downloadsById.removeValue(forKey: id)
         let task = tasksById.removeValue(forKey: id)
+        progressObservers.removeValue(forKey: id)?.invalidate()
+        speedTrackers.removeValue(forKey: id)
         if let download = download {
             items.removeValue(forKey: ObjectIdentifier(download))
         }
@@ -107,6 +190,25 @@ extension BrowserState: WKDownloadDelegate {
         )
 
         ActiveDownloadTracker.shared.set(item, for: download)
+
+        let obs = download.progress.observe(\.completedUnitCount) { [weak self] progress, _ in
+            guard let self = self else { return }
+            let bytes = progress.completedUnitCount
+            let total = progress.totalUnitCount > 0 ? progress.totalUnitCount : totalSize
+            let speed = ActiveDownloadTracker.shared.updateSpeed(for: item.id, bytes: bytes)
+
+            DispatchQueue.main.async {
+                if let idx = self.downloads.firstIndex(where: { $0.id == item.id }),
+                   self.downloads[idx].state == .downloading {
+                    self.downloads[idx].bytesReceived = bytes
+                    if let total = total, total > 0 {
+                        self.downloads[idx].fileSize = total
+                    }
+                    self.downloads[idx].bytesPerSecond = speed
+                }
+            }
+        }
+        ActiveDownloadTracker.shared.setObserver(obs, for: item.id)
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -164,6 +266,8 @@ extension BrowserState: WKDownloadDelegate {
                 )
                 self.downloadStore.save(self.downloads)
                 NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+
+                self.applyAITidyDownloadNameIfNeeded(downloadId: self.downloads[index].id)
             } else if var item = cachedItem {
                 item.state = .completed
                 item.completedAt = Date()
@@ -175,6 +279,8 @@ extension BrowserState: WKDownloadDelegate {
                 Self.applyDownloadQuarantine(to: item.destinationURL, sourceURL: item.originalURL)
                 self.downloadStore.upsert(item, in: &self.downloads)
                 NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+
+                self.applyAITidyDownloadNameIfNeeded(downloadId: item.id)
             }
         }
     }
@@ -194,7 +300,48 @@ extension BrowserState: WKDownloadDelegate {
                 self.downloads[index].state = .failed
                 self.downloads[index].errorMessage = error.localizedDescription
                 self.downloads[index].completedAt = Date()
+                self.downloads[index].resumeData = resumeData
+                self.downloads[index].bytesPerSecond = nil
                 self.downloadStore.save(self.downloads)
+            }
+        }
+    }
+
+    private func applyAITidyDownloadNameIfNeeded(downloadId: UUID) {
+        let tidyObject = UserDefaults.standard.object(forKey: "lotus.browser.tidyDownloadsEnabled")
+        let tidyEnabled = (tidyObject as? Bool) ?? true
+        guard tidyEnabled else { return }
+
+        guard let item = downloads.first(where: { $0.id == downloadId }),
+              item.state == .completed else { return }
+
+        let originalDestination = item.destinationURL
+        guard FileManager.default.fileExists(atPath: originalDestination.path) else { return }
+
+        Task {
+            guard let aiSuggestedStem = await FolderNameGenerator.suggestedDownloadName(for: item.filename) else {
+                return
+            }
+            let ext = originalDestination.pathExtension
+            let newCleanName = ext.isEmpty ? aiSuggestedStem : "\(aiSuggestedStem).\(ext)"
+
+            await MainActor.run {
+                guard let idx = self.downloads.firstIndex(where: { $0.id == downloadId }),
+                      self.downloads[idx].state == .completed else { return }
+
+                let currentURL = self.downloads[idx].destinationURL
+                let parentDir = currentURL.deletingLastPathComponent()
+                let targetURL = Self.uniqueDestinationURL(for: newCleanName, in: parentDir)
+
+                if currentURL != targetURL && FileManager.default.fileExists(atPath: currentURL.path) {
+                    do {
+                        try FileManager.default.moveItem(at: currentURL, to: targetURL)
+                        Self.applyDownloadQuarantine(to: targetURL, sourceURL: self.downloads[idx].originalURL)
+                        self.downloads[idx].destinationURL = targetURL
+                        self.downloads[idx].filename = targetURL.lastPathComponent
+                        self.downloadStore.save(self.downloads)
+                    } catch {}
+                }
             }
         }
     }
@@ -492,6 +639,7 @@ extension BrowserState {
         request.setValue(WebViewFactory.currentUserAgent, forHTTPHeaderField: "User-Agent")
 
         let task = URLSession.shared.downloadTask(with: request) { [weak self] tempURL, response, error in
+            ActiveDownloadTracker.shared.remove(id: item.id)
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if let error = error {
@@ -499,6 +647,7 @@ extension BrowserState {
                         self.downloads[index].state = .failed
                         self.downloads[index].errorMessage = error.localizedDescription
                         self.downloads[index].completedAt = Date()
+                        self.downloads[index].bytesPerSecond = nil
                         self.downloadStore.save(self.downloads)
                     }
                     return
@@ -506,11 +655,15 @@ extension BrowserState {
 
                 guard let tempURL = tempURL else { return }
                 do {
+                    if FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try? FileManager.default.removeItem(at: destinationURL)
+                    }
                     try FileManager.default.moveItem(at: tempURL, to: destinationURL)
                     Self.applyDownloadQuarantine(to: destinationURL, sourceURL: url)
                     if let index = self.downloads.firstIndex(where: { $0.id == item.id }) {
                         self.downloads[index].state = .completed
                         self.downloads[index].completedAt = Date()
+                        self.downloads[index].bytesPerSecond = nil
 
                         if let attr = try? FileManager.default.attributesOfItem(atPath: destinationURL.path),
                            let fileSize = attr[.size] as? Int64, fileSize > 0 {
@@ -523,19 +676,156 @@ extension BrowserState {
 
                         self.downloadStore.save(self.downloads)
                         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+
+                        self.applyAITidyDownloadNameIfNeeded(downloadId: item.id)
                     }
                 } catch {
                     if let index = self.downloads.firstIndex(where: { $0.id == item.id }) {
                         self.downloads[index].state = .failed
                         self.downloads[index].errorMessage = error.localizedDescription
                         self.downloads[index].completedAt = Date()
+                        self.downloads[index].bytesPerSecond = nil
                         self.downloadStore.save(self.downloads)
                     }
                 }
             }
         }
         ActiveDownloadTracker.shared.setTask(task, for: item.id)
+
+        let obs = task.progress.observe(\.completedUnitCount) { [weak self] progress, _ in
+            guard let self = self else { return }
+            let bytes = progress.completedUnitCount
+            let total = progress.totalUnitCount > 0 ? progress.totalUnitCount : nil
+            let speed = ActiveDownloadTracker.shared.updateSpeed(for: item.id, bytes: bytes)
+
+            DispatchQueue.main.async {
+                if let idx = self.downloads.firstIndex(where: { $0.id == item.id }),
+                   self.downloads[idx].state == .downloading {
+                    self.downloads[idx].bytesReceived = bytes
+                    if let total = total, total > 0 {
+                        self.downloads[idx].fileSize = total
+                    }
+                    self.downloads[idx].bytesPerSecond = speed
+                }
+            }
+        }
+        ActiveDownloadTracker.shared.setObserver(obs, for: item.id)
         task.resume()
+    }
+
+    /// Pauses an active download, saving its resumeData if supported.
+    func pauseDownload(id: UUID) {
+        ActiveDownloadTracker.shared.pause(id: id) { [weak self] resumeData in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                    if let index = self.downloads.firstIndex(where: { $0.id == id }) {
+                        self.downloads[index].state = .paused
+                        self.downloads[index].resumeData = resumeData
+                        self.downloads[index].bytesPerSecond = nil
+                        self.downloadStore.save(self.downloads)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Resumes a paused download using saved resumeData or re-initiates the request.
+    func resumeDownload(id: UUID) {
+        guard let index = downloads.firstIndex(where: { $0.id == id }) else { return }
+        let item = downloads[index]
+        guard item.state == .paused || item.state == .failed || item.state == .cancelled else { return }
+
+        if let resumeData = item.resumeData {
+            downloads[index].state = .downloading
+            downloads[index].errorMessage = nil
+            downloads[index].bytesPerSecond = nil
+            downloadStore.save(downloads)
+
+            let destinationURL = item.destinationURL
+            let task = URLSession.shared.downloadTask(withResumeData: resumeData) { [weak self] tempURL, response, error in
+                ActiveDownloadTracker.shared.remove(id: id)
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if let error = error {
+                        if let idx = self.downloads.firstIndex(where: { $0.id == id }) {
+                            self.downloads[idx].state = .failed
+                            self.downloads[idx].errorMessage = error.localizedDescription
+                            self.downloads[idx].bytesPerSecond = nil
+                            self.downloadStore.save(self.downloads)
+                        }
+                        return
+                    }
+
+                    guard let tempURL = tempURL else { return }
+                    do {
+                        if FileManager.default.fileExists(atPath: destinationURL.path) {
+                            try? FileManager.default.removeItem(at: destinationURL)
+                        }
+                        try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                        Self.applyDownloadQuarantine(to: destinationURL, sourceURL: item.originalURL)
+                        if let idx = self.downloads.firstIndex(where: { $0.id == id }) {
+                            self.downloads[idx].state = .completed
+                            self.downloads[idx].completedAt = Date()
+                            self.downloads[idx].bytesPerSecond = nil
+                            if let attr = try? FileManager.default.attributesOfItem(atPath: destinationURL.path),
+                               let fileSize = attr[.size] as? Int64, fileSize > 0 {
+                                self.downloads[idx].fileSize = fileSize
+                                self.downloads[idx].bytesReceived = fileSize
+                            }
+                            self.downloadStore.save(self.downloads)
+                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                            self.applyAITidyDownloadNameIfNeeded(downloadId: id)
+                        }
+                    } catch {
+                        if let idx = self.downloads.firstIndex(where: { $0.id == id }) {
+                            self.downloads[idx].state = .failed
+                            self.downloads[idx].errorMessage = error.localizedDescription
+                            self.downloads[idx].bytesPerSecond = nil
+                            self.downloadStore.save(self.downloads)
+                        }
+                    }
+                }
+            }
+
+            ActiveDownloadTracker.shared.setTask(task, for: item.id)
+            let obs = task.progress.observe(\.completedUnitCount) { [weak self] progress, _ in
+                guard let self = self else { return }
+                let bytes = progress.completedUnitCount
+                let total = progress.totalUnitCount > 0 ? progress.totalUnitCount : item.fileSize
+                let speed = ActiveDownloadTracker.shared.updateSpeed(for: item.id, bytes: bytes)
+
+                DispatchQueue.main.async {
+                    if let idx = self.downloads.firstIndex(where: { $0.id == item.id }),
+                       self.downloads[idx].state == .downloading {
+                        self.downloads[idx].bytesReceived = bytes
+                        if let total = total, total > 0 {
+                            self.downloads[idx].fileSize = total
+                        }
+                        self.downloads[idx].bytesPerSecond = speed
+                    }
+                }
+            }
+            ActiveDownloadTracker.shared.setObserver(obs, for: item.id)
+            task.resume()
+        } else {
+            retryDownload(id: id)
+        }
+    }
+
+    /// Retries a failed or cancelled download by re-requesting its original URL.
+    func retryDownload(id: UUID) {
+        guard let index = downloads.firstIndex(where: { $0.id == id }) else { return }
+        let item = downloads[index]
+        downloads[index].state = .downloading
+        downloads[index].errorMessage = nil
+        downloads[index].bytesReceived = 0
+        downloads[index].bytesPerSecond = nil
+        downloads[index].startedAt = Date()
+        downloads[index].completedAt = nil
+        downloadStore.save(downloads)
+
+        downloadURL(item.originalURL)
     }
 
     /// Cancels an in-progress download.
@@ -576,6 +866,24 @@ extension BrowserState {
     func clearAllDownloads() {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
             downloadStore.clearAll(entries: &downloads)
+        }
+    }
+
+    /// Synchronizes download activity and progress to the macOS Dock icon badge.
+    func updateDockProgress() {
+        let active = downloads.filter { $0.state == .downloading }
+        DispatchQueue.main.async {
+            if active.isEmpty {
+                NSApp.dockTile.badgeLabel = nil
+            } else {
+                let totalFraction = active.reduce(0.0) { $0 + $1.progressFraction }
+                let avgPercent = Int((totalFraction / Double(active.count)) * 100)
+                if active.count == 1 {
+                    NSApp.dockTile.badgeLabel = "\(avgPercent)%"
+                } else {
+                    NSApp.dockTile.badgeLabel = "\(active.count) (\(avgPercent)%)"
+                }
+            }
         }
     }
 }

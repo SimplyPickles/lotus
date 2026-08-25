@@ -36,6 +36,22 @@ struct CommandPalette: View {
     @State private var isSubmitting: Bool = false
     @Namespace private var selectionNamespace
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("lotus.browser.centerCommandPaletteOverWebview") private var centerCommandPaletteOverWebview: Bool = false
+    @AppStorage("lotus.browser.showsBrowserFrame") private var showsBrowserFrame: Bool = true
+
+    private var paletteLeadingPadding: CGFloat {
+        if centerCommandPaletteOverWebview {
+            return browserState.isSidebarVisible ? browserState.sidebarWidth : (showsBrowserFrame ? 6 : 0)
+        }
+        return 0
+    }
+
+    private var paletteTrailingPadding: CGFloat {
+        if centerCommandPaletteOverWebview {
+            return showsBrowserFrame ? 6 : 0
+        }
+        return 0
+    }
 
     private var foregroundPrimary: Color {
         colorScheme == .dark ? .white : Color(nsColor: .labelColor)
@@ -155,9 +171,12 @@ struct CommandPalette: View {
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 28, x: 0, y: 12)
             .animation(.easeInOut(duration: 0.15), value: activeProvider)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.leading, paletteLeadingPadding)
+            .padding(.trailing, paletteTrailingPadding)
             .padding(.top, 200)
-            // Center over the web content area, not the whole window.
-            .padding(.leading, browserState.isSidebarVisible ? browserState.sidebarWidth : 0)
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: browserState.isSidebarVisible)
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: centerCommandPaletteOverWebview)
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: showsBrowserFrame)
         }
         .transition(.asymmetric(
             insertion: .identity,
@@ -201,6 +220,7 @@ struct CommandPalette: View {
             suggestionService.update(
                 for: newValue,
                 history: browserState.historyEntries,
+                bookmarks: browserState.bookmarks,
                 allowsRemoteSuggestions: activeProvider == nil && areSuggestionsEnabled
             )
         }

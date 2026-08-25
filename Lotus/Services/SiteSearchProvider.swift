@@ -25,6 +25,7 @@ struct SiteSearchProvider: Identifiable, Equatable {
     /// Brand accent used for the locked-mode chip and tab-to-search hint.
     let accentColor: Color
     let isAccentLight: Bool
+    let customTemplate: String?
 
     init(
         id: String,
@@ -35,7 +36,8 @@ struct SiteSearchProvider: Identifiable, Equatable {
         searchEndpoint: String,
         queryParameter: String,
         accentColor: Color,
-        isAccentLight: Bool = false
+        isAccentLight: Bool = false,
+        customTemplate: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -46,9 +48,24 @@ struct SiteSearchProvider: Identifiable, Equatable {
         self.queryParameter = queryParameter
         self.accentColor = accentColor
         self.isAccentLight = isAccentLight
+        self.customTemplate = customTemplate
     }
 
     func searchURL(for query: String) -> URL? {
+        if let customTemplate = customTemplate {
+            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+            let populated: String
+            if customTemplate.contains("{searchTerms}") {
+                populated = customTemplate.replacingOccurrences(of: "{searchTerms}", with: encoded)
+            } else if customTemplate.contains("%s") {
+                populated = customTemplate.replacingOccurrences(of: "%s", with: encoded)
+            } else if customTemplate.contains("{q}") {
+                populated = customTemplate.replacingOccurrences(of: "{q}", with: encoded)
+            } else {
+                populated = "\(customTemplate)\(encoded)"
+            }
+            return URL(string: populated)
+        }
         var components = URLComponents(string: searchEndpoint)
         components?.queryItems = [URLQueryItem(name: queryParameter, value: query)]
         return components?.url
@@ -60,68 +77,96 @@ struct SiteSearchProvider: Identifiable, Equatable {
 
     // MARK: - Registry
 
-    static let all: [SiteSearchProvider] = [
-        SiteSearchProvider(id: "chatgpt", name: "ChatGPT", host: "chatgpt.com",
-                           iconName: "sparkles",
-                           triggers: ["chatgpt", "gpt", "chat"],
-                           searchEndpoint: "https://chatgpt.com/", queryParameter: "q",
-                           accentColor: Color(red: 0.06, green: 0.65, blue: 0.53)),
-        SiteSearchProvider(id: "claude", name: "Claude", host: "claude.ai",
-                           iconName: "sparkles",
-                           triggers: ["claude", "cl"],
-                           searchEndpoint: "https://claude.ai/new", queryParameter: "q",
-                           accentColor: Color(red: 0.85, green: 0.45, blue: 0.30)),
-        SiteSearchProvider(id: "gemini", name: "Gemini", host: "gemini.google.com",
-                           iconName: "sparkle",
-                           triggers: ["gemini", "gem"],
-                           searchEndpoint: "https://gemini.google.com/app", queryParameter: "q",
-                           accentColor: Color(red: 0.31, green: 0.48, blue: 0.96)),
-        SiteSearchProvider(id: "youtube", name: "YouTube", host: "www.youtube.com",
-                           iconName: "play.rectangle.fill",
-                           triggers: ["youtube", "yt"],
-                           searchEndpoint: "https://www.youtube.com/results", queryParameter: "search_query",
-                           accentColor: Color(red: 0.90, green: 0.13, blue: 0.13)),
-        SiteSearchProvider(id: "google", name: "Google", host: "www.google.com",
-                           iconName: "magnifyingglass",
-                           triggers: ["google", "g"],
-                           searchEndpoint: "https://www.google.com/search", queryParameter: "q",
-                           accentColor: Color(red: 0.26, green: 0.52, blue: 0.96)),
-        SiteSearchProvider(id: "wikipedia", name: "Wikipedia", host: "en.wikipedia.org",
-                           iconName: "book.closed.fill",
-                           triggers: ["wikipedia", "wiki", "w"],
-                           searchEndpoint: "https://en.wikipedia.org/w/index.php", queryParameter: "search",
-                           accentColor: Color(red: 0.35, green: 0.38, blue: 0.42)),
-        SiteSearchProvider(id: "reddit", name: "Reddit", host: "www.reddit.com",
-                           iconName: "bubble.left.and.bubble.right.fill",
-                           triggers: ["reddit", "r"],
-                           searchEndpoint: "https://www.reddit.com/search/", queryParameter: "q",
-                           accentColor: Color(red: 1.00, green: 0.27, blue: 0.00)),
-        SiteSearchProvider(id: "github", name: "GitHub", host: "github.com",
-                           iconName: "chevron.left.forwardslash.chevron.right",
-                           triggers: ["github", "gh"],
-                           searchEndpoint: "https://github.com/search", queryParameter: "q",
-                           accentColor: Color(red: 0.29, green: 0.33, blue: 0.39)),
-        SiteSearchProvider(id: "amazon", name: "Amazon", host: "www.amazon.com",
-                           iconName: "cart.fill",
-                           triggers: ["amazon"],
-                           searchEndpoint: "https://www.amazon.com/s", queryParameter: "k",
-                           accentColor: Color(red: 0.90, green: 0.55, blue: 0.00)),
-        SiteSearchProvider(id: "x", name: "X", host: "x.com",
-                           iconName: "bubble.left.fill",
-                           triggers: ["x", "twitter"],
-                           searchEndpoint: "https://x.com/search", queryParameter: "q",
-                           accentColor: Color(red: 0.16, green: 0.18, blue: 0.22)),
-        SiteSearchProvider(id: "stackoverflow", name: "Stack Overflow", host: "stackoverflow.com",
-                           iconName: "square.stack.3d.up.fill",
-                           triggers: ["stackoverflow", "so"],
-                           searchEndpoint: "https://stackoverflow.com/search", queryParameter: "q",
-                           accentColor: Color(red: 0.96, green: 0.50, blue: 0.14)),
-        SiteSearchProvider(id: "twitch", name: "Twitch", host: "www.twitch.tv",
-                           iconName: "play.tv.fill",
-                           triggers: ["twitch"],
-                           searchEndpoint: "https://www.twitch.tv/search", queryParameter: "term",
-                           accentColor: Color(red: 0.57, green: 0.27, blue: 1.00)),
-    ]
+    static var all: [SiteSearchProvider] {
+        var base: [SiteSearchProvider] = [
+            SiteSearchProvider(id: "chatgpt", name: "ChatGPT", host: "chatgpt.com",
+                               iconName: "sparkles",
+                               triggers: ["chatgpt", "gpt", "chat"],
+                               searchEndpoint: "https://chatgpt.com/", queryParameter: "q",
+                               accentColor: Color(red: 0.06, green: 0.65, blue: 0.53)),
+            SiteSearchProvider(id: "claude", name: "Claude", host: "claude.ai",
+                               iconName: "sparkles",
+                               triggers: ["claude", "cl"],
+                               searchEndpoint: "https://claude.ai/new", queryParameter: "q",
+                               accentColor: Color(red: 0.85, green: 0.45, blue: 0.30)),
+            SiteSearchProvider(id: "gemini", name: "Gemini", host: "gemini.google.com",
+                               iconName: "sparkle",
+                               triggers: ["gemini", "gem"],
+                               searchEndpoint: "https://gemini.google.com/app", queryParameter: "q",
+                               accentColor: Color(red: 0.31, green: 0.48, blue: 0.96)),
+            SiteSearchProvider(id: "youtube", name: "YouTube", host: "www.youtube.com",
+                               iconName: "play.rectangle.fill",
+                               triggers: ["youtube", "yt"],
+                               searchEndpoint: "https://www.youtube.com/results", queryParameter: "search_query",
+                               accentColor: Color(red: 0.90, green: 0.13, blue: 0.13)),
+            SiteSearchProvider(id: "wikipedia", name: "Wikipedia", host: "en.wikipedia.org",
+                               iconName: "book.closed.fill",
+                               triggers: ["wikipedia", "wiki", "w"],
+                               searchEndpoint: "https://en.wikipedia.org/w/index.php", queryParameter: "search",
+                               accentColor: Color(red: 0.35, green: 0.38, blue: 0.42)),
+            SiteSearchProvider(id: "reddit", name: "Reddit", host: "www.reddit.com",
+                               iconName: "bubble.left.and.bubble.right.fill",
+                               triggers: ["reddit", "r"],
+                               searchEndpoint: "https://www.reddit.com/search/", queryParameter: "q",
+                               accentColor: Color(red: 1.00, green: 0.27, blue: 0.00)),
+            SiteSearchProvider(id: "github", name: "GitHub", host: "github.com",
+                               iconName: "chevron.left.forwardslash.chevron.right",
+                               triggers: ["github", "gh"],
+                               searchEndpoint: "https://github.com/search", queryParameter: "q",
+                               accentColor: Color(red: 0.29, green: 0.33, blue: 0.39)),
+            SiteSearchProvider(id: "amazon", name: "Amazon", host: "www.amazon.com",
+                               iconName: "cart.fill",
+                               triggers: ["amazon"],
+                               searchEndpoint: "https://www.amazon.com/s", queryParameter: "k",
+                               accentColor: Color(red: 0.90, green: 0.55, blue: 0.00)),
+            SiteSearchProvider(id: "x", name: "X", host: "x.com",
+                               iconName: "bubble.left.fill",
+                               triggers: ["x", "twitter"],
+                               searchEndpoint: "https://x.com/search", queryParameter: "q",
+                               accentColor: Color(red: 0.16, green: 0.18, blue: 0.22)),
+            SiteSearchProvider(id: "stackoverflow", name: "Stack Overflow", host: "stackoverflow.com",
+                               iconName: "square.stack.3d.up.fill",
+                               triggers: ["stackoverflow", "so"],
+                               searchEndpoint: "https://stackoverflow.com/search", queryParameter: "q",
+                               accentColor: Color(red: 0.96, green: 0.50, blue: 0.14)),
+            SiteSearchProvider(id: "twitch", name: "Twitch", host: "www.twitch.tv",
+                               iconName: "play.tv.fill",
+                               triggers: ["twitch"],
+                               searchEndpoint: "https://www.twitch.tv/search", queryParameter: "term",
+                               accentColor: Color(red: 0.57, green: 0.27, blue: 1.00)),
+        ]
+
+        for custom in CustomBangsStore.shared.customBangs {
+            let trigger = custom.cleanTrigger.lowercased()
+            let host = URL(string: custom.searchURLTemplate)?.host ?? "search"
+            if let existingIdx = base.firstIndex(where: { $0.triggers.contains(trigger) }) {
+                base[existingIdx] = SiteSearchProvider(
+                    id: custom.id.uuidString,
+                    name: custom.name,
+                    host: host,
+                    iconName: custom.iconName,
+                    triggers: [trigger],
+                    searchEndpoint: custom.searchURLTemplate,
+                    queryParameter: "q",
+                    accentColor: custom.accentColor,
+                    customTemplate: custom.searchURLTemplate
+                )
+            } else {
+                base.append(SiteSearchProvider(
+                    id: custom.id.uuidString,
+                    name: custom.name,
+                    host: host,
+                    iconName: custom.iconName,
+                    triggers: [trigger],
+                    searchEndpoint: custom.searchURLTemplate,
+                    queryParameter: "q",
+                    accentColor: custom.accentColor,
+                    customTemplate: custom.searchURLTemplate
+                ))
+            }
+        }
+        return base
+    }
 
     static var activeProviders: [SiteSearchProvider] {
         let isBangsEnabled = UserDefaults.standard.object(forKey: "lotus.browser.bangsEnabled") as? Bool ?? true

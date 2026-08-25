@@ -87,6 +87,12 @@ final class ContentBlockerService: ObservableObject {
         }
     }
 
+    @Published var copyCleanURLAutomatically: Bool = true {
+        didSet {
+            saveSettings()
+        }
+    }
+
     @Published private(set) var isReady: Bool = false
 
     // MARK: - WebKit Rule Lists
@@ -124,6 +130,7 @@ final class ContentBlockerService: ObservableObject {
             self.dntEnabled = settings.dntEnabled
             self.clearDataOnQuit = settings.clearDataOnQuit
             self.strictCanvasBlockEnabled = settings.strictCanvasBlockEnabled
+            self.copyCleanURLAutomatically = settings.copyCleanURLAutomatically
         } else {
             self.isAdBlockingEnabled = true
             self.blockTrackersEnabled = true
@@ -136,6 +143,7 @@ final class ContentBlockerService: ObservableObject {
             self.dntEnabled = true
             self.clearDataOnQuit = false
             self.strictCanvasBlockEnabled = false
+            self.copyCleanURLAutomatically = true
         }
     }
 
@@ -151,7 +159,8 @@ final class ContentBlockerService: ObservableObject {
             httpsOnlyModeEnabled: httpsOnlyModeEnabled,
             dntEnabled: dntEnabled,
             clearDataOnQuit: clearDataOnQuit,
-            strictCanvasBlockEnabled: strictCanvasBlockEnabled
+            strictCanvasBlockEnabled: strictCanvasBlockEnabled,
+            copyCleanURLAutomatically: copyCleanURLAutomatically
         )
         if let data = try? JSONEncoder().encode(settings) {
             UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)

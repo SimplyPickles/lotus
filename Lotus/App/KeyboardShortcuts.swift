@@ -44,7 +44,24 @@ struct LotusShortcut: Identifiable {
         self.action = action
     }
 
+    var effectiveKey: KeyEquivalent {
+        if let custom = ShortcutManager.shared.customShortcut(for: id) {
+            return custom.keyEquivalent
+        }
+        return key
+    }
+
+    var effectiveModifiers: EventModifiers {
+        if let custom = ShortcutManager.shared.customShortcut(for: id) {
+            return custom.eventModifiers
+        }
+        return modifiers
+    }
+
     var displayString: String {
+        if let custom = ShortcutManager.shared.customShortcut(for: id) {
+            return custom.displayString
+        }
         var parts: [String] = []
         if modifiers.contains(.command) { parts.append("⌘") }
         if modifiers.contains(.shift) { parts.append("⇧") }
@@ -54,7 +71,7 @@ struct LotusShortcut: Identifiable {
         case .leftArrow: parts.append("←")
         case .rightArrow: parts.append("→")
         case .tab: parts.append("⇥")
-        default: parts.append(String(key.character))
+        default: parts.append(String(key.character).uppercased())
         }
         return parts.joined()
     }
@@ -96,6 +113,12 @@ enum LotusShortcuts {
         LotusShortcut("showDownloads", key: "l", modifiers: [.command, .option]) {
             $0.addTabBelow(title: "Downloads", url: .lotusDownloads)
         },
+        LotusShortcut("showBookmarks", key: "b", modifiers: [.command, .option]) {
+            $0.addTabBelow(title: "Bookmarks", url: .lotusBookmarks)
+        },
+        LotusShortcut("bookmarkPage", key: "d", modifiers: .command, usesEventMonitor: true) {
+            $0.toggleBookmark()
+        },
 
         // MARK: Navigation
         LotusShortcut("focusAddressBar", key: "l", modifiers: .command, usesEventMonitor: true) {
@@ -115,6 +138,15 @@ enum LotusShortcuts {
         },
         LotusShortcut("reload", key: "r", modifiers: .command) {
             $0.reload()
+        },
+        LotusShortcut("reloadFromOrigin", key: "r", modifiers: [.command, .shift], usesEventMonitor: true) {
+            $0.reloadFromOrigin()
+        },
+        LotusShortcut("viewSource", key: "u", modifiers: [.command, .option], usesEventMonitor: true) {
+            $0.viewPageSource()
+        },
+        LotusShortcut("inspectElement", key: "i", modifiers: [.command, .option], usesEventMonitor: true) {
+            $0.inspectElement()
         },
         LotusShortcut("back", key: "[", modifiers: .command) {
             $0.goBack()
@@ -325,7 +357,7 @@ enum KeyboardShortcutRouter {
         let modifiers = EventModifiers(flags)
 
         let match = LotusShortcuts.table.first { shortcut in
-            shortcut.key == key && shortcut.modifiers == modifiers
+            shortcut.effectiveKey == key && shortcut.effectiveModifiers == modifiers
         }
 
         guard let match = match else { return event }
@@ -357,13 +389,14 @@ private extension EventModifiers {
 /// Renders shortcut table entries as invisible buttons for standard SwiftUI accessibility.
 struct GlobalShortcutHandlers: View {
     @ObservedObject var browserState: BrowserState
+    @ObservedObject private var shortcutManager = ShortcutManager.shared
 
     var body: some View {
         ForEach(LotusShortcuts.table.filter { !$0.usesEventMonitor }) { shortcut in
             Button("") {
                 shortcut.action(browserState)
             }
-            .keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+            .keyboardShortcut(shortcut.effectiveKey, modifiers: shortcut.effectiveModifiers)
         }
         .opacity(0)
         .frame(width: 0, height: 0)

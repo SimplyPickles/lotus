@@ -28,6 +28,8 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
         case "lotus://history": return "History"
         case "lotus://downloads": return "Downloads"
         case "lotus://settings": return "Settings"
+        case "lotus://bookmarks": return "Bookmarks"
+        case "lotus://shortcuts", "lotus://keyboardshortcuts": return "Keyboard Shortcuts"
         default: return text
         }
     }
@@ -112,7 +114,18 @@ final class SearchSuggestionService: ObservableObject {
         self.session = URLSession(configuration: config)
     }
 
-    func update(for query: String, history: [HistoryItem] = [], allowsRemoteSuggestions: Bool = true) {
+    func clear() {
+        currentTask?.cancel()
+        suggestions = []
+        isLoading = false
+    }
+
+    func update(
+        for query: String,
+        history: [HistoryItem] = [],
+        bookmarks: [BookmarkItem] = [],
+        allowsRemoteSuggestions: Bool = true
+    ) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         currentTask?.cancel()
@@ -138,33 +151,23 @@ final class SearchSuggestionService: ObservableObject {
             return
         }
 
-        // 2. Keep the current list on screen while fetching — replacing it
-        //    with the (usually shorter) local matches on every keystroke made
-        //    the dropdown flicker. Local matches only seed an empty list.
-        let localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed, history: history)
-        if self.suggestions.isEmpty {
-            self.suggestions = localMatches
-        }
+        // 2. Synchronously apply local matches immediately with 0ms latency
+        let localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed, history: history, bookmarks: bookmarks)
+        self.suggestions = localMatches
         self.isLoading = true
 
-        // Live completions are an optional enhancement. Never substitute a
-        // different provider: the non-Google engines currently have no
-        // configured completion endpoint, so they retain local suggestions.
         guard allowsRemoteSuggestions, searchEngine == .google else {
-            self.suggestions = localMatches
             self.isLoading = false
             return
         }
 
-        // 3. Debounce remote completions so brief keystrokes never each become
-        //    a network request.
+        // 3. Fast debounce (80ms) for remote network completions
         currentTask = Task { [weak self] in
             guard let self = self else { return }
 
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: 80_000_000)
             guard !Task.isCancelled else { return }
             guard URLInputResolver.selectedSearchEngine == searchEngine else {
-                self.suggestions = localMatches
                 self.isLoading = false
                 return
             }
@@ -183,13 +186,7 @@ final class SearchSuggestionService: ObservableObject {
         }
     }
 
-    func clear() {
-        currentTask?.cancel()
-        suggestions = []
-        isLoading = false
-    }
-
-    /// Returns the ghost autocomplete text remainder if a top domain or history host matches.
+    /// Returns the ghost autocomplete text remainder if a top domain, internal page, or history host matches.
     func ghostRemainder(for query: String, history: [HistoryItem] = []) -> String? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return nil }
@@ -209,7 +206,7 @@ final class SearchSuggestionService: ObservableObject {
         }
 
         // 3. Check internal pages
-        let internalPages = ["lotus://history", "lotus://downloads", "lotus://settings"]
+        let internalPages = ["lotus://history", "lotus://downloads", "lotus://settings", "lotus://bookmarks", "lotus://shortcuts"]
         for page in internalPages {
             if page.hasPrefix(trimmed) && page != trimmed {
                 return String(page.dropFirst(trimmed.count))
@@ -239,7 +236,7 @@ final class SearchSuggestionService: ObservableObject {
         }
 
         // 3. Check internal pages
-        let internalPages = ["lotus://history", "lotus://downloads", "lotus://settings"]
+        let internalPages = ["lotus://history", "lotus://downloads", "lotus://settings", "lotus://bookmarks", "lotus://shortcuts"]
         for page in internalPages {
             if page.hasPrefix(trimmed) && page != trimmed {
                 return page
@@ -265,24 +262,32 @@ final class SearchSuggestionService: ObservableObject {
         return str
     }
 
-    private func getLocalSuggestions(for queryLower: String, rawQuery: String, history: [HistoryItem]) -> [SearchSuggestion] {
+    private func getLocalSuggestions(
+        for queryLower: String,
+        rawQuery: String,
+        history: [HistoryItem],
+        bookmarks: [BookmarkItem] = []
+    ) -> [SearchSuggestion] {
         var results: [SearchSuggestion] = []
         var seen = Set<String>()
         var seenNormalized = Set<String>()
         var seenDisplayKeys = Set<String>()
         var seenHostsWithGenericTitle = Set<String>()
 
-        // 1. Check internal Lotus pages (e.g. History)
+        // 1. Check internal Lotus pages (e.g. Settings, Bookmarks, Shortcuts)
         let internalPages: [(aliases: [String], text: String, title: String, icon: String)] = [
+            (aliases: ["settings", "lotus://settings", "lotus:settings", "preferences"], text: "lotus://settings", title: "Settings", icon: "gearshape"),
+            (aliases: ["bookmarks", "lotus://bookmarks", "lotus:bookmarks"], text: "lotus://bookmarks", title: "Bookmarks", icon: "bookmark.fill"),
+            (aliases: ["shortcuts", "lotus://shortcuts", "lotus:shortcuts", "keyboard shortcuts", "keyboardshortcuts", "keybindings", "hotkeys"], text: "lotus://shortcuts", title: "Keyboard Shortcuts", icon: "keyboard"),
             (aliases: ["history", "lotus://history", "lotus:history"], text: "lotus://history", title: "History", icon: "clock"),
-            (aliases: ["downloads", "lotus://downloads", "lotus:downloads"], text: "lotus://downloads", title: "Downloads", icon: "arrow.down.circle"),
-            (aliases: ["settings", "lotus://settings", "lotus:settings"], text: "lotus://settings", title: "Settings", icon: "gearshape")
+            (aliases: ["downloads", "lotus://downloads", "lotus:downloads"], text: "lotus://downloads", title: "Downloads", icon: "arrow.down.circle")
         ]
 
         for page in internalPages {
-            if page.aliases.contains(where: { $0.hasPrefix(queryLower) || queryLower.hasPrefix($0) }) {
+            if page.aliases.contains(where: { $0.hasPrefix(queryLower) || queryLower.hasPrefix($0) || $0.contains(queryLower) }) {
                 results.append(SearchSuggestion(
                     text: page.text,
+                    title: page.title,
                     isURL: true,
                     isInternalPage: true,
                     systemImage: page.icon,
@@ -291,6 +296,37 @@ final class SearchSuggestionService: ObservableObject {
                 seen.insert(page.text.lowercased())
                 seenNormalized.insert(normalizeKey(page.text))
                 seenDisplayKeys.insert(page.title.lowercased())
+            }
+        }
+
+        // 2. Check saved bookmarks
+        for item in bookmarks {
+            let itemUrlString = item.url.absoluteString
+            let itemUrlLower = itemUrlString.lowercased()
+            let normalizedURL = normalizeKey(itemUrlString)
+            guard !normalizedURL.isEmpty else { continue }
+
+            let titleLower = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let hostLower = (item.url.host ?? "").lowercased()
+
+            let matchesTitle = !titleLower.isEmpty && titleLower.contains(queryLower)
+            let matchesHost = !hostLower.isEmpty && hostLower.contains(queryLower)
+            let matchesURL = itemUrlLower.contains(queryLower) || normalizedURL.contains(queryLower)
+
+            if matchesTitle || matchesHost || matchesURL {
+                if !seen.contains(itemUrlLower) && !seenNormalized.contains(normalizedURL) {
+                    seen.insert(itemUrlLower)
+                    seenNormalized.insert(normalizedURL)
+                    results.append(SearchSuggestion(
+                        text: itemUrlString,
+                        title: item.title.isEmpty ? hostLower : item.title,
+                        subtitle: item.displayDomain,
+                        isURL: true,
+                        systemImage: "bookmark.fill",
+                        badgeText: "Bookmark",
+                        faviconURL: item.faviconURL
+                    ))
+                }
             }
         }
 

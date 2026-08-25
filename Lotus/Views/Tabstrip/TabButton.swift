@@ -21,6 +21,9 @@ struct TabButton: View {
     var customWidth: CGFloat? = nil
     var isSplit: Bool = false
     var isRenaming: Bool = false
+    var isPlayingAudio: Bool = false
+    var isMuted: Bool = false
+    var onToggleMute: () -> Void = {}
     var onCommitRename: (String) -> Void = { _ in }
     var onCancelRename: () -> Void = {}
     let onSelect: () -> Void
@@ -85,8 +88,31 @@ struct TabButton: View {
         let targetWidth = customWidth ?? max(0, sidebarWidth - 16)
 
         HStack(spacing: isSplit ? 6 : 8) {
-            faviconView
-                .frame(width: 16, height: 16, alignment: .center)
+            ZStack {
+                faviconView
+                    .opacity((isMuted || tab.isMuted || (isPlayingAudio && effectiveHovered)) ? 0 : 1)
+
+                if isMuted || tab.isMuted {
+                    Button(action: onToggleMute) {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Unmute Tab")
+                } else if isPlayingAudio && effectiveHovered {
+                    Button(action: onToggleMute) {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(isSelected ? selectedForegroundPrimary : sidebarForeground)
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Mute Tab")
+                }
+            }
+            .frame(width: 16, height: 16, alignment: .center)
 
             if isRenaming {
                 TextField("Tab Title", text: $draftTitle)
@@ -104,9 +130,16 @@ struct TabButton: View {
             } else {
                 Text(tab.title)
                     .font(.system(size: isSplit ? 12 : 13, weight: .medium))
-                    .foregroundColor(isSelected ? selectedForegroundPrimary : sidebarForeground)
+                    .foregroundColor(isSelected ? selectedForegroundPrimary : (tab.isSnoozed ? sidebarForegroundSecondary : sidebarForeground))
                     .lineLimit(1)
                     .animation(.easeInOut(duration: 0.16), value: isSelected)
+            }
+
+            if tab.isSnoozed && !isSelected {
+                Image(systemName: "moon.zzz.fill")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundColor(sidebarForegroundSecondary.opacity(0.8))
+                    .help("Tab is snoozed to save memory (click to wake)")
             }
 
             Spacer(minLength: 0)
@@ -206,7 +239,7 @@ struct TabButton: View {
     private var faviconView: some View {
         ZStack {
             if isInternalPage {
-                Image(systemName: tab.url?.host == "history" ? "clock" : (tab.url?.host == "downloads" ? "arrow.down.circle" : (tab.url?.host == "settings" ? "gearshape" : "camera.macro")))
+                Image(systemName: tab.url?.internalPageSystemImage ?? "globe")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(foregroundPrimary.opacity(0.85))
                     .frame(width: 16, height: 16, alignment: .center)

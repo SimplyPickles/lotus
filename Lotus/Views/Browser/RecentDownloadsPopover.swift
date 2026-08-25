@@ -106,7 +106,7 @@ struct RecentDownloadsPopover: View {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 10, weight: .semibold))
                 }
-                .foregroundColor(Color.accentColor)
+                .foregroundColor(hasCompletedDownloads ? Color.accentColor : foregroundSecondary.opacity(0.5))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
@@ -152,13 +152,33 @@ struct RecentDownloadsPopover: View {
                             .foregroundColor(foregroundSecondary)
 
                         if item.state == .downloading {
-                            Text("• Downloading...")
+                            if let speed = item.formattedSpeed {
+                                Text("• \(speed)")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color.accentColor)
+                            } else {
+                                Text("• Downloading...")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color.accentColor)
+                            }
+
+                            if let eta = item.formattedETA {
+                                Text("(\(eta))")
+                                    .font(.system(size: 11, weight: .regular))
+                                    .foregroundColor(foregroundSecondary)
+                            }
+                        } else if item.state == .paused {
+                            Text("• Paused")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color.accentColor)
+                                .foregroundColor(Color.orange.opacity(0.9))
                         } else if item.state == .failed {
                             Text("• Failed")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color.red.opacity(0.85))
+                        } else if item.state == .cancelled {
+                            Text("• Cancelled")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(foregroundSecondary)
                         }
                     }
 
@@ -171,15 +191,31 @@ struct RecentDownloadsPopover: View {
 
                 Spacer(minLength: 8)
 
-                // Action button: Cancel if downloading, or Finder reveal if completed
+                // Action buttons
                 if item.state == .downloading {
+                    Button {
+                        browserState.pauseDownload(id: item.id)
+                    } label: {
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(foregroundSecondary)
+                            .padding(5)
+                            .background(
+                                Circle()
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.07))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .help("Pause Download")
+
                     Button {
                         browserState.cancelDownload(id: item.id)
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 9.5, weight: .bold))
                             .foregroundColor(foregroundSecondary)
-                            .padding(6)
+                            .padding(5)
                             .background(
                                 Circle()
                                     .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.07))
@@ -188,6 +224,54 @@ struct RecentDownloadsPopover: View {
                     .buttonStyle(.plain)
                     .focusable(false)
                     .help("Cancel Download")
+                } else if item.state == .paused {
+                    Button {
+                        browserState.resumeDownload(id: item.id)
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color.accentColor)
+                            .padding(5)
+                            .background(
+                                Circle()
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.07))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .help("Resume Download")
+
+                    Button {
+                        browserState.cancelDownload(id: item.id)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundColor(foregroundSecondary)
+                            .padding(5)
+                            .background(
+                                Circle()
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.07))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .help("Cancel Download")
+                } else if item.state == .failed || item.state == .cancelled {
+                    Button {
+                        browserState.retryDownload(id: item.id)
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(Color.accentColor)
+                            .padding(5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.07))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .help("Retry Download")
                 } else {
                     Button {
                         item.revealInFinder()
@@ -228,8 +312,24 @@ struct RecentDownloadsPopover: View {
         }
         .contextMenu {
             if item.state == .downloading {
+                Button("Pause Download") {
+                    browserState.pauseDownload(id: item.id)
+                }
                 Button("Cancel Download", role: .destructive) {
                     browserState.cancelDownload(id: item.id)
+                }
+                Divider()
+            } else if item.state == .paused {
+                Button("Resume Download") {
+                    browserState.resumeDownload(id: item.id)
+                }
+                Button("Cancel Download", role: .destructive) {
+                    browserState.cancelDownload(id: item.id)
+                }
+                Divider()
+            } else if item.state == .failed || item.state == .cancelled {
+                Button("Retry Download") {
+                    browserState.retryDownload(id: item.id)
                 }
                 Divider()
             }

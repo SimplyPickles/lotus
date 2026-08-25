@@ -23,7 +23,16 @@ extension URL {
     /// The integrated browser settings page.
     static let lotusSettings = URL(string: "lotus://settings")!
 
-    /// A prettified display title for internal `lotus://` pages (e.g. "Settings", "History", "Downloads").
+    /// The internal website data & cookies manager page.
+    static let lotusWebsiteData = URL(string: "lotus://data")!
+
+    /// The internal bookmarks manager page.
+    static let lotusBookmarks = URL(string: "lotus://bookmarks")!
+
+    /// The internal keyboard shortcuts customizer page.
+    static let lotusShortcuts = URL(string: "lotus://shortcuts")!
+
+    /// A prettified display title for internal `lotus://` pages (e.g. "Settings", "History", "Downloads", "Website Data", "Bookmarks", "Keyboard Shortcuts").
     var lotusPageTitle: String? {
         guard isLotusPage else { return nil }
         switch host?.lowercased() {
@@ -33,6 +42,12 @@ extension URL {
             return "History"
         case "downloads":
             return "Downloads"
+        case "bookmarks":
+            return "Bookmarks"
+        case "shortcuts", "keyboardshortcuts":
+            return "Keyboard Shortcuts"
+        case "data", "sitedata", "cookies":
+            return "Website Data"
         default:
             if let host = host, !host.isEmpty {
                 return host.capitalized
@@ -40,5 +55,25 @@ extension URL {
             return "Lotus"
         }
     }
-}
 
+    /// The SF Symbol name representing this internal page in tabs and UI.
+    var internalPageSystemImage: String? {
+        guard isLotusPage else { return nil }
+        switch host?.lowercased() {
+        case "history":
+            return "clock"
+        case "downloads":
+            return "arrow.down.circle"
+        case "settings":
+            return "gearshape"
+        case "bookmarks":
+            return "bookmark.fill"
+        case "shortcuts", "keyboardshortcuts":
+            return "keyboard"
+        case "data", "sitedata", "cookies":
+            return "internaldrive"
+        default:
+            return "globe"
+        }
+    }
+}

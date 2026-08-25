@@ -1,24 +1,25 @@
 //
-//  LotusHistoryView.swift
+//  LotusBookmarksView.swift
 //  Lotus
 //
-//  Created by Dylan Fraser on 8/22/26.
+//  Created by Dylan Fraser on 8/24/26.
 //
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Models
 
-struct HistorySection: Identifiable, Equatable {
+struct BookmarkSection: Identifiable, Equatable {
     let id: String
     let title: String
-    let items: [HistoryItem]
+    let items: [BookmarkItem]
 }
 
 // MARK: - Date Formatting
 
-private enum HistoryDateFormatter {
+private enum BookmarkDateFormatter {
     private static let dayFormatterSameYear: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
@@ -71,21 +72,20 @@ private enum HistoryDateFormatter {
 
 // MARK: - Grouping Helper
 
-private enum HistoryGrouping {
+private enum BookmarkGrouping {
     static func filterAndGroup(
-        from entries: [HistoryItem],
-        query: String,
-        limit: Int
-    ) -> (sections: [HistorySection], totalFilteredCount: Int) {
+        from entries: [BookmarkItem],
+        query: String
+    ) -> (sections: [BookmarkSection], totalFilteredCount: Int) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered: [HistoryItem]
+        let filtered: [BookmarkItem]
         if trimmed.isEmpty {
             filtered = entries
         } else {
             filtered = entries.filter {
                 $0.title.localizedCaseInsensitiveContains(trimmed) ||
                 $0.url.absoluteString.localizedCaseInsensitiveContains(trimmed) ||
-                ($0.displayHost?.localizedCaseInsensitiveContains(trimmed) == true)
+                $0.displayDomain.localizedCaseInsensitiveContains(trimmed)
             }
         }
 
@@ -94,25 +94,23 @@ private enum HistoryGrouping {
             return (sections: [], totalFilteredCount: 0)
         }
 
-        let sorted = filtered.sorted { $0.visitedAt > $1.visitedAt }
-        let windowed = Array(sorted.prefix(limit))
-
+        let sorted = filtered.sorted { $0.createdAt > $1.createdAt }
         let calendar = Calendar.current
         let now = Date()
 
-        var dayMap: [Date: [HistoryItem]] = [:]
-        for item in windowed {
-            let day = calendar.startOfDay(for: item.visitedAt)
+        var dayMap: [Date: [BookmarkItem]] = [:]
+        for item in sorted {
+            let day = calendar.startOfDay(for: item.createdAt)
             dayMap[day, default: []].append(item)
         }
 
         let sortedDays = dayMap.keys.sorted(by: >)
-        var sections: [HistorySection] = []
+        var sections: [BookmarkSection] = []
 
         for day in sortedDays {
             guard let itemsInDay = dayMap[day], !itemsInDay.isEmpty else { continue }
-            let dayTitle = HistoryDateFormatter.dayLabel(for: day, relativeTo: now, calendar: calendar)
-            sections.append(HistorySection(
+            let dayTitle = BookmarkDateFormatter.dayLabel(for: day, relativeTo: now, calendar: calendar)
+            sections.append(BookmarkSection(
                 id: "\(day.timeIntervalSinceReferenceDate)",
                 title: dayTitle,
                 items: itemsInDay
@@ -125,16 +123,18 @@ private enum HistoryGrouping {
 
 // MARK: - Main View
 
-struct LotusHistoryView: View {
+struct LotusBookmarksView: View {
     @ObservedObject var browserState: BrowserState
     var tabId: UUID? = nil
+
     @State private var searchText: String = ""
     @State private var selectedIds: Set<UUID> = []
     @State private var selectionAnchorId: UUID?
-    @State private var sections: [HistorySection] = []
+    @State private var sections: [BookmarkSection] = []
     @State private var totalFilteredCount: Int = 0
-    @State private var displayLimit: Int = 60
-    @State private var confirmationType: HistoryConfirmationType? = nil
+    @State private var isAddSheetPresented: Bool = false
+    @State private var editingBookmark: BookmarkItem? = nil
+
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeTabId: UUID {
@@ -189,15 +189,6 @@ struct LotusHistoryView: View {
                             daySection(section)
                         }
 
-                        if totalFilteredCount > displayLimit {
-                            Color.clear
-                                .frame(height: 32)
-                                .onAppear {
-                                    displayLimit += 60
-                                    refreshSections()
-                                }
-                        }
-
                         Spacer(minLength: 40)
                     }
                 }
@@ -209,58 +200,33 @@ struct LotusHistoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .transaction { $0.animation = nil }
-        .overlay {
-            if let confirmation = confirmationType {
-                HistoryConfirmationView(
-                    confirmation: confirmation,
-                    onCancel: {
-                        confirmationType = nil
-                    },
-                    onConfirm: {
-                        switch confirmation {
-                        case .clearAll:
-                            browserState.clearHistory()
-                            selectedIds.removeAll()
-                        case .deleteSelected(let ids):
-                            browserState.removeHistoryEntries(ids: ids)
-                            selectedIds.subtract(ids)
-                        }
-                        confirmationType = nil
-                    }
-                )
-            }
+        .sheet(isPresented: $isAddSheetPresented) {
+            AddBookmarkSheet(browserState: browserState)
         }
-        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: confirmationType != nil)
+        .sheet(item: $editingBookmark) { item in
+            EditBookmarkSheet(browserState: browserState, bookmark: item)
+        }
         .onAppear {
             refreshSections()
         }
-        .onChange(of: browserState.historyEntries) { _, entries in
+        .onChange(of: browserState.bookmarks) { _, entries in
             let valid = Set(entries.map { $0.id })
             selectedIds = selectedIds.intersection(valid)
             refreshSections()
         }
         .onChange(of: searchText) { _, _ in
-            displayLimit = 60
             refreshSections()
         }
         .onDeleteCommand {
             guard !selectedIds.isEmpty else { return }
-            confirmationType = .deleteSelected(ids: selectedIds)
-        }
-        .background {
-            DeleteKeyMonitor {
-                guard !selectedIds.isEmpty else { return }
-                confirmationType = .deleteSelected(ids: selectedIds)
-            }
-            .frame(width: 0, height: 0)
+            deleteSelected()
         }
     }
 
     private func refreshSections() {
-        let result = HistoryGrouping.filterAndGroup(
-            from: browserState.historyEntries,
-            query: searchText,
-            limit: displayLimit
+        let result = BookmarkGrouping.filterAndGroup(
+            from: browserState.bookmarks,
+            query: searchText
         )
         sections = result.sections
         totalFilteredCount = result.totalFilteredCount
@@ -271,7 +237,7 @@ struct LotusHistoryView: View {
     private var headerSection: some View {
         VStack(spacing: 18) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "clock")
+                Image(systemName: "bookmark.fill")
                     .font(.system(size: 24, weight: .light))
                     .foregroundStyle(
                         LinearGradient(
@@ -284,11 +250,11 @@ struct LotusHistoryView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("History")
+                    Text("Bookmarks")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundColor(foregroundPrimary)
 
-                    Text("\(browserState.historyEntries.count) pages")
+                    Text("\(browserState.bookmarks.count) bookmarks")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(foregroundSecondary)
                 }
@@ -296,20 +262,24 @@ struct LotusHistoryView: View {
                 Spacer()
 
                 if isSelecting {
-                    HeaderActionButton(
+                    BookmarkHeaderActionButton(
                         title: "Delete \(selectedIds.count)",
                         systemImage: "trash",
                         isDestructive: true
                     ) {
-                        confirmationType = .deleteSelected(ids: selectedIds)
+                        deleteSelected()
                     }
 
-                    HeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
+                    BookmarkHeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
                         selectedIds.removeAll()
                     }
-                } else if !browserState.historyEntries.isEmpty {
-                    HeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: browserState.historyEntries.count)
+                } else {
+                    BookmarkHeaderActionButton(title: "Export", systemImage: "square.and.arrow.up", isDestructive: false) {
+                        exportBookmarks()
+                    }
+
+                    BookmarkHeaderActionButton(title: "Add Bookmark", systemImage: "plus", isDestructive: false) {
+                        isAddSheetPresented = true
                     }
                 }
             }
@@ -323,7 +293,7 @@ struct LotusHistoryView: View {
                 TextField(
                     "",
                     text: $searchText,
-                    prompt: Text("Search history").foregroundColor(foregroundPlaceholder)
+                    prompt: Text("Search bookmarks").foregroundColor(foregroundPlaceholder)
                 )
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(foregroundPrimary)
@@ -355,7 +325,7 @@ struct LotusHistoryView: View {
 
     // MARK: - Day Section
 
-    private func daySection(_ section: HistorySection) -> some View {
+    private func daySection(_ section: BookmarkSection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(section.title)
                 .font(.system(size: 12, weight: .semibold))
@@ -364,14 +334,19 @@ struct LotusHistoryView: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(section.items.enumerated()), id: \.element.id) { index, entry in
-                    HistoryRowView(
+                    BookmarkRowView(
                         entry: entry,
                         isAlternate: index % 2 == 1,
                         isSelected: selectedIds.contains(entry.id),
                         isSelecting: isSelecting,
                         onToggleSelect: { toggleSelection(entry.id) },
+                        onEdit: { editingBookmark = entry },
                         onDelete: {
-                            confirmationType = .deleteSelected(ids: [entry.id])
+                            browserState.removeBookmark(id: entry.id)
+                            selectedIds.remove(entry.id)
+                        },
+                        onOpenInNewTab: {
+                            browserState.openTab(at: entry.url, title: entry.title)
                         },
                         onClick: {
                             if NSEvent.modifierFlags.contains(.shift) {
@@ -379,7 +354,7 @@ struct LotusHistoryView: View {
                             } else if isSelecting {
                                 toggleSelection(entry.id)
                             } else if NSEvent.modifierFlags.contains(.command) {
-                                browserState.openTabFromCmdClick(sourceTabId: activeTabId, title: entry.title, url: entry.url, select: false)
+                                _ = browserState.openTabFromCmdClick(sourceTabId: activeTabId, title: entry.title, url: entry.url, select: false)
                             } else {
                                 browserState.loadURL(entry.url, in: activeTabId)
                             }
@@ -432,22 +407,43 @@ struct LotusHistoryView: View {
         selectedIds.formUnion(range.map(\.id))
     }
 
+    private func deleteSelected() {
+        for id in selectedIds {
+            browserState.removeBookmark(id: id)
+        }
+        selectedIds.removeAll()
+    }
+
+    private func exportBookmarks() {
+        let html = browserState.exportBookmarksHTML()
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.html]
+        savePanel.nameFieldStringValue = "Lotus Bookmarks.html"
+        savePanel.begin { result in
+            if result == .OK, let targetURL = savePanel.url {
+                try? html.write(to: targetURL, atomically: true, encoding: .utf8)
+            }
+        }
+    }
+
     // MARK: - Empty State
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "clock")
+            Image(systemName: "bookmark")
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundColor(foregroundSecondary.opacity(0.5))
 
             if searchText.isEmpty {
-                Text("No browsing history")
+                Text("No bookmarks yet")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(foregroundSecondary)
 
-                Text("Pages you visit will appear here")
+                Text("Press ⌘D or click the bookmark button in the address bar to bookmark pages")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(foregroundSecondary.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
             } else {
                 Text("No results found")
                     .font(.system(size: 15, weight: .medium))
@@ -462,15 +458,17 @@ struct LotusHistoryView: View {
     }
 }
 
-// MARK: - History Row View
+// MARK: - Bookmark Row View
 
-private struct HistoryRowView: View {
-    let entry: HistoryItem
+private struct BookmarkRowView: View {
+    let entry: BookmarkItem
     let isAlternate: Bool
     let isSelected: Bool
     let isSelecting: Bool
     let onToggleSelect: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
+    let onOpenInNewTab: () -> Void
     let onClick: () -> Void
 
     @State private var isHovered: Bool = false
@@ -498,7 +496,7 @@ private struct HistoryRowView: View {
                 // Leading: Favicon or selection checkbox
                 ZStack {
                     if isSelecting || isHovered {
-                        SelectionCheckbox(isSelected: isSelected, action: onToggleSelect)
+                        BookmarkSelectionCheckbox(isSelected: isSelected, action: onToggleSelect)
                     } else {
                         CachedFaviconView(
                             url: entry.faviconURL,
@@ -511,22 +509,46 @@ private struct HistoryRowView: View {
                 .frame(width: 18, height: 18)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.title.isEmpty ? (entry.displayHost ?? entry.url.absoluteString) : entry.title)
+                    Text(entry.title.isEmpty ? entry.displayDomain : entry.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(foregroundPrimary.opacity(isSelected ? 1.0 : 0.92))
                         .lineLimit(1)
                         .truncationMode(.tail)
 
-                    if let host = entry.displayHost {
-                        Text(host)
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundColor(foregroundSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    Text(entry.displayDomain)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(foregroundSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                if isHovered && !isSelecting {
+                    HStack(spacing: 4) {
+                        Button(action: onEdit) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11))
+                                .foregroundColor(foregroundSecondary)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit Bookmark")
+
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color.red.opacity(0.85))
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(Color.red.opacity(0.12)))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete Bookmark")
                     }
                 }
 
-                Text(HistoryDateFormatter.relativeTime(for: entry.visitedAt))
+                Text(BookmarkDateFormatter.relativeTime(for: entry.createdAt))
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(foregroundSecondary.opacity(0.75))
                     .monospacedDigit()
@@ -549,12 +571,38 @@ private struct HistoryRowView: View {
                 isHovered = hovering
             }
         }
+        .contextMenu {
+            Button("Open in Current Tab") {
+                onClick()
+            }
+
+            Button("Open in New Tab") {
+                onOpenInNewTab()
+            }
+
+            Divider()
+
+            Button("Edit…") {
+                onEdit()
+            }
+
+            Button("Copy Link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(entry.url.absoluteString, forType: .string)
+            }
+
+            Divider()
+
+            Button("Delete", role: .destructive) {
+                onDelete()
+            }
+        }
     }
 }
 
-// MARK: - Selection Checkbox
+// MARK: - Bookmark Selection Checkbox
 
-private struct SelectionCheckbox: View {
+private struct BookmarkSelectionCheckbox: View {
     let isSelected: Bool
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -585,9 +633,9 @@ private struct SelectionCheckbox: View {
     }
 }
 
-// MARK: - Header Action Button
+// MARK: - Bookmark Header Action Button
 
-private struct HeaderActionButton: View {
+private struct BookmarkHeaderActionButton: View {
     let title: String
     let systemImage: String?
     let isDestructive: Bool
@@ -636,5 +684,120 @@ private struct HeaderActionButton: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+}
+
+// MARK: - Add Bookmark Sheet
+
+private struct AddBookmarkSheet: View {
+    @ObservedObject var browserState: BrowserState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var title: String = ""
+    @State private var urlString: String = "https://"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add Bookmark")
+                .font(.system(size: 15, weight: .bold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Title").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                TextField("Page Title", text: $title)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("URL").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                TextField("https://example.com", text: $urlString)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+
+                Button("Save") {
+                    save()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(title.isEmpty || URL(string: urlString) == nil)
+            }
+            .padding(.top, 8)
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private func save() {
+        guard let url = URL(string: urlString) else { return }
+        browserState.addOrUpdateBookmark(
+            title: title,
+            url: url
+        )
+    }
+}
+
+// MARK: - Edit Bookmark Sheet
+
+private struct EditBookmarkSheet: View {
+    @ObservedObject var browserState: BrowserState
+    let bookmark: BookmarkItem
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var title: String = ""
+    @State private var urlString: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Edit Bookmark")
+                .font(.system(size: 15, weight: .bold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Title").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                TextField("Page Title", text: $title)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("URL").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                TextField("https://example.com", text: $urlString)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+
+                Button("Save Changes") {
+                    save()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(title.isEmpty || URL(string: urlString) == nil)
+            }
+            .padding(.top, 8)
+        }
+        .padding(20)
+        .frame(width: 360)
+        .onAppear {
+            title = bookmark.title
+            urlString = bookmark.url.absoluteString
+        }
+    }
+
+    private func save() {
+        guard let url = URL(string: urlString) else { return }
+        browserState.removeBookmark(id: bookmark.id)
+        browserState.addOrUpdateBookmark(
+            title: title,
+            url: url,
+            faviconURL: bookmark.faviconURL
+        )
     }
 }

@@ -16,6 +16,7 @@ extension BrowserState {
     /// Called from the URL KVO observer whenever a committed navigation
     /// finalizes to a non-internal URL.
     func recordHistoryVisit(title: String, url: URL) {
+        guard !isPrivate else { return }
         // Don't record internal pages or about: pages.
         guard url.scheme == "http" || url.scheme == "https" else { return }
         guard let host = url.host, !host.isEmpty else { return }
@@ -25,6 +26,7 @@ extension BrowserState {
 
     /// Updates the title of the most recent browsing history visit for a URL.
     func updateHistoryTitle(title: String, for url: URL) {
+        guard !isPrivate else { return }
         guard url.scheme == "http" || url.scheme == "https" else { return }
         historyStore.updateTitle(title, for: url, in: &historyEntries)
     }

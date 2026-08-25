@@ -18,6 +18,9 @@ enum UserScripts {
     static let inputFocusHandlerName = "lotusInputFocusHandler"
     static let contextMenuHandlerName = "lotusContextMenuHandler"
     static let shieldDeflectHandlerName = "lotusShieldDeflectHandler"
+    static let notificationHandlerName = "lotusNotificationHandler"
+    static let mediaHandlerName = "lotusMediaHandler"
+    static let openSearchHandlerName = "lotusOpenSearchHandler"
 
     // MARK: - Injected at Document Start
 
@@ -106,6 +109,7 @@ enum UserScripts {
                 var target = e.target;
                 var imgURL = null;
                 var linkURL = null;
+                var selectedText = window.getSelection ? window.getSelection().toString().trim() : null;
 
                 if (target) {
                     if (target.tagName === 'IMG') {
@@ -139,7 +143,8 @@ enum UserScripts {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusContextMenuHandler) {
                     window.webkit.messageHandlers.lotusContextMenuHandler.postMessage({
                         imageURL: imgURL,
-                        linkURL: linkURL
+                        linkURL: linkURL,
+                        selectedText: selectedText && selectedText.length > 0 ? selectedText : null
                     });
                 }
             } catch(err) {}
@@ -150,23 +155,50 @@ enum UserScripts {
     /// Lightweight uBlock Origin-inspired cosmetic, push ad, popunder, and video ad cleaner scriptlet.
     static let contentBlockerScriptlet = """
     (function() {
-        // 1. Notification Permission Spam Disarmer (Neutralizes web push ad prompts)
+        // 1. Notification Permission Bridge (Routes push prompts to native permission store/prompt)
         try {
             if (window.Notification) {
                 window.Notification.requestPermission = function() {
-                    return Promise.resolve('denied');
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusNotificationHandler) {
+                        return new Promise(function(resolve) {
+                            var callbackId = 'notif_' + Math.random().toString(36).substr(2, 9);
+                            window._lotusNotifCallbacks = window._lotusNotifCallbacks || {};
+                            window._lotusNotifCallbacks[callbackId] = resolve;
+                            window.webkit.messageHandlers.lotusNotificationHandler.postMessage({
+                                callbackId: callbackId,
+                                origin: window.location.origin,
+                                host: window.location.host
+                            });
+                        });
+                    }
+                    return Promise.resolve('default');
                 };
             }
         } catch(e) {}
 
-        // 2. Video Ad Skip & Overlays Remover
-        function handleVideoAds() {
+        // 2. Video Ad Skip & Overlays Remover for Generic Web Players
+        function handleGenericVideoAds() {
             try {
-                var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-slot, [class*="skip-button"]');
+                var skipSelectors = [
+                    '.ytp-ad-skip-button',
+                    '.ytp-ad-skip-button-modern',
+                    '.ytp-skip-ad-button',
+                    '.ytp-ad-skip-button-slot',
+                    '[class*="skip-button"]',
+                    '[class*="ad-skip"]',
+                    '[class*="skip-ad"]',
+                    '[aria-label*="Skip Ad" i]',
+                    '[aria-label*="Skip ad" i]',
+                    '.videoAdUiSkipButton'
+                ];
+                var skipBtn = document.querySelector(skipSelectors.join(', '));
                 if (skipBtn && skipBtn.offsetParent !== null) {
                     skipBtn.click();
                 }
-                var overlays = document.querySelectorAll('.ytp-ad-overlay-container, .ytp-ad-message-container, ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-promoted-video-renderer');
+
+                var overlays = document.querySelectorAll(
+                    '.ytp-ad-overlay-container, .ytp-ad-message-container, .video-ad-overlay, .ad-overlay, [class*="ad-overlay"]'
+                );
                 for (var i = 0; i < overlays.length; i++) {
                     overlays[i].style.setProperty('display', 'none', 'important');
                 }
@@ -218,7 +250,7 @@ enum UserScripts {
         }
 
         function cleanDOM() {
-            handleVideoAds();
+            handleGenericVideoAds();
             try {
                 var nodes = document.querySelectorAll(adSelectors);
                 var didBlock = false;
@@ -322,6 +354,21 @@ enum UserScripts {
         if (window.__lotusYTAdBlockInjected) return;
         try { Object.defineProperty(window, '__lotusYTAdBlockInjected', { value: true, enumerable: false }); } catch(e) {}
 
+        var adFastForwardActive = false;
+        var lastShieldNotifyTime = 0;
+
+        function notifyShieldDeflect() {
+            try {
+                var now = Date.now();
+                if (now - lastShieldNotifyTime > 500) {
+                    lastShieldNotifyTime = now;
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusShieldDeflectHandler) {
+                        window.webkit.messageHandlers.lotusShieldDeflectHandler.postMessage({ blocked: true });
+                    }
+                }
+            } catch(e) {}
+        }
+
         // 1. JSON Player Response Sanitizer (Strips Preroll, Midroll & Ad Placement Configs)
         function cleanPlayerResponse(data) {
             if (!data || typeof data !== 'object') return data;
@@ -330,6 +377,7 @@ enum UserScripts {
                 if (data.playerAds) delete data.playerAds;
                 if (data.adSlots) delete data.adSlots;
                 if (data.adBreakHeartbeatParams) delete data.adBreakHeartbeatParams;
+                if (data.adSignalsInfo) delete data.adSignalsInfo;
                 if (data.playbackTracking) {
                     delete data.playbackTracking.videostatsPlaybackUrl;
                     delete data.playbackTracking.videostatsDelayplayUrl;
@@ -361,7 +409,7 @@ enum UserScripts {
             JSON.parse = function(text, reviver) {
                 var res = origJSONParse.apply(this, arguments);
                 if (res && typeof res === 'object') {
-                    if (res.adPlacements || res.playerAds || res.adSlots) {
+                    if (res.adPlacements || res.playerAds || res.adSlots || res.adBreakHeartbeatParams) {
                         res = cleanPlayerResponse(res);
                     }
                 }
@@ -369,7 +417,77 @@ enum UserScripts {
             };
         } catch(e) {}
 
-        // 2. Injected CSS for Immediate Zero-Flicker Ad Hiding
+        // Intercept Fetch API for /youtubei/v1/player responses
+        try {
+            if (window.fetch) {
+                var origFetch = window.fetch;
+                window.fetch = function(input, init) {
+                    var url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+                    var isPlayerAPI = url.indexOf('/youtubei/v1/player') !== -1 ||
+                                      url.indexOf('/youtubei/v1/next') !== -1 ||
+                                      url.indexOf('/youtubei/v1/reel/') !== -1;
+
+                    return origFetch.apply(this, arguments).then(function(response) {
+                        if (!isPlayerAPI || !response || !response.ok) {
+                            return response;
+                        }
+                        return response.clone().json().then(function(json) {
+                            var cleaned = cleanPlayerResponse(json);
+                            var blob = new Blob([JSON.stringify(cleaned)], { type: 'application/json' });
+                            return new Response(blob, {
+                                status: response.status,
+                                statusText: response.statusText,
+                                headers: response.headers
+                            });
+                        }).catch(function() {
+                            return response;
+                        });
+                    });
+                };
+            }
+        } catch(e) {}
+
+        // Intercept XMLHttpRequest for /youtubei/v1/player responses
+        try {
+            if (window.XMLHttpRequest && XMLHttpRequest.prototype.open && XMLHttpRequest.prototype.send) {
+                var origOpen = XMLHttpRequest.prototype.open;
+                var origSend = XMLHttpRequest.prototype.send;
+
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    this.__lotusYTURL = typeof url === 'string' ? url : '';
+                    return origOpen.apply(this, arguments);
+                };
+
+                XMLHttpRequest.prototype.send = function() {
+                    var isPlayerAPI = this.__lotusYTURL && (
+                        this.__lotusYTURL.indexOf('/youtubei/v1/player') !== -1 ||
+                        this.__lotusYTURL.indexOf('/youtubei/v1/next') !== -1
+                    );
+
+                    if (isPlayerAPI) {
+                        var self = this;
+                        var origGetter = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText');
+                        if (origGetter && origGetter.get) {
+                            this.addEventListener('readystatechange', function() {
+                                if (self.readyState === 4 && self.status === 200) {
+                                    try {
+                                        var raw = origGetter.get.call(self);
+                                        var parsed = JSON.parse(raw);
+                                        var cleaned = cleanPlayerResponse(parsed);
+                                        var newText = JSON.stringify(cleaned);
+                                        Object.defineProperty(self, 'responseText', { value: newText, writable: true, configurable: true });
+                                        Object.defineProperty(self, 'response', { value: newText, writable: true, configurable: true });
+                                    } catch(err) {}
+                                }
+                            }, false);
+                        }
+                    }
+                    return origSend.apply(this, arguments);
+                };
+            }
+        } catch(e) {}
+
+        // 2. Injected CSS for Immediate Zero-Flicker Ad & Promo Hiding
         var ytAdCSS = `
             ytd-ad-slot-renderer,
             ytd-in-feed-ad-layout-renderer,
@@ -389,6 +507,9 @@ enum UserScripts {
             .ytp-ad-message-container,
             .ytp-ad-action-interstitial,
             .ytp-ad-text-overlay,
+            .ytp-ad-player-overlay,
+            .ytp-ad-progress,
+            .ytp-ad-progress-list,
             ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
             ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
             ytd-rich-section-renderer:has(ytd-ad-slot-renderer),
@@ -401,6 +522,7 @@ enum UserScripts {
                 height: 0px !important;
                 min-height: 0px !important;
                 width: 0px !important;
+                pointer-events: none !important;
             }
         `;
 
@@ -418,14 +540,7 @@ enum UserScripts {
             document.addEventListener('DOMContentLoaded', injectStyle);
         }
 
-        function notifyShieldDeflect() {
-            try {
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusShieldDeflectHandler) {
-                    window.webkit.messageHandlers.lotusShieldDeflectHandler.postMessage({ blocked: true });
-                }
-            } catch(e) {}
-        }
-
+        // 3. Player Video Fast-Forward, Auto-Skip & Anti-Adblock Bypass Engine
         function processYouTubeAds() {
             try {
                 // Anti-adblock popup bypass
@@ -435,17 +550,20 @@ enum UserScripts {
                     notifyShieldDeflect();
                     var backdrop = document.querySelector('tp-yt-iron-overlay-backdrop');
                     if (backdrop) backdrop.remove();
-                    var vid = document.querySelector('#movie_player video, video.html5-main-video');
-                    if (vid && vid.paused) {
-                        vid.play();
+                    document.body.style.removeProperty('overflow');
+                    var mainVid = document.querySelector('#movie_player video, video.html5-main-video');
+                    if (mainVid && mainVid.paused) {
+                        mainVid.play();
                     }
                 }
 
                 var player = document.querySelector('#movie_player, .html5-video-player');
-                var video = document.querySelector('#movie_player video, video.html5-main-video');
+                var video = document.querySelector('#movie_player video, video.html5-main-video, .html5-video-player video');
 
                 if (player && video) {
-                    var isAdShowing = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+                    var isAdShowing = player.classList.contains('ad-showing') ||
+                                      player.classList.contains('ad-interrupting') ||
+                                      document.querySelector('.ytp-ad-player-overlay, .ytp-ad-showing') !== null;
 
                     if (isAdShowing) {
                         if (!adFastForwardActive) {
@@ -456,14 +574,23 @@ enum UserScripts {
                         video.playbackRate = 16.0;
 
                         // Click skip button immediately
-                        var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-slot, button.ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button');
+                        var skipSelectors = [
+                            '.ytp-ad-skip-button',
+                            '.ytp-ad-skip-button-modern',
+                            '.ytp-skip-ad-button',
+                            '.ytp-ad-skip-button-slot',
+                            'button.ytp-ad-skip-button-modern',
+                            '.ytp-ad-skip-button-container button',
+                            '.ytp-ad-overlay-close-button'
+                        ];
+                        var skipBtn = document.querySelector(skipSelectors.join(', '));
                         if (skipBtn) {
                             skipBtn.click();
                         }
 
-                        // Fast-forward ad stream
+                        // Fast-forward ad stream directly to end
                         if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration) {
-                            video.currentTime = video.duration - 0.05;
+                            video.currentTime = video.duration;
                         }
                     } else if (adFastForwardActive) {
                         // Regular video playback resumed
@@ -477,7 +604,25 @@ enum UserScripts {
             } catch(e) {}
         }
 
-        setInterval(processYouTubeAds, 250);
+        // MutationObserver for reactive instant ad handling
+        function setupObserver() {
+            try {
+                var target = document.querySelector('#movie_player') || document.body;
+                if (!target) return;
+                var observer = new MutationObserver(function() {
+                    processYouTubeAds();
+                });
+                observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+            } catch(e) {}
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupObserver);
+        } else {
+            setupObserver();
+        }
+
+        setInterval(processYouTubeAds, 150);
     })();
     """
 
@@ -1134,4 +1279,118 @@ enum UserScripts {
         })();
         """
     }
+
+    /// Observes audio/video playback and AudioContext, reporting state to the app.
+    static let mediaPlaybackObserverScriptlet = """
+    (function() {
+        if (window.__lotusMediaScriptLoaded) return;
+        window.__lotusMediaScriptLoaded = true;
+
+        function getMediaTitle() {
+            var el = document.querySelector('video, audio');
+            if (document.title && document.title.length > 0) return document.title;
+            if (el && el.title) return el.title;
+            return null;
+        }
+
+        function checkMediaState() {
+            try {
+                var mediaElements = document.querySelectorAll('audio, video');
+                var isPlaying = false;
+                var isMuted = false;
+                var hasAudio = false;
+                var hasVideo = false;
+
+                for (var i = 0; i < mediaElements.length; i++) {
+                    var el = mediaElements[i];
+                    if (el.tagName === 'VIDEO') hasVideo = true;
+                    if (!el.paused && !el.ended && el.readyState > 1) {
+                        isPlaying = true;
+                        if (el.muted || el.volume === 0) {
+                            isMuted = true;
+                        } else {
+                            hasAudio = true;
+                        }
+                    }
+                }
+
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusMediaHandler) {
+                    window.webkit.messageHandlers.lotusMediaHandler.postMessage({
+                        isPlaying: isPlaying,
+                        isMuted: isMuted,
+                        hasAudio: hasAudio,
+                        hasVideo: hasVideo,
+                        title: getMediaTitle()
+                    });
+                }
+            } catch(e) {}
+        }
+
+        ['play', 'pause', 'volumechange', 'ended', 'emptied', 'loadeddata'].forEach(function(evt) {
+            document.addEventListener(evt, function() {
+                setTimeout(checkMediaState, 80);
+            }, true);
+        });
+
+        window.__lotusSetMediaMuted = function(muted) {
+            var media = document.querySelectorAll('audio, video');
+            media.forEach(function(m) { m.muted = muted; });
+            setTimeout(checkMediaState, 50);
+        };
+
+        window.__lotusToggleMediaPlayPause = function() {
+            var media = document.querySelectorAll('audio, video');
+            var anyPlaying = Array.from(media).some(function(m) { return !m.paused && !m.ended; });
+            media.forEach(function(m) {
+                if (anyPlaying) {
+                    m.pause();
+                } else {
+                    m.play().catch(function(){});
+                }
+            });
+            setTimeout(checkMediaState, 50);
+        };
+
+        window.__lotusTriggerPiP = function() {
+            var video = document.querySelector('video');
+            if (!video) return;
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture().catch(function(){});
+            } else if (video.requestPictureInPicture) {
+                video.requestPictureInPicture().catch(function(){});
+            } else if (video.webkitSetPresentationMode) {
+                var mode = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+                video.webkitSetPresentationMode(mode);
+            }
+        };
+    })();
+    """
+
+    /// Discovers OpenSearch search engines provided by websites in the HTML head.
+    static let openSearchDiscoveryScriptlet = """
+    (function() {
+        function detectOpenSearch() {
+            try {
+                var link = document.querySelector('link[rel="search"][type="application/opensearchdescription+xml"]');
+                if (link && link.href) {
+                    var title = link.getAttribute('title') || document.title || window.location.host;
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusOpenSearchHandler) {
+                        window.webkit.messageHandlers.lotusOpenSearchHandler.postMessage({
+                            title: title,
+                            href: link.href,
+                            origin: window.location.origin,
+                            host: window.location.host
+                        });
+                    }
+                }
+            } catch(e) {}
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', detectOpenSearch);
+        } else {
+            detectOpenSearch();
+        }
+    })();
+    """
 }

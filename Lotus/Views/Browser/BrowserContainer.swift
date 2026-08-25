@@ -131,11 +131,35 @@ struct BrowserContainer: View {
                         } else if browserState.url(for: activeTabId)?.host == "settings" {
                             LotusSettingsView(browserState: browserState, tabId: activeTabId)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if browserState.url(for: activeTabId)?.host == "bookmarks" {
+                            LotusBookmarksView(browserState: browserState, tabId: activeTabId)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if browserState.url(for: activeTabId)?.host == "shortcuts" ||
+                                  browserState.url(for: activeTabId)?.host == "keyboardshortcuts" {
+                            LotusShortcutsView(browserState: browserState, tabId: activeTabId)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if browserState.url(for: activeTabId)?.host == "data" ||
+                                  browserState.url(for: activeTabId)?.host == "sitedata" ||
+                                  browserState.url(for: activeTabId)?.host == "cookies" {
+                            LotusWebsiteDataView(browserState: browserState, tabId: activeTabId)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             // Unrecognized internal page — plain themed background.
                             containerBackground
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
+                    } else if let error = browserState.pageLoadErrors[activeTabId] {
+                        WebPageErrorView(
+                            error: error,
+                            theme: theme,
+                            onRetry: {
+                                browserState.reload(for: activeTabId)
+                            },
+                            onOpenHTTPFallback: {
+                                browserState.allowInsecureHTTPLoad(for: activeTabId)
+                            }
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .transaction { $0.animation = nil }
@@ -238,11 +262,4 @@ struct BrowserContainer: View {
             }
         }
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    BrowserContainer(browserState: BrowserState())
-        .frame(width: 800, height: 600)
 }

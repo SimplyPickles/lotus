@@ -152,6 +152,11 @@ extension BrowserState {
 
     // MARK: - Selection
 
+    func updateLastViewedTimestamp(for id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[index].lastViewedAt = Date()
+    }
+
     func selectTab(_ id: UUID) {
         expandFolderIfNeeded(containing: id)
         selectOnlySidebarUnit(containing: id)
@@ -295,6 +300,38 @@ extension BrowserState {
         }
     }
 
+    /// Swaps the left and right pane tabs in a split view group.
+    func swapSplitTabs(for group: [UUID]) {
+        guard group.count == 2 else { return }
+        let first = group[0]
+        let second = group[1]
+        let oldRatio = splitRatio(for: group)
+
+        // 1. Update split groups
+        if let groupIndex = splitGroups.firstIndex(where: { $0 == group }) {
+            splitGroups[groupIndex] = [second, first]
+        }
+
+        // 2. Update split ratios with inverted ratio
+        let oldKey = splitKey(for: group)
+        let newKey = splitKey(for: [second, first])
+        splitRatios.removeValue(forKey: oldKey)
+        splitRatios[newKey] = 1.0 - oldRatio
+
+        // 3. Update currentTabIds if currently showing this split
+        if currentTabIds == group {
+            currentTabIds = [second, first]
+        }
+
+        // 4. Update tab order in tabs array so sidebar stays synchronized
+        if let firstIdx = tabs.firstIndex(where: { $0.id == first }),
+           let secondIdx = tabs.firstIndex(where: { $0.id == second }) {
+            tabs.swapAt(firstIdx, secondIdx)
+        }
+
+        saveSession()
+    }
+
     // MARK: - Add / Remove / Pin
 
     func togglePin(id: UUID) {
@@ -353,7 +390,7 @@ extension BrowserState {
 
     @discardableResult
     func addTabAtEnd(title: String = "New Tab", url: URL? = nil, select: Bool = true) -> TabItem {
-        var newTab = TabItem(title: title, url: url)
+        let newTab = TabItem(title: title, url: url)
         withAnimation(Self.tabMutationAnimation) {
             tabs.append(newTab)
             if select {
@@ -379,11 +416,10 @@ extension BrowserState {
 
         withAnimation(Self.tabMutationAnimation) {
             // Tabs opened from a foldered tab (⌘-click, popups, history)
-            // join that folder at the top, keeping members contiguous.
             if let folderId = tab(for: targetId)?.folderId,
-               let firstMember = tabs.firstIndex(where: { $0.folderId == folderId }) {
+                let firstMember = tabs.firstIndex(where: { $0.folderId == folderId && $0.id == targetId }) {
                 newTab.folderId = folderId
-                tabs.insert(newTab, at: firstMember)
+                tabs.insert(newTab, at: firstMember + 1)
             } else if tab(for: targetId)?.isPinned == true {
                 let insertionIndex = tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
                 tabs.insert(newTab, at: insertionIndex)
@@ -435,8 +471,8 @@ extension BrowserState {
 
         tabs.remove(at: index)
 
-        // Automatically delete folder if it has no remaining member tabs
-        if let folderId = closingTab.folderId {
+        // Automatically delete folder if it has no remaining member tabs (except Archive)
+        if let folderId = closingTab.folderId, let currentFolder = folder(for: folderId), !currentFolder.isArchive {
             if !tabs.contains(where: { $0.folderId == folderId }) {
                 clearAutomaticFolderNameState(for: folderId)
                 folders.removeAll(where: { $0.id == folderId })
@@ -590,6 +626,86 @@ extension BrowserState {
             let wv = getWebView(for: newTab.id)
             wv.load(URLRequest(url: url))
         }
+    }
+
+    // MARK: - Advanced Tab Operations
+
+    func duplicateTab(id: UUID) {
+        guard let originalTab = tab(for: id) else { return }
+        let newTab = TabItem(
+            title: originalTab.title,
+            url: originalTab.url,
+            isPinned: originalTab.isPinned,
+            folderId: originalTab.folderId,
+            customFaviconURL: originalTab.customFaviconURL
+        )
+
+        withAnimation(Self.tabMutationAnimation) {
+            if let originalIndex = tabs.firstIndex(where: { $0.id == id }) {
+                tabs.insert(newTab, at: originalIndex + 1)
+            } else {
+                tabs.append(newTab)
+            }
+            selectTab(newTab.id)
+        }
+
+        if let url = originalTab.url {
+            let wv = getWebView(for: newTab.id)
+            wv.load(URLRequest(url: url))
+        }
+    }
+
+    func toggleMuteTab(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[index].isMuted.toggle()
+        let isMuted = tabs[index].isMuted
+        tabMediaStates[id]?.isMuted = isMuted
+
+        if let wv = webViewStore[id] {
+            // Apply media suspension and HTMLMediaElement muting
+            let js = "if (window.__lotusSetMediaMuted) { window.__lotusSetMediaMuted(\(isMuted ? "true" : "false")); } else { document.querySelectorAll('video, audio').forEach(el => { el.muted = \(isMuted ? "true" : "false"); }); }"
+            wv.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
+    func closeTabsBelow(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let targetFolderId = tabs[index].folderId
+
+        let tabsToClose: [UUID]
+        if let folderId = targetFolderId {
+            // Close tabs below inside the same folder
+            tabsToClose = tabs.suffix(from: index + 1)
+                .filter { $0.folderId == folderId && !$0.isPinned }
+                .map(\.id)
+        } else {
+            // Close all subsequent unpinned tabs
+            tabsToClose = tabs.suffix(from: index + 1)
+                .filter { !$0.isPinned }
+                .map(\.id)
+        }
+
+        for tabId in tabsToClose {
+            removeTab(id: tabId)
+        }
+    }
+
+    func closeOtherTabs(id: UUID) {
+        let tabsToClose = tabs.filter { $0.id != id && !$0.isPinned }.map(\.id)
+        for tabId in tabsToClose {
+            removeTab(id: tabId)
+        }
+    }
+
+    func copyTabURL(id: UUID) {
+        copyPageURL(for: id)
+    }
+
+    func moveTabToNewWindow(id: UUID) {
+        guard let tab = tab(for: id), let url = tab.url else { return }
+        // Open a new window and navigate to the tab URL, then close this tab
+        NSApp.sendAction(NSSelectorFromString("newWindow:"), to: nil, from: nil)
+        removeTab(id: id)
     }
 
     // MARK: - Sidebar

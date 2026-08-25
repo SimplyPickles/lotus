@@ -63,6 +63,99 @@ extension BrowserState {
         }
     }
 
+    // MARK: - Hardware & Media Permissions
+
+    @available(macOS 12.0, *)
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        let host = origin.host.lowercased()
+        let permType: SitePermissionType
+        let typeName: String
+        switch type {
+        case .camera:
+            permType = .camera
+            typeName = "Camera"
+        case .microphone:
+            permType = .microphone
+            typeName = "Microphone"
+        case .cameraAndMicrophone:
+            permType = .camera
+            typeName = "Camera and Microphone"
+        @unknown default:
+            permType = .camera
+            typeName = "Camera"
+        }
+
+        let savedState = SitePermissionStore.shared.state(for: host, type: permType)
+        switch savedState {
+        case .allow:
+            decisionHandler(.grant)
+        case .deny:
+            decisionHandler(.deny)
+        case .prompt:
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "“\(host)” Would Like to Access Your \(typeName)"
+                alert.informativeText = "You can manage site permissions anytime from the security lock in the address bar."
+                alert.addButton(withTitle: "Allow")
+                alert.addButton(withTitle: "Don’t Allow")
+                if let window = webView.window ?? NSApp.keyWindow {
+                    alert.beginSheetModal(for: window) { response in
+                        let granted = response == .alertFirstButtonReturn
+                        SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: permType)
+                        decisionHandler(granted ? .grant : .deny)
+                    }
+                } else {
+                    let response = alert.runModal()
+                    let granted = response == .alertFirstButtonReturn
+                    SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: permType)
+                    decisionHandler(granted ? .grant : .deny)
+                }
+            }
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        requestGeolocationPermissionForOrigin origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        let host = origin.host.lowercased()
+        let savedState = SitePermissionStore.shared.state(for: host, type: .geolocation)
+        switch savedState {
+        case .allow:
+            decisionHandler(.grant)
+        case .deny:
+            decisionHandler(.deny)
+        case .prompt:
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "“\(host)” Would Like to Use Your Location"
+                alert.informativeText = "You can manage site permissions anytime from the security lock in the address bar."
+                alert.addButton(withTitle: "Allow")
+                alert.addButton(withTitle: "Don’t Allow")
+                if let window = webView.window ?? NSApp.keyWindow {
+                    alert.beginSheetModal(for: window) { response in
+                        let granted = response == .alertFirstButtonReturn
+                        SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: .geolocation)
+                        decisionHandler(granted ? .grant : .deny)
+                    }
+                } else {
+                    let response = alert.runModal()
+                    let granted = response == .alertFirstButtonReturn
+                    SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: .geolocation)
+                    decisionHandler(granted ? .grant : .deny)
+                }
+            }
+        }
+    }
+
     // MARK: - Script Message Handling
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -91,6 +184,8 @@ extension BrowserState {
             } else {
                 self.lastContextMenuLinkURL = nil
             }
+
+            self.lastContextMenuSelectedText = body["selectedText"] as? String
             return
         }
 
@@ -100,6 +195,72 @@ extension BrowserState {
                     self?.triggerShieldDeflect(for: tabId)
                 }
             }
+            return
+        }
+
+        if message.name == UserScripts.notificationHandlerName,
+           let body = message.body as? [String: Any],
+           let callbackId = body["callbackId"] as? String {
+            let host = (body["host"] as? String) ?? message.webView?.url?.host ?? "This site"
+            let webView = message.webView
+            let savedState = SitePermissionStore.shared.state(for: host, type: .notifications)
+
+            func resolveWith(status: String) {
+                let js = "if (window._lotusNotifCallbacks && window._lotusNotifCallbacks['\(callbackId)']) { window._lotusNotifCallbacks['\(callbackId)']('\(status)'); delete window._lotusNotifCallbacks['\(callbackId)']; }"
+                DispatchQueue.main.async {
+                    webView?.evaluateJavaScript(js, completionHandler: nil)
+                }
+            }
+
+            switch savedState {
+            case .allow:
+                resolveWith(status: "granted")
+            case .deny:
+                resolveWith(status: "denied")
+            case .prompt:
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "“\(host)” Would Like to Send You Notifications"
+                    alert.informativeText = "Notifications may include alerts, sounds, and icon badges."
+                    alert.addButton(withTitle: "Allow")
+                    alert.addButton(withTitle: "Don’t Allow")
+                    if let window = webView?.window ?? NSApp.keyWindow {
+                        alert.beginSheetModal(for: window) { response in
+                            let granted = response == .alertFirstButtonReturn
+                            SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: .notifications)
+                            resolveWith(status: granted ? "granted" : "denied")
+                        }
+                    } else {
+                        let response = alert.runModal()
+                        let granted = response == .alertFirstButtonReturn
+                        SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: .notifications)
+                        resolveWith(status: granted ? "granted" : "denied")
+                    }
+                }
+            }
+            return
+        }
+
+        if message.name == UserScripts.mediaHandlerName,
+           let body = message.body as? [String: Any],
+           let tabId = webViewStore.first(where: { $0.value === message.webView })?.key {
+            let isPlaying = (body["isPlaying"] as? Bool) ?? false
+            let isMuted = (body["isMuted"] as? Bool) ?? false
+            let hasAudio = (body["hasAudio"] as? Bool) ?? false
+            let hasVideo = (body["hasVideo"] as? Bool) ?? false
+            let title = body["title"] as? String
+            updateMediaState(for: tabId, isPlaying: isPlaying, isMuted: isMuted, hasAudio: hasAudio, hasVideo: hasVideo, mediaTitle: title)
+            return
+        }
+
+        if message.name == UserScripts.openSearchHandlerName,
+           let body = message.body as? [String: Any],
+           let title = body["title"] as? String,
+           let href = body["href"] as? String,
+           let origin = body["origin"] as? String,
+           let host = body["host"] as? String,
+           let tabId = webViewStore.first(where: { $0.value === message.webView })?.key {
+            registerOpenSearchDescriptor(for: tabId, title: title, href: href, origin: origin, host: host)
             return
         }
     }

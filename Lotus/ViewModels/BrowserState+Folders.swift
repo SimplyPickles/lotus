@@ -14,6 +14,86 @@ struct AutomaticFolderNameInput: Equatable, Sendable {
 
 extension BrowserState {
 
+    // MARK: - Auto-Archive Inactive Tabs
+
+    static let autoArchiveIntervalKey = "lotus.browser.autoArchiveInterval"
+
+    /// Returns the active auto-archive duration threshold in seconds (or nil if set to "never").
+    var autoArchiveIntervalSeconds: TimeInterval? {
+        let interval = UserDefaults.standard.string(forKey: Self.autoArchiveIntervalKey) ?? "never"
+        switch interval {
+        case "6h":
+            return 6 * 3600
+        case "12h":
+            return 12 * 3600
+        case "24h":
+            return 24 * 3600
+        case "7d":
+            return 7 * 24 * 3600
+        default:
+            return nil
+        }
+    }
+
+    /// Retrieves or lazily creates the persistent Archive folder at the bottom of the tab list.
+    @discardableResult
+    func getOrCreateArchiveFolder() -> TabFolder {
+        if let existing = folders.first(where: { $0.isArchive }) {
+            return existing
+        }
+        let archiveFolder = TabFolder(
+            name: "Archive",
+            isCollapsed: true,
+            color: .grey,
+            nameOrigin: .manual,
+            isArchive: true
+        )
+        folders.append(archiveFolder)
+        return archiveFolder
+    }
+
+    /// Evaluates unpinned, unarchived tabs and moves inactive tabs into the Archive folder.
+    func archiveInactiveTabsIfNeeded() {
+        guard let threshold = autoArchiveIntervalSeconds else { return }
+        let cutoffDate = Date().addingTimeInterval(-threshold)
+        let archiveId = folders.first(where: { $0.isArchive })?.id
+
+        var tabsToArchive: [UUID] = []
+        for tab in tabs {
+            // Do not archive pinned tabs, active/split visible tabs, or tabs already in the Archive folder
+            guard !tab.isPinned,
+                  archiveId == nil || tab.folderId != archiveId,
+                  !currentTabIds.contains(tab.id) else {
+                continue
+            }
+
+            let lastViewed = tab.lastViewedAt ?? Date()
+            if lastViewed < cutoffDate {
+                tabsToArchive.append(tab.id)
+            }
+        }
+
+        guard !tabsToArchive.isEmpty else { return }
+        let archive = getOrCreateArchiveFolder()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            moveTabs(tabsToArchive, toFolder: archive.id)
+        }
+    }
+
+    /// Archives all unpinned tabs (excluding tabs already in the Archive folder).
+    func archiveAllTabs() {
+        let archiveId = folders.first(where: { $0.isArchive })?.id
+        let tabsToArchive = tabs.filter {
+            !$0.isPinned && (archiveId == nil || $0.folderId != archiveId)
+        }.map(\.id)
+
+        guard !tabsToArchive.isEmpty else { return }
+        let archive = getOrCreateArchiveFolder()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            moveTabs(tabsToArchive, toFolder: archive.id)
+        }
+    }
+
     // MARK: - Folder Accessors
 
     func folder(for id: UUID) -> TabFolder? {
@@ -391,7 +471,7 @@ extension BrowserState {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
             tabs = newTabs
             removeEmptyFolders()
-            if let folderId {
+            if let folderId, let destFolder = folder(for: folderId), !destFolder.isArchive {
                 expandFolder(id: folderId)
             }
         }

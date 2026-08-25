@@ -20,6 +20,7 @@ struct ContentBlockerSettings: Codable, Equatable {
     var dntEnabled: Bool = true
     var clearDataOnQuit: Bool = false
     var strictCanvasBlockEnabled: Bool = false
+    var copyCleanURLAutomatically: Bool = true
 
     static let `default` = ContentBlockerSettings()
 }

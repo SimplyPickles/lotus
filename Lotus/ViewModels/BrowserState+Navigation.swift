@@ -29,7 +29,11 @@ extension BrowserState {
         // or another application. A page must not be able to launch local apps
         // or open arbitrary local paths through navigation.
         if scheme == "file" {
-            decisionHandler(.cancel)
+            if navigationAction.navigationType == .other {
+                decisionHandler(.allow)
+            } else {
+                decisionHandler(.cancel)
+            }
             return
         }
 
@@ -58,6 +62,23 @@ extension BrowserState {
             if navigationAction.targetFrame == nil || isLinkClick {
                 decisionHandler(.cancel)
                 return
+            }
+        }
+
+        // HTTPS-Only Mode upgrade
+        if ContentBlockerService.shared.httpsOnlyModeEnabled && scheme == "http" {
+            let host = url.host?.lowercased() ?? ""
+            let isLocal = host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".local") || host.isEmpty
+            if !isLocal && !httpAllowedDomains.contains(host) && navigationAction.targetFrame?.isMainFrame != false {
+                var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+                components?.scheme = "https"
+                if let upgradedURL = components?.url {
+                    decisionHandler(.cancel)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.loadURL(upgradedURL, in: sourceTabId)
+                    }
+                    return
+                }
             }
         }
 
@@ -164,8 +185,26 @@ extension BrowserState {
     }
 
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if let trust = challenge.protectionSpace.serverTrust,
+           let tabId = webViewStore.first(where: { $0.value === webView })?.key {
+            self.tabServerTrusts[tabId] = trust
+        }
         // Let WebKit and the system trust store validate server certificates.
         completionHandler(.performDefaultHandling, nil)
+    }
+
+    func certificateDetails(for tabId: UUID) -> CertificateDetails? {
+        guard let url = url(for: tabId), let host = url.host else { return nil }
+        guard let trust = tabServerTrusts[tabId] else { return nil }
+        return CertificateDetails.from(trust: trust, host: host)
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        DispatchQueue.main.async { [weak self] in
+            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key {
+                self?.pageLoadErrors[tabId] = nil
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -174,22 +213,38 @@ extension BrowserState {
             return
         }
         DispatchQueue.main.async { [weak self] in
-            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key {
-                self?.tabLoadingStates[tabId] = false
-                if self?.selectedTabId == tabId {
-                    self?.isLoading = false
+            guard let self = self else { return }
+            if let tabId = self.webViewStore.first(where: { $0.value === webView })?.key {
+                self.tabLoadingStates[tabId] = false
+                if self.selectedTabId == tabId {
+                    self.isLoading = false
                 }
+
+                let failingURL = webView.url ?? self.tab(for: tabId)?.url
+                let isHTTPSFailure = ContentBlockerService.shared.httpsOnlyModeEnabled && failingURL?.scheme == "https"
+                let pageError = PageLoadError(url: failingURL, error: error, isHTTPSEnforcedFailure: isHTTPSFailure)
+                self.pageLoadErrors[tabId] = pageError
             }
         }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            return
+        }
         DispatchQueue.main.async { [weak self] in
-            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key {
-                self?.tabLoadingStates[tabId] = false
-                if self?.selectedTabId == tabId {
-                    self?.isLoading = false
+            guard let self = self else { return }
+            if let tabId = self.webViewStore.first(where: { $0.value === webView })?.key {
+                self.tabLoadingStates[tabId] = false
+                if self.selectedTabId == tabId {
+                    self.isLoading = false
                 }
+
+                let failingURL = webView.url ?? self.tab(for: tabId)?.url
+                let isHTTPSFailure = ContentBlockerService.shared.httpsOnlyModeEnabled && failingURL?.scheme == "https"
+                let pageError = PageLoadError(url: failingURL, error: error, isHTTPSEnforcedFailure: isHTTPSFailure)
+                self.pageLoadErrors[tabId] = pageError
             }
         }
     }
@@ -232,8 +287,73 @@ extension BrowserState {
 
     func reload(for tabId: UUID? = nil) {
         let targetId = tabId ?? selectedTabId
+        pageLoadErrors[targetId] = nil
         let wv = getWebView(for: targetId)
         wv.reload()
+    }
+
+    func reloadFromOrigin(for tabId: UUID? = nil) {
+        let targetId = tabId ?? selectedTabId
+        pageLoadErrors[targetId] = nil
+        let wv = getWebView(for: targetId)
+        wv.reloadFromOrigin()
+    }
+
+    func allowInsecureHTTPLoad(for tabId: UUID? = nil) {
+        let targetId = tabId ?? selectedTabId
+        guard let error = pageLoadErrors[targetId], let failedURL = error.url, let host = failedURL.host else { return }
+        httpAllowedDomains.insert(host.lowercased())
+        pageLoadErrors[targetId] = nil
+        var components = URLComponents(url: failedURL, resolvingAgainstBaseURL: true)
+        components?.scheme = "http"
+        if let httpURL = components?.url {
+            loadURL(httpURL, in: targetId)
+        }
+    }
+
+    func backHistoryList(for tabId: UUID) -> [WKBackForwardListItem] {
+        guard let wv = webViewStore[tabId] else { return [] }
+        return Array(wv.backForwardList.backList.reversed())
+    }
+
+    func forwardHistoryList(for tabId: UUID) -> [WKBackForwardListItem] {
+        guard let wv = webViewStore[tabId] else { return [] }
+        return wv.backForwardList.forwardList
+    }
+
+    func goToBackForwardItem(_ item: WKBackForwardListItem, for tabId: UUID? = nil) {
+        let targetId = tabId ?? selectedTabId
+        guard let wv = webViewStore[targetId] else { return }
+        pageLoadErrors[targetId] = nil
+        wv.go(to: item)
+    }
+
+    func viewPageSource(for tabId: UUID? = nil) {
+        let targetId = tabId ?? selectedTabId
+        guard let currentURL = url(for: targetId), !currentURL.isLotusPage else { return }
+        let wv = getWebView(for: targetId)
+        wv.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let html = (result as? String) ?? ""
+                let encodedHTML = html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+                let sourceURL = URL(string: "data:text/plain;charset=utf-8,\(encodedHTML)")
+                self.addTabBelow(
+                    currentTabId: targetId,
+                    title: "Source: \(currentURL.host ?? "Page")",
+                    url: sourceURL,
+                    select: true
+                )
+            }
+        }
+    }
+
+    func inspectElement(for tabId: UUID? = nil) {
+        let targetId = tabId ?? selectedTabId
+        guard let wv = webViewStore[targetId] else { return }
+        if wv.responds(to: NSSelectorFromString("_showInspector")) {
+            wv.perform(NSSelectorFromString("_showInspector"))
+        }
     }
 
     func stopLoading(for tabId: UUID? = nil) {
@@ -248,6 +368,7 @@ extension BrowserState {
 
     func navigateTab(id: UUID, to input: String) {
         guard let url = URLInputResolver.resolve(input) else { return }
+        pageLoadErrors[id] = nil
         if let index = tabs.firstIndex(where: { $0.id == id }) {
             tabs[index].url = url
             tabs[index].title = URLInputResolver.initialTitle(for: url, input: input)
@@ -263,12 +384,18 @@ extension BrowserState {
     /// pages like history to replace their own page in-place).
     func loadURL(_ url: URL, in tabId: UUID? = nil) {
         let targetId = tabId ?? selectedTabId
+        pageLoadErrors[targetId] = nil
         if let index = tabs.firstIndex(where: { $0.id == targetId }) {
             tabs[index].url = url
-            tabs[index].title = url.host ?? url.absoluteString
+            tabs[index].title = url.isFileURL ? url.lastPathComponent : (url.lotusPageTitle ?? url.host ?? url.absoluteString)
         }
 
-        getWebView(for: targetId).load(URLRequest(url: url))
+        let wv = getWebView(for: targetId)
+        if url.isFileURL {
+            wv.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            wv.load(URLRequest(url: url))
+        }
     }
 
     func navigateActiveTab(to input: String) {

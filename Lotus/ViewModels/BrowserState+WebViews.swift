@@ -21,12 +21,16 @@ extension BrowserState {
         if let existing = webViewStore[tabId] {
             if let targetURL = targetURL,
                existing.url == nil && existing.backForwardList.currentItem == nil {
-                existing.load(URLRequest(url: targetURL))
+                if targetURL.isFileURL {
+                    existing.loadFileURL(targetURL, allowingReadAccessTo: targetURL.deletingLastPathComponent())
+                } else {
+                    existing.load(URLRequest(url: targetURL))
+                }
             }
             return existing
         }
 
-        let config = WebViewFactory.makeConfiguration(messageHandler: self)
+        let config = WebViewFactory.makeConfiguration(messageHandler: self, isPrivate: isPrivate)
         let webView = WebViewFactory.makeWebView(configuration: config, delegate: self)
         webView.pageZoom = zoomLevel(for: tabId)
         webViewStore[tabId] = webView
@@ -34,7 +38,11 @@ extension BrowserState {
         setupObservers(for: tabId, webView: webView)
 
         if let targetURL = targetURL {
-            webView.load(URLRequest(url: targetURL))
+            if targetURL.isFileURL {
+                webView.loadFileURL(targetURL, allowingReadAccessTo: targetURL.deletingLastPathComponent())
+            } else {
+                webView.load(URLRequest(url: targetURL))
+            }
         }
 
         return webView
@@ -133,5 +141,76 @@ extension BrowserState {
         }
 
         observers[tabId] = tabObservers
+    }
+
+    // MARK: - Tab Snoozing / Memory Suspension
+
+    /// Snoozes a background tab by releasing its WKWebView and observers to free system memory.
+    func snoozeTab(id: UUID) {
+        // Do not snooze currently active tab or visible split tabs
+        guard id != selectedTabId, !currentTabIds.contains(id) else { return }
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        guard !tabs[index].isSnoozed else { return }
+
+        // Invalidate KVO observers
+        observers[id]?.forEach { $0.invalidate() }
+        observers.removeValue(forKey: id)
+
+        // Remove WKWebView from memory
+        if let webView = webViewStore.removeValue(forKey: id) {
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+        }
+
+        tabLoadingStates.removeValue(forKey: id)
+        tabEstimatedProgress.removeValue(forKey: id)
+        tabs[index].isSnoozed = true
+        saveSession()
+    }
+
+    /// Wakes up a snoozed tab, recreating its WKWebView and restoring its URL.
+    func wakeTab(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        if tabs[index].isSnoozed {
+            tabs[index].isSnoozed = false
+            tabs[index].lastViewedAt = Date()
+            _ = getWebView(for: id)
+            saveSession()
+        }
+    }
+
+    /// Automatically snoozes inactive background tabs based on user settings.
+    func snoozeInactiveTabsIfNeeded() {
+        let rawInterval = UserDefaults.standard.string(forKey: "lotus.browser.tabSnoozeInterval") ?? "never"
+        let thresholdSeconds: TimeInterval
+        switch rawInterval {
+        case "15m": thresholdSeconds = 15 * 60
+        case "30m": thresholdSeconds = 30 * 60
+        case "1h": thresholdSeconds = 60 * 60
+        case "2h": thresholdSeconds = 120 * 60
+        default: return // "never"
+        }
+
+        let now = Date()
+        for tab in tabs {
+            guard !tab.isPinned,
+                  !currentTabIds.contains(tab.id),
+                  !tab.isSnoozed,
+                  tab.url != nil,
+                  tab.url?.isLotusPage == false else {
+                continue
+            }
+
+            // Do not snooze tabs playing audio
+            if let mediaState = tabMediaStates[tab.id], mediaState.isPlaying {
+                continue
+            }
+
+            let lastActive = tab.lastViewedAt ?? Date.distantPast
+            if now.timeIntervalSince(lastActive) >= thresholdSeconds {
+                snoozeTab(id: tab.id)
+            }
+        }
     }
 }
