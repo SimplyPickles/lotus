@@ -234,18 +234,18 @@ struct PinnedTabButton: View {
 
     private var shadowColor: Color {
         if colorScheme == .light {
-            return isSelected ? primaryColor.opacity(0.20) : Color.black.opacity(effectiveHovered ? 0.08 : 0.04)
+            return isSelected ? primaryColor.opacity(0.12) : Color.black.opacity(effectiveHovered ? 0.04 : 0.02)
         } else {
-            return isSelected ? primaryColor.opacity(0.28) : Color.black.opacity(effectiveHovered ? 0.22 : 0.12)
+            return isSelected ? primaryColor.opacity(0.18) : Color.black.opacity(effectiveHovered ? 0.10 : 0.04)
         }
     }
 
     private var shadowRadius: CGFloat {
-        isSelected ? 4.0 : (effectiveHovered ? 3.0 : 2.0)
+        isSelected ? 1.8 : (effectiveHovered ? 1.2 : 0.8)
     }
 
     private var shadowY: CGFloat {
-        isSelected ? 1.8 : 1.0
+        isSelected ? 0.8 : 0.4
     }
 
     var body: some View {

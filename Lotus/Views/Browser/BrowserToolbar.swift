@@ -292,6 +292,10 @@ struct BrowserToolbar: View {
         if isZoomIndicatorVisible || currentZoomLevel != 1.0 {
             padding += 50
         }
+        let shouldShowSplit = isInputHovered
+        if shouldShowSplit {
+            padding += 22
+        }
         let isCurrentBookmarked = browserState.isBookmarked(url: currentURL)
         let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
         if shouldShowBookmark {
@@ -408,7 +412,7 @@ struct BrowserToolbar: View {
                         .allowsHitTesting(false)
                 }
 
-                // Trailing embedded elements (Zoom pill + Bookmark button)
+                // Trailing embedded elements (Zoom pill + Bookmark button + Split View button)
                 HStack(spacing: 4) {
                     if isZoomIndicatorVisible || currentZoomLevel != 1.0 {
                         ZoomIndicatorPill(
@@ -420,33 +424,108 @@ struct BrowserToolbar: View {
                                 browserState.resetZoom(for: activeTabId)
                             }
                         )
-                        .padding(.trailing, 2)
                         .transition(
-                            .opacity.animation(.easeInOut(duration: 0.30))
-                                .combined(with: .scale(scale: 0.90).animation(.easeInOut(duration: 0.30)))
+                            .opacity.animation(.easeInOut(duration: 0.20))
+                                .combined(with: .scale(scale: 0.90).animation(.easeInOut(duration: 0.20)))
                         )
                     }
 
                     let isCurrentBookmarked = browserState.isBookmarked(url: currentURL)
                     let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
-                    Button {
-                        browserState.toggleBookmark(for: activeTabId)
-                    } label: {
-                        Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
-                            .font(.system(size: 11.5, weight: isCurrentBookmarked ? .semibold : .regular))
-                            .foregroundColor(hairlineAccentColor)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
+                    if shouldShowBookmark {
+                        Button {
+                            browserState.toggleBookmark(for: activeTabId)
+                        } label: {
+                            Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
+                                .font(.system(size: 11.5, weight: isCurrentBookmarked ? .semibold : .regular))
+                                .foregroundColor(hairlineAccentColor)
+                                .frame(width: 20, height: 20)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.90)))
+                        .help(isCurrentBookmarked ? "Remove Bookmark (⌘D)" : "Bookmark Page (⌘D)")
                     }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .disabled(!shouldShowBookmark)
-                    .opacity(shouldShowBookmark ? 1.0 : 0.0)
-                    .allowsHitTesting(shouldShowBookmark)
-                    .animation(.easeInOut(duration: 0.14), value: shouldShowBookmark)
-                    .help(isCurrentBookmarked ? "Remove Bookmark (⌘D)" : "Bookmark Page (⌘D)")
+
+                    let isSplitActive = browserState.isSplit(id: activeTabId)
+                    let shouldShowSplit = isInputHovered
+                    let group = browserState.splitGroup(containing: activeTabId)
+                    let otherTabs = browserState.tabs.filter { (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
+
+                    let isLeftPane = group?.first == activeTabId
+                    let splitIconName: String = isSplitActive
+                        ? (isLeftPane ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
+                        : "rectangle.split.2x1"
+
+                    if shouldShowSplit {
+                        Menu {
+                            if isSplitActive {
+                                Button {
+                                    browserState.closeSplit(id: activeTabId)
+                                } label: {
+                                    Label("Close Split View", systemImage: "rectangle.portrait.and.arrow.right")
+                                }
+
+                                if let group = group {
+                                    Button {
+                                        browserState.swapSplitTabs(for: group)
+                                    } label: {
+                                        Label("Swap Left & Right Sides", systemImage: "arrow.left.and.right.square")
+                                    }
+                                }
+
+                                if !otherTabs.isEmpty {
+                                    Divider()
+                                    Menu("Replace Split Partner") {
+                                        ForEach(otherTabs) { otherTab in
+                                            Button(otherTab.title.isEmpty ? (otherTab.url?.host ?? "New Tab") : otherTab.title) {
+                                                browserState.openInSplit(id: otherTab.id, side: .right)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Button {
+                                    browserState.openNewSplitTab(for: activeTabId)
+                                } label: {
+                                    Label("Split Right with New Tab", systemImage: "rectangle.righthalf.filled")
+                                }
+
+                                if !otherTabs.isEmpty {
+                                    Menu("Split with Open Tab") {
+                                        ForEach(otherTabs) { otherTab in
+                                            Button(otherTab.title.isEmpty ? (otherTab.url?.host ?? "Untitled") : otherTab.title) {
+                                                browserState.openInSplit(id: otherTab.id, side: .right)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: splitIconName)
+                                .font(.system(size: 11.5, weight: isSplitActive ? .semibold : .regular))
+                                .foregroundColor(isSplitActive ? hairlineAccentColor : theme.foregroundSecondary)
+                                .frame(width: 20, height: 20)
+                                .contentShape(Rectangle())
+                        } primaryAction: {
+                            if isSplitActive {
+                                browserState.closeSplit(id: activeTabId)
+                            } else {
+                                browserState.openNewSplitTab(for: activeTabId)
+                            }
+                        }
+                        .menuStyle(.button)
+                        .buttonStyle(.plain)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .focusable(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.90)))
+                        .help(isSplitActive ? "Split View Active (Click to close, hold for options)" : "Split View (Click to split right, hold for options)")
+                    }
                 }
                 .padding(.trailing, 4)
+                .animation(.easeInOut(duration: 0.16), value: isInputHovered)
             }
             .frame(minWidth: 0, maxWidth: .infinity)
             .contentShape(Rectangle())
@@ -668,6 +747,10 @@ struct BrowserToolbar: View {
         let isSplitActive = browserState.isSplit(id: activeTabId)
         let group = browserState.splitGroup(containing: activeTabId)
         let otherTabs = browserState.tabs.filter { (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
+        let isLeftPane = group?.first == activeTabId
+        let splitIconName: String = isSplitActive
+            ? (isLeftPane ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
+            : "rectangle.split.2x1"
 
         return Menu {
             if isSplitActive {
@@ -713,7 +796,7 @@ struct BrowserToolbar: View {
                 }
             }
         } label: {
-            Image(systemName: isSplitActive ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+            Image(systemName: splitIconName)
                 .font(.system(size: 12.5, weight: .regular))
                 .foregroundColor(isSplitActive ? (theme.themeColor != nil ? (theme.isThemeLight ? .black : .white) : Color.accentColor) : (theme.themeColor != nil ? (theme.isThemeLight ? .black.opacity(0.85) : .white.opacity(0.90)) : Color.primary))
         } primaryAction: {
@@ -896,10 +979,10 @@ private struct ZoomIndicatorPill: View {
             .animation(.spring(response: 0.24, dampingFraction: 0.74), value: percentValue)
             .font(.system(size: 11, weight: .semibold))
             .foregroundColor(theme.foregroundPrimary.opacity(isHovered ? 1.0 : 0.72))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2.5)
+            .padding(.horizontal, 4.5)
+            .padding(.vertical, 1.5)
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                     .fill(isHovered
                           ? (colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08))
                           : (colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.04)))

@@ -18,11 +18,19 @@ final class FaviconColorExtractor: ObservableObject {
     @Published private(set) var imageCache: [URL: NSImage] = [:]
     @Published private(set) var nsColorCache: [URL: NSColor] = [:]
     private var fetchingURLs: Set<URL> = []
+    private var pendingCallbacks: [URL: [(NSImage?) -> Void]] = [:]
 
     func color(for url: URL?) -> Color? {
         guard let url = url else { return nil }
         if let cached = colorCache[url] {
             return cached
+        }
+        if let img = imageCache[url] {
+            if let extracted = extractColors(from: img) {
+                colorCache[url] = extracted.average
+                gradientColorsCache[url] = extracted.palette
+                return extracted.average
+            }
         }
         fetch(for: url)
         return nil
@@ -46,8 +54,20 @@ final class FaviconColorExtractor: ObservableObject {
         if let cached = gradientColorsCache[url] {
             return cached
         }
+        if let img = imageCache[url] {
+            if let extracted = extractColors(from: img) {
+                colorCache[url] = extracted.average
+                gradientColorsCache[url] = extracted.palette
+                return extracted.palette
+            }
+        }
         fetch(for: url)
         return nil
+    }
+
+    func cachedImage(for url: URL?) -> NSImage? {
+        guard let url = url else { return nil }
+        return imageCache[url]
     }
 
     func image(for url: URL?) -> NSImage? {
@@ -57,6 +77,21 @@ final class FaviconColorExtractor: ObservableObject {
         }
         fetch(for: url)
         return nil
+    }
+
+    func fetchImage(for url: URL?, completion: ((NSImage?) -> Void)? = nil) {
+        guard let url = url else {
+            completion?(nil)
+            return
+        }
+        if let cached = imageCache[url] {
+            completion?(cached)
+            return
+        }
+        if let completion = completion {
+            pendingCallbacks[url, default: []].append(completion)
+        }
+        fetch(for: url)
     }
 
     func prefetch(for url: URL?) {
@@ -72,6 +107,7 @@ final class FaviconColorExtractor: ObservableObject {
         imageCache.removeAll()
         nsColorCache.removeAll()
         fetchingURLs.removeAll()
+        pendingCallbacks.removeAll()
     }
 
     private func fetch(for url: URL) {
@@ -83,15 +119,17 @@ final class FaviconColorExtractor: ObservableObject {
                 guard let data = try? Data(contentsOf: url),
                       let nsImage = NSImage(data: data) else {
                     DispatchQueue.main.async {
-                        self?.fetchingURLs.remove(url)
+                        self?.finishFetch(for: url, image: nil)
                     }
                     return
                 }
-                self?.finishFetch(for: url, image: nsImage)
+                DispatchQueue.main.async {
+                    self?.finishFetch(for: url, image: nsImage)
+                }
             }
         } else {
             var request = URLRequest(url: url)
-            request.timeoutInterval = 5.0
+            request.timeoutInterval = 4.0
             request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
             request.setValue("image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5", forHTTPHeaderField: "Accept")
 
@@ -101,7 +139,9 @@ final class FaviconColorExtractor: ObservableObject {
                 let isSuccess = (200...299).contains(statusCode)
 
                 if isSuccess, let data = data, let nsImage = NSImage(data: data) {
-                    self?.finishFetch(for: url, image: nsImage)
+                    DispatchQueue.main.async {
+                        self?.finishFetch(for: url, image: nsImage)
+                    }
                     return
                 }
 
@@ -110,7 +150,7 @@ final class FaviconColorExtractor: ObservableObject {
                     self?.fetchFallback(host: host, originalURL: url)
                 } else {
                     DispatchQueue.main.async {
-                        self?.fetchingURLs.remove(url)
+                        self?.finishFetch(for: url, image: nil)
                     }
                 }
             }.resume()
@@ -120,37 +160,37 @@ final class FaviconColorExtractor: ObservableObject {
     private func fetchFallback(host: String, originalURL: URL) {
         guard let fallbackURL = URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64") else {
             DispatchQueue.main.async {
-                self.fetchingURLs.remove(originalURL)
+                self.finishFetch(for: originalURL, image: nil)
             }
             return
         }
 
         var request = URLRequest(url: fallbackURL)
-        request.timeoutInterval = 5.0
+        request.timeoutInterval = 4.0
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             if (200...299).contains(statusCode), let data = data, let nsImage = NSImage(data: data) {
-                self?.finishFetch(for: originalURL, image: nsImage)
+                DispatchQueue.main.async {
+                    self?.finishFetch(for: originalURL, image: nsImage)
+                }
             } else {
                 DispatchQueue.main.async {
-                    self?.fetchingURLs.remove(originalURL)
+                    self?.finishFetch(for: originalURL, image: nil)
                 }
             }
         }.resume()
     }
 
-    private func finishFetch(for url: URL, image nsImage: NSImage) {
-        let extracted = extractColors(from: nsImage)
-
-        DispatchQueue.main.async {
-            if let extracted = extracted {
-                self.colorCache[url] = extracted.average
-                self.gradientColorsCache[url] = extracted.palette
-            }
-            self.imageCache[url] = nsImage
-            self.fetchingURLs.remove(url)
+    private func finishFetch(for url: URL, image nsImage: NSImage?) {
+        fetchingURLs.remove(url)
+        if let img = nsImage {
+            imageCache[url] = img
+        }
+        let callbacks = pendingCallbacks.removeValue(forKey: url) ?? []
+        for callback in callbacks {
+            callback(nsImage)
         }
     }
 
@@ -312,11 +352,11 @@ struct CachedFaviconView: View {
     let fallbackColor: Color
     let size: CGFloat
 
-    @ObservedObject private var colorExtractor = FaviconColorExtractor.shared
+    @State private var image: NSImage? = nil
 
     var body: some View {
         ZStack {
-            if let url = url, let nsImage = colorExtractor.image(for: url) {
+            if let nsImage = image ?? (url.flatMap { FaviconColorExtractor.shared.cachedImage(for: $0) }) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -331,5 +371,27 @@ struct CachedFaviconView: View {
         }
         .frame(width: size, height: size, alignment: .center)
         .contentTransition(.identity)
+        .onAppear {
+            loadImage()
+        }
+        .onChange(of: url) { _, _ in
+            loadImage()
+        }
+    }
+
+    private func loadImage() {
+        guard let url = url else {
+            image = nil
+            return
+        }
+        if let cached = FaviconColorExtractor.shared.cachedImage(for: url) {
+            image = cached
+            return
+        }
+        FaviconColorExtractor.shared.fetchImage(for: url) { fetchedImage in
+            if let fetched = fetchedImage {
+                self.image = fetched
+            }
+        }
     }
 }

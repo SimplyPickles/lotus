@@ -21,6 +21,27 @@ struct FloatingDragTab: View {
     var previewCount: Int = 1
 
     @AppStorage("lotus.browser.sidebarTabTintingMode") private var sidebarTabTintingMode: String = "adaptive"
+    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var effectiveIsThemeLight: Bool {
+        let isInternal = tab.url?.scheme == "lotus" || tab.url?.absoluteString.hasPrefix("lotus://") == true
+        if isInternal {
+            return colorScheme == .light
+        }
+        switch sidebarTabTintingMode {
+        case "neutral":
+            return colorScheme == .light
+        case "systemAccent":
+            let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+            return accent == .yellow
+        default: // "adaptive"
+            if activeThemeColor == nil {
+                return colorScheme == .light
+            }
+            return isThemeLight
+        }
+    }
 
     private var activeTabBackgroundColor: Color {
         let isInternal = tab.url?.scheme == "lotus" || tab.url?.absoluteString.hasPrefix("lotus://") == true
@@ -75,7 +96,7 @@ struct FloatingDragTab: View {
                     selectedTabId: tab.id,
                     currentTabIds: [tab1.id, tab2.id],
                     sidebarWidth: sidebarWidth,
-                    isThemeLight: isThemeLight,
+                    isThemeLight: effectiveIsThemeLight,
                     activeTabBackgroundColor: activeTabBackgroundColor,
                     namespace: nil,
                     activeDrag: nil,
@@ -91,7 +112,7 @@ struct FloatingDragTab: View {
                     tab: tab,
                     isSelected: true,
                     isDragging: true,
-                    isThemeLight: isThemeLight,
+                    isThemeLight: effectiveIsThemeLight,
                     activeTabBackgroundColor: activeTabBackgroundColor,
                     sidebarWidth: sidebarWidth,
                     onSelect: {},

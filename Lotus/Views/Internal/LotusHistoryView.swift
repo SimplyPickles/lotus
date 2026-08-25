@@ -173,6 +173,8 @@ struct LotusHistoryView: View {
 
     // MARK: - Body
 
+    @State private var searchDebounceTask: Task<Void, Never>? = nil
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(.vertical, showsIndicators: true) {
@@ -241,7 +243,7 @@ struct LotusHistoryView: View {
         }
         .onChange(of: searchText) { _, _ in
             displayLimit = 60
-            refreshSections()
+            refreshSections(debounce: true)
         }
         .onDeleteCommand {
             guard !selectedIds.isEmpty else { return }
@@ -256,14 +258,45 @@ struct LotusHistoryView: View {
         }
     }
 
-    private func refreshSections() {
-        let result = HistoryGrouping.filterAndGroup(
-            from: browserState.historyEntries,
-            query: searchText,
-            limit: displayLimit
-        )
-        sections = result.sections
-        totalFilteredCount = result.totalFilteredCount
+    private func refreshSections(debounce: Bool = false) {
+        searchDebounceTask?.cancel()
+
+        let entries = browserState.historyEntries
+        let query = searchText
+        let limit = displayLimit
+
+        if debounce {
+            searchDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                guard !Task.isCancelled else { return }
+
+                let result = await Task.detached(priority: .userInitiated) {
+                    HistoryGrouping.filterAndGroup(
+                        from: entries,
+                        query: query,
+                        limit: limit
+                    )
+                }.value
+
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.sections = result.sections
+                    self.totalFilteredCount = result.totalFilteredCount
+                }
+            }
+        } else {
+            Task.detached(priority: .userInitiated) {
+                let result = HistoryGrouping.filterAndGroup(
+                    from: entries,
+                    query: query,
+                    limit: limit
+                )
+                await MainActor.run {
+                    self.sections = result.sections
+                    self.totalFilteredCount = result.totalFilteredCount
+                }
+            }
+        }
     }
 
     // MARK: - Header

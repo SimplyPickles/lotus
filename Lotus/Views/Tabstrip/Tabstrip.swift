@@ -318,7 +318,6 @@ struct Tabstrip: View {
                 }
             }
             .frame(width: browserState.sidebarWidth, height: pinnedGridHeight, alignment: .topLeading)
-            .clipped()
             .animation(.spring(response: 0.24, dampingFraction: 0.82), value: pinnedGridHeight)
 
             // New Tab button

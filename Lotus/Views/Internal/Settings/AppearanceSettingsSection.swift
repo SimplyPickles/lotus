@@ -24,17 +24,21 @@ struct AppearanceSettingsSection: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            SettingsSectionCard(title: SettingsCategory.appearance.rawValue, systemImage: SettingsCategory.appearance.systemImage) {
+            SettingsSectionCard(title: "Theme & Accent", systemImage: "paintpalette") {
                 AccentColorPickerRow(selectedAccent: $accentColor)
                 SettingsDivider()
                 AppearanceSettingsRow(appearanceMode: $appearanceMode)
-                SettingsDivider()
+            }
+
+            SettingsSectionCard(title: "Chrome Tinting", systemImage: "sparkles") {
                 TitlebarTintingSettingsRow(titlebarChromeTintingMode: $titlebarChromeTintingMode)
                 SettingsDivider()
                 SidebarTabTintingSettingsRow(sidebarTabTintingMode: $sidebarTabTintingMode)
                 SettingsDivider()
                 PinnedTabTintingSettingsRow(pinnedTabTintingMode: $pinnedTabTintingMode)
-                SettingsDivider()
+            }
+
+            SettingsSectionCard(title: "Window & Layout", systemImage: "macwindow") {
                 TopBarSettingsRow(topBarVisibility: $topBarVisibility)
                 SettingsDivider()
                 CenterURLPreviewSettingsRow(centerURLPreview: $centerURLPreview)

@@ -38,18 +38,16 @@ struct SplitTabRow: View {
         currentTabIds.contains(tab1.id) || currentTabIds.contains(tab2.id)
     }
 
-    private var isBeingDragged: Bool {
-        activeDrag?.tabId == tab1.id || activeDrag?.tabId == tab2.id
-    }
-
     var body: some View {
         let totalWidth = max(0, sidebarWidth - 16)
         let halfWidth = max(0, totalWidth / 2)
+        let isLeftFocused = selectedTabId == tab1.id
+        let isRightFocused = selectedTabId == tab2.id
 
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             SplitTabHalf(
                 tab: tab1,
-                isFocused: selectedTabId == tab1.id,
+                isFocused: isLeftFocused,
                 isSplitActive: isSplitActive,
                 isDraggingAnyTab: isDraggingAnyTab || activeDrag != nil,
                 isThemeLight: isThemeLight,
@@ -71,7 +69,7 @@ struct SplitTabRow: View {
 
             SplitTabHalf(
                 tab: tab2,
-                isFocused: selectedTabId == tab2.id,
+                isFocused: isRightFocused,
                 isSplitActive: isSplitActive,
                 isDraggingAnyTab: isDraggingAnyTab || activeDrag != nil,
                 isThemeLight: isThemeLight,
@@ -95,30 +93,32 @@ struct SplitTabRow: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
+
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.black.opacity(0.04))
                     .opacity(isMultiSelected ? 1 : 0)
 
-                if isSplitActive {
-                    if let namespace = namespace {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                if isSplitActive && (isLeftFocused || isRightFocused) {
+                    HStack(spacing: 0) {
+                        if isRightFocused {
+                            Spacer(minLength: 0)
+                        }
+
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(activeTabBackgroundColor)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
                             )
-                            .frame(width: totalWidth, height: 34)
-                            .zIndex(10)
-                            .matchedGeometryEffect(id: "activeTabHighlight", in: namespace)
-                    } else {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(activeTabBackgroundColor)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
-                            )
-                            .frame(width: totalWidth, height: 34)
-                            .zIndex(10)
+                            .frame(width: halfWidth, height: 34)
+
+                        if isLeftFocused {
+                            Spacer(minLength: 0)
+                        }
                     }
+                    .frame(width: totalWidth, height: 34)
+                    .animation(.spring(response: 0.20, dampingFraction: 0.86), value: selectedTabId)
                 }
             }
         )
