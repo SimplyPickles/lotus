@@ -242,12 +242,27 @@ enum UserScripts {
             'ytd-in-feed-ad-layout-renderer'
         ].join(',');
 
+        var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+        if (host.startsWith('www.')) host = host.slice(4);
+        var authHosts = ['accounts.google.com', 'myaccount.google.com', 'google.com', 'gstatic.com', 'googleapis.com', 'appleid.apple.com', 'login.microsoftonline.com', 'login.live.com', 'auth.github.com', 'github.com'];
+        for (var a = 0; a < authHosts.length; a++) {
+            if (host === authHosts[a] || host.endsWith('.' + authHosts[a])) return;
+        }
+
         function notifyShieldDeflect() {
             try {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusShieldDeflectHandler) {
                     window.webkit.messageHandlers.lotusShieldDeflectHandler.postMessage({ blocked: true });
                 }
             } catch(e) {}
+        }
+
+        function isAuthElement(el) {
+            try {
+                if (!el) return false;
+                if (el.closest && el.closest('[id*="g_id_"], [class*="g_id_"], [id*="gsi_"], [class*="google-signin"], [class*="sign-in-with-google"], iframe[src*="accounts.google.com"], iframe[src*="appleid.apple.com"]')) return true;
+                return false;
+            } catch(e) { return false; }
         }
 
         function cleanDOM() {
@@ -257,7 +272,7 @@ enum UserScripts {
                 var didBlock = false;
                 for (var i = 0; i < nodes.length; i++) {
                     var el = nodes[i];
-                    if (el && el.style && el.style.display !== 'none') {
+                    if (el && !isAuthElement(el) && el.style && el.style.display !== 'none') {
                         el.style.setProperty('display', 'none', 'important');
                         didBlock = true;
                     }
@@ -282,15 +297,28 @@ enum UserScripts {
     static let globalPrivacyControlScriptlet = """
     (function() {
         try {
-            // 1. Expose navigator.doNotTrack and navigator.globalPrivacyControl
+            var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+            if (host.startsWith('www.')) host = host.slice(4);
+            var authHosts = [
+                'accounts.google.com',
+                'myaccount.google.com',
+                'google.com',
+                'gstatic.com',
+                'googleapis.com',
+                'googleusercontent.com',
+                'appleid.apple.com',
+                'apple.com',
+                'icloud.com',
+                'login.live.com',
+                'login.microsoftonline.com',
+                'auth.github.com',
+                'github.com'
+            ];
+            for (var a = 0; a < authHosts.length; a++) {
+                if (host === authHosts[a] || host.endsWith('.' + authHosts[a])) return;
+            }
+
             if (window.Navigator && Navigator.prototype) {
-                try {
-                    Object.defineProperty(Navigator.prototype, 'doNotTrack', {
-                        get: function() { return '1'; },
-                        configurable: true,
-                        enumerable: true
-                    });
-                } catch(e) {}
                 try {
                     Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', {
                         get: function() { return true; },
@@ -298,50 +326,6 @@ enum UserScripts {
                         enumerable: true
                     });
                 } catch(e) {}
-            }
-
-            // 2. Fetch API Header Interceptor
-            if (window.fetch) {
-                var origFetch = window.fetch;
-                window.fetch = function(input, init) {
-                    init = init || {};
-                    var headers = init.headers;
-                    if (!headers) {
-                        headers = new Headers();
-                        init.headers = headers;
-                    }
-                    if (headers instanceof Headers) {
-                        if (!headers.has('DNT')) headers.set('DNT', '1');
-                        if (!headers.has('Sec-GPC')) headers.set('Sec-GPC', '1');
-                    } else if (Array.isArray(headers)) {
-                        headers.push(['DNT', '1']);
-                        headers.push(['Sec-GPC', '1']);
-                    } else if (typeof headers === 'object') {
-                        headers['DNT'] = '1';
-                        headers['Sec-GPC'] = '1';
-                    }
-                    return origFetch.call(this, input, init);
-                };
-            }
-
-            // 3. XMLHttpRequest Header Interceptor
-            if (window.XMLHttpRequest && XMLHttpRequest.prototype.open && XMLHttpRequest.prototype.setRequestHeader) {
-                var origOpen = XMLHttpRequest.prototype.open;
-                var origSend = XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.open = function() {
-                    this.__lotusDNTPending = true;
-                    return origOpen.apply(this, arguments);
-                };
-                XMLHttpRequest.prototype.send = function() {
-                    if (this.__lotusDNTPending) {
-                        try {
-                            this.setRequestHeader('DNT', '1');
-                            this.setRequestHeader('Sec-GPC', '1');
-                        } catch(e) {}
-                        this.__lotusDNTPending = false;
-                    }
-                    return origSend.apply(this, arguments);
-                };
             }
         } catch(err) {}
     })();
@@ -352,6 +336,8 @@ enum UserScripts {
     static let youtubeAdBlockScript = """
     (function() {
         'use strict';
+        var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+        if (!host.endsWith('youtube.com') && !host.endsWith('youtu.be')) return;
         if (window.__lotusYTAdBlockInjected) return;
         try { Object.defineProperty(window, '__lotusYTAdBlockInjected', { value: true, enumerable: false }); } catch(e) {}
 
@@ -627,16 +613,14 @@ enum UserScripts {
     })();
     """
 
-    /// Masks browser and hardware metrics to generic Apple Silicon Mac / Safari values,
-    /// injects dynamic per-session randomized noise into Canvas, WebGL, AudioContext,
-    /// and MediaDevices to prevent fingerprinting without breaking web applications.
+    /// Masks high-risk device APIs like battery status without breaking web standards,
+    /// WebAuthn, BotGuard, or canvas verification.
     static func antiFingerprintingScript(disabledDomains: Set<String> = [], strictCanvasBlock: Bool = false) -> String {
         let domainsArray = disabledDomains.map { "\"\($0.lowercased())\"" }.joined(separator: ", ")
         return """
         (function() {
             'use strict';
             if (window.__lotusFPProtected) return;
-            try { window.__lotusStrictCanvasBlock = \(strictCanvasBlock); } catch(e) {}
 
             var disabledDomains = [\(domainsArray)];
             var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
@@ -673,247 +657,11 @@ enum UserScripts {
 
             try { Object.defineProperty(window, '__lotusFPProtected', { value: true, enumerable: false }); } catch(e) {}
 
-            // 1. Canvas Fingerprint Noise Defense & Data Extraction Policy (getImageData, toDataURL, toBlob)
+            // Disable battery fingerprinting API cleanly
             try {
-                if (window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype.getImageData) {
-                    var origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
-                    CanvasRenderingContext2D.prototype.getImageData = function() {
-                        var imgData = origGetImageData.apply(this, arguments);
-                        try {
-                            var d = imgData.data;
-                            for (var i = 0; i < d.length; i += 64) {
-                                if (d[i + 3] > 0) {
-                                    d[i] = d[i] ^ 1;
-                                }
-                            }
-                        } catch(err) {}
-                        return imgData;
-                    };
-                }
-
-                if (window.HTMLCanvasElement) {
-                    var strictCanvasBlock = false;
-                    try {
-                        strictCanvasBlock = window.__lotusStrictCanvasBlock === true;
-                    } catch(e) {}
-
-                    if (HTMLCanvasElement.prototype.toDataURL) {
-                        var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-                        HTMLCanvasElement.prototype.toDataURL = function() {
-                            if (strictCanvasBlock) {
-                                return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-                            }
-                            var ctx = this.getContext('2d');
-                            if (ctx) {
-                                try {
-                                    var img = ctx.getImageData(0, 0, Math.min(10, this.width), Math.min(10, this.height));
-                                    if (img && img.data && img.data.length > 0) {
-                                        img.data[0] = img.data[0] ^ 1;
-                                        ctx.putImageData(img, 0, 0);
-                                    }
-                                } catch(e) {}
-                            }
-                            return origToDataURL.apply(this, arguments);
-                        };
-                    }
-
-                    if (HTMLCanvasElement.prototype.toBlob) {
-                        var origToBlob = HTMLCanvasElement.prototype.toBlob;
-                        HTMLCanvasElement.prototype.toBlob = function(callback) {
-                            if (strictCanvasBlock) {
-                                return origToBlob.call(this, function(blob) {
-                                    callback(blob);
-                                });
-                            }
-                            return origToBlob.apply(this, arguments);
-                        };
-                    }
-                }
-            } catch(e) {}
-
-            // 2. WebGL Fingerprint Masking & Buffer Jitter (readPixels, getParameter, getShaderPrecisionFormat)
-            try {
-                var UNMASKED_VENDOR_WEBGL = 0x9245;
-                var UNMASKED_RENDERER_WEBGL = 0x9246;
-
-                function wrapWebGL(proto) {
-                    if (!proto) return;
-
-                    if (proto.getParameter) {
-                        var origGetParam = proto.getParameter;
-                        proto.getParameter = function(param) {
-                            if (param === UNMASKED_VENDOR_WEBGL) return 'Apple Inc.';
-                            if (param === UNMASKED_RENDERER_WEBGL) return 'Apple GPU (Metal)';
-                            return origGetParam.apply(this, arguments);
-                        };
-                    }
-
-                    if (proto.readPixels) {
-                        var origReadPixels = proto.readPixels;
-                        proto.readPixels = function(x, y, w, h, format, type, pixels) {
-                            origReadPixels.apply(this, arguments);
-                            try {
-                                if (pixels && pixels.length > 0) {
-                                    pixels[0] = pixels[0] ^ 1;
-                                }
-                            } catch(err) {}
-                        };
-                    }
-
-                    if (proto.getShaderPrecisionFormat) {
-                        var origGetPrecision = proto.getShaderPrecisionFormat;
-                        proto.getShaderPrecisionFormat = function(shaderType, precisionType) {
-                            var res = origGetPrecision.apply(this, arguments);
-                            if (res) {
-                                return {
-                                    rangeMin: res.rangeMin,
-                                    rangeMax: res.rangeMax,
-                                    precision: res.precision
-                                };
-                            }
-                            return res;
-                        };
-                    }
-                }
-
-                if (window.WebGLRenderingContext) wrapWebGL(window.WebGLRenderingContext.prototype);
-                if (window.WebGL2RenderingContext) wrapWebGL(window.WebGL2RenderingContext.prototype);
-            } catch(e) {}
-
-            // 3. WebAudio Fingerprinting Noise Injection
-            try {
-                var audioContexts = [window.AudioContext, window.webkitAudioContext].filter(Boolean);
-                audioContexts.forEach(function(AC) {
-                    if (!AC || !AC.prototype) return;
-
-                    if (AC.prototype.createAnalyser) {
-                        var origCreateAnalyser = AC.prototype.createAnalyser;
-                        AC.prototype.createAnalyser = function() {
-                            var node = origCreateAnalyser.apply(this, arguments);
-                            var origGetFloatFreq = node.getFloatFrequencyData.bind(node);
-                            node.getFloatFrequencyData = function(array) {
-                                origGetFloatFreq(array);
-                                try {
-                                    for (var i = 0; i < array.length; i += 32) {
-                                        array[i] += (Math.random() * 0.0001 - 0.00005);
-                                    }
-                                } catch(err) {}
-                            };
-                            return node;
-                        };
-                    }
-
-                    if (AC.prototype.createDynamicsCompressor) {
-                        var origCreateCompressor = AC.prototype.createDynamicsCompressor;
-                        AC.prototype.createDynamicsCompressor = function() {
-                            var comp = origCreateCompressor.apply(this, arguments);
-                            return comp;
-                        };
-                    }
-                });
-
-                if (window.OfflineAudioContext && window.OfflineAudioContext.prototype.startRendering) {
-                    var origStartRendering = window.OfflineAudioContext.prototype.startRendering;
-                    window.OfflineAudioContext.prototype.startRendering = function() {
-                        return origStartRendering.apply(this, arguments).then(function(buffer) {
-                            try {
-                                for (var ch = 0; ch < buffer.numberOfChannels; ch++) {
-                                    var data = buffer.getChannelData(ch);
-                                    for (var idx = 0; idx < data.length; idx += 128) {
-                                        data[idx] += (Math.random() * 0.000001 - 0.0000005);
-                                    }
-                                }
-                            } catch(err) {}
-                            return buffer;
-                        });
-                    };
-                }
-            } catch(e) {}
-
-            // 4. MediaDevices Enumeration Masking
-            try {
-                if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-                    var origEnumDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-                    navigator.mediaDevices.enumerateDevices = function() {
-                        return origEnumDevices().then(function(devices) {
-                            return devices.map(function(d, index) {
-                                return {
-                                    deviceId: 'default_' + d.kind + '_' + index,
-                                    groupId: 'default_group',
-                                    kind: d.kind,
-                                    label: ''
-                                };
-                            });
-                        });
-                    };
-                }
-            } catch(e) {}
-
-            // 5. Font Enumeration & Font Metrics Defense
-            try {
-                if (document.fonts && document.fonts.check) {
-                    var origFontsCheck = document.fonts.check.bind(document.fonts);
-                    var commonSystemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana', 'system-ui', '-apple-system', 'BlinkMacSystemFont'];
-                    document.fonts.check = function(font, text) {
-                        return origFontsCheck(font, text);
-                    };
-                }
-            } catch(e) {}
-
-            // 6. Standardize Navigator Metrics to Generic Apple Silicon Mac / Safari (Safely preserving WebAuthn and Credentials APIs)
-            try {
-                var safeNavProps = ['hardwareConcurrency', 'deviceMemory', 'platform', 'maxTouchPoints', 'vendor'];
-                var navProps = {
-                    hardwareConcurrency: 4,
-                    deviceMemory: undefined,
-                    platform: 'MacIntel',
-                    maxTouchPoints: 0,
-                    vendor: 'Apple Computer, Inc.'
-                };
-                for (var key in navProps) {
-                    try {
-                        if (key in Navigator.prototype && safeNavProps.indexOf(key) !== -1) {
-                            Object.defineProperty(Navigator.prototype, key, {
-                                get: (function(v) { return function() { return v; }; })(navProps[key]),
-                                configurable: true,
-                                enumerable: true
-                            });
-                        }
-                    } catch(e) {}
-                }
                 if (navigator.getBattery) {
                     navigator.getBattery = function() {
                         return Promise.reject(new Error('Battery API disabled for privacy'));
-                    };
-                }
-            } catch(e) {}
-
-            // 7. Screen & Display Metrics Normalization
-            try {
-                var screenProps = {
-                    colorDepth: 24,
-                    pixelDepth: 24,
-                    availLeft: 0,
-                    availTop: 0
-                };
-                for (var sKey in screenProps) {
-                    try {
-                        Object.defineProperty(Screen.prototype, sKey, {
-                            get: (function(v) { return function() { return v; }; })(screenProps[sKey]),
-                            configurable: true,
-                            enumerable: true
-                        });
-                    } catch(e) {}
-                }
-            } catch(e) {}
-
-            // 8. Reduce High-Resolution Timer Precision (Clamped to 1ms to prevent side-channel timing)
-            try {
-                if (window.performance && performance.now) {
-                    var origPerfNow = performance.now.bind(performance);
-                    performance.now = function() {
-                        var val = origPerfNow();
-                        return Math.floor(val * 10) / 10;
                     };
                 }
             } catch(e) {}

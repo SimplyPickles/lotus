@@ -12,8 +12,8 @@ import WebKit
 /// so tab webviews and WebKit-supplied popup webviews share identical setup.
 enum WebViewFactory {
 
-    static let safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
-    static let chromeUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    static let safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_9) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+    static let chromeUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_9) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
 
     static var currentUserAgent: String? {
         let mode = UserDefaults.standard.string(forKey: "lotus.browser.userAgentMode") ?? "safari"
@@ -54,28 +54,24 @@ enum WebViewFactory {
 
         // Enable WebAuthn / Passkeys / Cross-device verification features on WebKit configuration
         let configPrefs = configuration.preferences
-        let webAuthnSelectors = [
-            "setWebAuthenticationEnabled:",
-            "_setWebAuthenticationEnabled:",
-            "setWebAuthenticationModernEnabled:",
-            "_setWebAuthenticationModernEnabled:",
-            "setWebAuthenticationLocalAuthenticatorEnabled:",
-            "_setWebAuthenticationLocalAuthenticatorEnabled:",
-            "setWebAuthenticationPanelEnabled:",
-            "_setWebAuthenticationPanelEnabled:",
-            "setWebAuthenticationHybridTransportEnabled:",
-            "_setWebAuthenticationHybridTransportEnabled:",
-            "setWebAuthenticationClientExtensionsEnabled:",
-            "_setWebAuthenticationClientExtensionsEnabled:",
-            "setWebAuthenticationConditionalMediationEnabled:",
-            "_setWebAuthenticationConditionalMediationEnabled:",
-            "setWebAuthenticationAppIdEnabled:",
-            "_setWebAuthenticationAppIdEnabled:"
+        let webAuthnKeys = [
+            "webAuthenticationEnabled",
+            "webAuthenticationModernEnabled",
+            "webAuthenticationLocalAuthenticatorEnabled",
+            "webAuthenticationPanelEnabled",
+            "webAuthenticationHybridTransportEnabled",
+            "webAuthenticationClientExtensionsEnabled",
+            "webAuthenticationConditionalMediationEnabled",
+            "webAuthenticationAppIdEnabled"
         ]
-        for selStr in webAuthnSelectors {
-            let sel = NSSelectorFromString(selStr)
-            if configPrefs.responds(to: sel) {
-                configPrefs.perform(sel, with: true as NSNumber)
+        for key in webAuthnKeys {
+            let capKey = key.prefix(1).uppercased() + key.dropFirst()
+            let setters = ["set\(capKey):", "_set\(capKey):"]
+            for setter in setters {
+                if configPrefs.responds(to: NSSelectorFromString(setter)) {
+                    configPrefs.setValue(true, forKey: key)
+                    break
+                }
             }
         }
 
@@ -129,18 +125,8 @@ enum WebViewFactory {
         )
         configuration.userContentController.add(
             weakMessageHandler,
-            contentWorld: .page,
-            name: UserScripts.shieldDeflectHandlerName
-        )
-        configuration.userContentController.add(
-            weakMessageHandler,
             contentWorld: .defaultClient,
             name: UserScripts.shieldDeflectHandlerName
-        )
-        configuration.userContentController.add(
-            weakMessageHandler,
-            contentWorld: .page,
-            name: UserScripts.notificationHandlerName
         )
         configuration.userContentController.add(
             weakMessageHandler,
@@ -149,28 +135,13 @@ enum WebViewFactory {
         )
         configuration.userContentController.add(
             weakMessageHandler,
-            contentWorld: .page,
-            name: UserScripts.mediaHandlerName
-        )
-        configuration.userContentController.add(
-            weakMessageHandler,
             contentWorld: .defaultClient,
             name: UserScripts.mediaHandlerName
         )
         configuration.userContentController.add(
             weakMessageHandler,
-            contentWorld: .page,
-            name: UserScripts.openSearchHandlerName
-        )
-        configuration.userContentController.add(
-            weakMessageHandler,
             contentWorld: .defaultClient,
             name: UserScripts.openSearchHandlerName
-        )
-        configuration.userContentController.add(
-            weakMessageHandler,
-            contentWorld: .page,
-            name: UserScripts.zapHandlerName
         )
         configuration.userContentController.add(
             weakMessageHandler,
@@ -206,7 +177,7 @@ enum WebViewFactory {
                 source: UserScripts.globalPrivacyControlScriptlet,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false,
-                in: .page
+                in: .defaultClient
             )
         )
         let fpScript = UserScripts.antiFingerprintingScript(
@@ -218,7 +189,7 @@ enum WebViewFactory {
                 source: fpScript,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false,
-                in: .page
+                in: .defaultClient
             )
         )
         configuration.userContentController.addUserScript(
@@ -226,7 +197,7 @@ enum WebViewFactory {
                 source: UserScripts.youtubeAdBlockScript,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false,
-                in: .page
+                in: .defaultClient
             )
         )
         configuration.userContentController.addUserScript(
@@ -234,7 +205,7 @@ enum WebViewFactory {
                 source: UserScripts.mediaPlaybackObserverScriptlet,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false,
-                in: .page
+                in: .defaultClient
             )
         )
         configuration.userContentController.addUserScript(
@@ -242,7 +213,7 @@ enum WebViewFactory {
                 source: UserScripts.openSearchDiscoveryScriptlet,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true,
-                in: .page
+                in: .defaultClient
             )
         )
 

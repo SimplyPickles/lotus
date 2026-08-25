@@ -672,9 +672,8 @@ extension BrowserState {
         tabMediaStates[id]?.isMuted = isMuted
 
         if let wv = webViewStore[id] {
-            // Apply media suspension and HTMLMediaElement muting
-            let js = "if (window.__lotusSetMediaMuted) { window.__lotusSetMediaMuted(\(isMuted ? "true" : "false")); } else { document.querySelectorAll('video, audio').forEach(el => { el.muted = \(isMuted ? "true" : "false"); }); }"
-            wv.evaluateJavaScript(js, completionHandler: nil)
+            let js = "if (window.__lotusSetMediaMuted) { window.__lotusSetMediaMuted(\(isMuted ? "true" : "false")); } else { document.querySelectorAll('video, audio').forEach(function(el) { el.muted = \(isMuted ? "true" : "false"); }); }"
+            wv.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
         }
     }
 

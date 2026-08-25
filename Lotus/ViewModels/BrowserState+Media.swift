@@ -41,12 +41,12 @@ extension BrowserState {
 
     func togglePlayPauseMedia(for tabId: UUID) {
         let script = "if (window.__lotusToggleMediaPlayPause) { window.__lotusToggleMediaPlayPause(); }"
-        webViewStore[tabId]?.evaluateJavaScript(script, completionHandler: nil)
+        webViewStore[tabId]?.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
     func triggerPictureInPicture(for tabId: UUID) {
         let script = "if (window.__lotusTriggerPiP) { window.__lotusTriggerPiP(); }"
-        webViewStore[tabId]?.evaluateJavaScript(script, completionHandler: nil)
+        webViewStore[tabId]?.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
     // MARK: - OpenSearch Handling

@@ -590,27 +590,6 @@ enum ContentBlockerRules {
         let allBlockedDomains = (adDomains + trackerDomains + minerDomains)
             .map { formatDomain($0) }
 
-        // Auth domains that must never have essential login resources blocked
-        let authUnlessDomains = [
-            "*accounts.google.com",
-            "*myaccount.google.com",
-            "*appleid.apple.com",
-            "*idmsa.apple.com",
-            "*login.microsoftonline.com",
-            "*login.live.com"
-        ]
-
-        // Allow essential authentication domains to bypass any domain-level blocks
-        rules.append([
-            "trigger": [
-                "url-filter": ".*",
-                "if-domain": authUnlessDomains
-            ],
-            "action": [
-                "type": "ignore-previous-rules"
-            ]
-        ])
-
         // Chunk domain lists into batches of 150 for WebKit rule list performance
         let chunkSize = 150
         for i in stride(from: 0, to: allBlockedDomains.count, by: chunkSize) {
@@ -639,19 +618,7 @@ enum ContentBlockerRules {
             ])
         }
 
-        // 3. Popups & Third-Party Popunders
-        rules.append([
-            "trigger": [
-                "url-filter": ".*",
-                "resource-type": ["popup"],
-                "load-type": ["third-party"]
-            ],
-            "action": [
-                "type": "block"
-            ]
-        ])
-
-        // 4. Universal Cosmetic Element Hiding
+        // 3. Universal Cosmetic Element Hiding
         let combinedSelector = cosmeticSelectors.joined(separator: ", ")
         rules.append([
             "trigger": [
@@ -662,6 +629,25 @@ enum ContentBlockerRules {
                 "selector": combinedSelector
             ]
         ])
+
+        // 4. Critical Auth, Passkey & OAuth Protection: Place ignore-previous-rules at the END
+        // to guarantee that authentication and identity provider endpoints are never blocked on any site.
+        let authResourcePatterns = [
+            "^https?://([a-zA-Z0-9-]+\\.)*(accounts\\.google\\.com|apis\\.google\\.com|gstatic\\.com|googleapis\\.com|googleusercontent\\.com|google\\.com)/",
+            "^https?://([a-zA-Z0-9-]+\\.)*(appleid\\.apple\\.com|idmsa\\.apple\\.com|apple\\.com)/",
+            "^https?://([a-zA-Z0-9-]+\\.)*(login\\.microsoftonline\\.com|login\\.live\\.com|microsoft\\.com)/",
+            "^https?://([a-zA-Z0-9-]+\\.)*(auth\\.github\\.com|github\\.com)/"
+        ]
+        for authPattern in authResourcePatterns {
+            rules.append([
+                "trigger": [
+                    "url-filter": authPattern
+                ],
+                "action": [
+                    "type": "ignore-previous-rules"
+                ]
+            ])
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: rules, options: []),
               let jsonString = String(data: data, encoding: .utf8) else {
