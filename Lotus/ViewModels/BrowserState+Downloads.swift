@@ -265,7 +265,7 @@ extension BrowserState: WKDownloadDelegate {
                     sourceURL: cachedItem?.originalURL ?? self.downloads[index].originalURL
                 )
                 self.downloadStore.save(self.downloads)
-                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                HapticFeedback.perform(.generic, performanceTime: .now)
 
                 self.applyAITidyDownloadNameIfNeeded(downloadId: self.downloads[index].id)
             } else if var item = cachedItem {
@@ -278,7 +278,7 @@ extension BrowserState: WKDownloadDelegate {
                 }
                 Self.applyDownloadQuarantine(to: item.destinationURL, sourceURL: item.originalURL)
                 self.downloadStore.upsert(item, in: &self.downloads)
-                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                HapticFeedback.perform(.generic, performanceTime: .now)
 
                 self.applyAITidyDownloadNameIfNeeded(downloadId: item.id)
             }
@@ -612,7 +612,7 @@ extension BrowserState {
                     )
                     downloadStore.upsert(item, in: &downloads)
                     triggerFlyingDownloadAnimation(filename: item.filename, iconName: item.systemIconName)
-                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                    HapticFeedback.perform(.generic, performanceTime: .now)
                     return
                 }
             }
@@ -675,7 +675,7 @@ extension BrowserState {
                         }
 
                         self.downloadStore.save(self.downloads)
-                        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                        HapticFeedback.perform(.generic, performanceTime: .now)
 
                         self.applyAITidyDownloadNameIfNeeded(downloadId: item.id)
                     }
@@ -774,7 +774,7 @@ extension BrowserState {
                                 self.downloads[idx].bytesReceived = fileSize
                             }
                             self.downloadStore.save(self.downloads)
-                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                            HapticFeedback.perform(.generic, performanceTime: .now)
                             self.applyAITidyDownloadNameIfNeeded(downloadId: id)
                         }
                     } catch {

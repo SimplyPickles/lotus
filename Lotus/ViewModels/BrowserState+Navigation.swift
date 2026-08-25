@@ -409,6 +409,11 @@ extension BrowserState {
             return addTabBelow(currentTabId: sourceTabId, title: title, url: url, select: select)
         }
 
+        let autoGroup = (UserDefaults.standard.object(forKey: "lotus.browser.autoGroupTabs") as? Bool) ?? true
+        if !autoGroup {
+            return addTabBelow(currentTabId: sourceTabId, title: title, url: url, select: select)
+        }
+
         // If the source tab is already in a folder, add the new tab to the existing folder
         if let folderId = sourceTab.folderId {
             expandFolder(id: folderId)

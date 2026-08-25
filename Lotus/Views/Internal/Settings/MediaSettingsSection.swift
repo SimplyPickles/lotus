@@ -58,7 +58,7 @@ private struct AutoplayPolicySettingsRow: View {
                 Text("Allow All").tag("allowAll")
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 170, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -162,7 +162,7 @@ private struct TabSnoozeSettingsRow: View {
                 Text("After 2 hours").tag("2h")
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 170, alignment: .trailing)
             .onChange(of: tabSnoozeInterval) { _, _ in
                 browserState.snoozeInactiveTabsIfNeeded()

@@ -66,31 +66,31 @@ struct PinnedTabButton: View {
 
         if colorScheme == .light {
             if isSelected {
-                startOpacity = 0.12
-                endOpacity = 0.04
+                startOpacity = 0.22
+                endOpacity = 0.10
             } else if isInSplit {
-                startOpacity = 0.09
-                endOpacity = 0.03
+                startOpacity = 0.18
+                endOpacity = 0.08
             } else if effectiveHovered {
-                startOpacity = 0.07
-                endOpacity = 0.02
+                startOpacity = 0.14
+                endOpacity = 0.06
             } else {
-                startOpacity = 0.04
-                endOpacity = 0.012
+                startOpacity = 0.10
+                endOpacity = 0.04
             }
         } else {
             if isSelected {
-                startOpacity = 0.18
-                endOpacity = 0.06
+                startOpacity = 0.24
+                endOpacity = 0.10
             } else if isInSplit {
-                startOpacity = 0.14
-                endOpacity = 0.045
+                startOpacity = 0.18
+                endOpacity = 0.07
             } else if effectiveHovered {
-                startOpacity = 0.11
-                endOpacity = 0.035
+                startOpacity = 0.14
+                endOpacity = 0.05
             } else {
-                startOpacity = 0.06
-                endOpacity = 0.018
+                startOpacity = 0.08
+                endOpacity = 0.03
             }
         }
 
@@ -214,13 +214,29 @@ struct PinnedTabButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(height: 38)
         .background(
-            Group {
+            ZStack {
+                // Base opaque card layer so pinned tabs are never see-through transparent in light mode
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(
+                        colorScheme == .light
+                            ? (isSelected
+                                ? Color.white.opacity(0.85)
+                                : (effectiveHovered
+                                    ? Color.white.opacity(0.70)
+                                    : Color.white.opacity(0.52)))
+                            : (isSelected
+                                ? Color.white.opacity(0.10)
+                                : (effectiveHovered
+                                    ? Color.white.opacity(0.06)
+                                    : Color.white.opacity(0.03)))
+                    )
+
                 if isSelected, let namespace {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(backgroundGradient)
                         .matchedGeometryEffect(id: "activeTabHighlight", in: namespace)
                 } else {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(backgroundGradient)
                 }
             }

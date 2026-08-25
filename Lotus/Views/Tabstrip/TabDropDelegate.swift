@@ -19,6 +19,7 @@ struct TabDropDelegate: DropDelegate {
               let to = browserState.tabs.firstIndex(where: { $0.id == currentTab.id }) else { return }
 
         if browserState.tabs[to].id != dragged.id {
+            HapticFeedback.perform(.alignment, performanceTime: .default)
             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                 browserState.tabs.move(
                     fromOffsets: IndexSet(integer: from),

@@ -18,11 +18,17 @@ struct ContentView: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
     @AppStorage("lotus.browser.showsBrowserFrame") private var showsBrowserFrame: Bool = true
     @AppStorage("lotus.browser.showsRoundedWebCorners") private var showsRoundedWebCorners: Bool = true
     @State private var isHoveringFloatingSidebar: Bool = false
     @State private var isFloatingSidebarTemporarilyShown: Bool = false
     @State private var temporaryFloatingDismissTask: DispatchWorkItem? = nil
+
+    private var currentAccentColor: Color {
+        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+        return accent.color
+    }
 
     private var shouldShowFloatingSidebar: Bool {
         !browserState.isSidebarVisible
@@ -209,7 +215,7 @@ struct ContentView: View {
                         targetPoint: CGPoint(x: targetX, y: targetY)
                     ) {
                         browserState.downloadCatchPulseTrigger += 1
-                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                        HapticFeedback.perform(.alignment, performanceTime: .now)
                         browserState.activeFlyingDownload = nil
                     }
                 }
@@ -246,6 +252,8 @@ struct ContentView: View {
         .onAppear {
             AppDelegate.sharedBrowserState = browserState
         }
+        .tint(currentAccentColor)
+        .accentColor(currentAccentColor)
     }
 
     private var floatingSidebar: some View {
@@ -254,6 +262,10 @@ struct ContentView: View {
             .background(
                 ZStack {
                     VisualEffectView(material: .sidebar, blendingMode: .withinWindow, state: .active)
+                    if accentColorKey != "white" {
+                        currentAccentColor
+                            .opacity(colorScheme == .dark ? 0.18 : 0.32)
+                    }
                     (colorScheme == .dark ? Color.black.opacity(0.35) : Color(nsColor: .windowBackgroundColor).opacity(0.75))
                 }
             )
@@ -349,12 +361,18 @@ struct ContentView: View {
     }
 
     private var frostedGlassBackground: some View {
-        VisualEffectView(
-            material: .underWindowBackground,
-            blendingMode: .behindWindow,
-            state: .active
-        )
-        .overlay(colorScheme == .dark ? Color.black.opacity(0.12) : Color.white.opacity(0.05))
+        ZStack {
+            VisualEffectView(
+                material: .underWindowBackground,
+                blendingMode: .behindWindow,
+                state: .active
+            )
+            if accentColorKey != "white" {
+                currentAccentColor
+                    .opacity(colorScheme == .dark ? 0.16 : 0.2)
+            }
+            (colorScheme == .dark ? Color.black.opacity(0.12) : Color.white.opacity(0.04))
+        }
         .ignoresSafeArea()
     }
 }

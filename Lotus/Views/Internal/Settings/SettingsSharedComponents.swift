@@ -35,6 +35,89 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Accent Colors
+
+enum LotusAccentColor: String, CaseIterable, Identifiable {
+    case white = "white"
+    case blue = "blue"
+    case purple = "purple"
+    case pink = "pink"
+    case red = "red"
+    case orange = "orange"
+    case yellow = "yellow"
+    case green = "green"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .white: return "Default (System)"
+        case .blue: return "Blue"
+        case .purple: return "Purple"
+        case .pink: return "Pink"
+        case .red: return "Red"
+        case .orange: return "Orange"
+        case .yellow: return "Yellow"
+        case .green: return "Green"
+        }
+    }
+
+    static var systemAccentColor: Color {
+        guard let accentPref = UserDefaults.standard.object(forKey: "AppleAccentColor") as? Int else {
+            // "Multicolor" is selected in macOS System Settings -> Apple Blue
+            return Color(nsColor: .systemBlue)
+        }
+
+        switch accentPref {
+        case 0: return Color(nsColor: .systemRed)
+        case 1: return Color(nsColor: .systemOrange)
+        case 2: return Color(nsColor: .systemYellow)
+        case 3: return Color(nsColor: .systemGreen)
+        case 4: return Color(nsColor: .systemBlue)
+        case 5: return Color(nsColor: .systemPurple)
+        case 6: return Color(nsColor: .systemPink)
+        case -1: return Color(nsColor: .systemGray)
+        default:
+            return Color(nsColor: .systemBlue)
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .white:
+            return LotusAccentColor.systemAccentColor
+        case .blue:
+            return FolderColor.blue.color
+        case .purple:
+            return FolderColor.purple.color
+        case .pink:
+            return FolderColor.pink.color
+        case .red:
+            return FolderColor.red.color
+        case .orange:
+            return FolderColor.orange.color
+        case .yellow:
+            return FolderColor.yellow.color
+        case .green:
+            return FolderColor.green.color
+        }
+    }
+
+    var swatchColor: Color {
+        switch self {
+        case .white:
+            return Color.white
+        default:
+            return color
+        }
+    }
+
+    static var current: LotusAccentColor {
+        let key = UserDefaults.standard.string(forKey: "lotus.browser.accentColor") ?? "white"
+        return LotusAccentColor(rawValue: key) ?? .white
+    }
+}
+
 // MARK: - Category Pill
 
 struct SettingsCategoryPill: View {
@@ -44,6 +127,20 @@ struct SettingsCategoryPill: View {
 
     @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
+
+    private var activeFill: Color {
+        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+        return accent.color
+    }
+
+    private var activeTextColor: Color {
+        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+        if accent == .yellow {
+            return Color.black
+        }
+        return Color.white
+    }
 
     var body: some View {
         Button(action: action) {
@@ -55,7 +152,7 @@ struct SettingsCategoryPill: View {
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundColor(isSelected
-                ? .white
+                ? activeTextColor
                 : (isHovered
                     ? (colorScheme == .dark ? .white : Color(nsColor: .labelColor))
                     : (colorScheme == .dark ? .white.opacity(0.60) : Color(nsColor: .secondaryLabelColor))))
@@ -64,7 +161,7 @@ struct SettingsCategoryPill: View {
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isSelected
-                        ? Color.accentColor
+                        ? activeFill
                         : (isHovered
                             ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
                             : Color.clear))
@@ -172,5 +269,16 @@ struct SettingsRow: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
+    }
+}
+
+// MARK: - Untinted Dropdown Extension
+
+extension View {
+    func untintedDropdown() -> some View {
+        self
+            .pickerStyle(.menu)
+            .tint(Color.primary)
+            .accentColor(Color.primary)
     }
 }

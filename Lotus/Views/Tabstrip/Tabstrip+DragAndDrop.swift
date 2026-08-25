@@ -37,7 +37,7 @@ extension Tabstrip {
     func handleDragChanged(tab: TabItem, source: TabDragState.Source, index: Int, value: DragGesture.Value) {
         let isStartingDrag = activeDrag == nil
         if isStartingDrag {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            HapticFeedback.perform(.alignment, performanceTime: .now)
         }
 
         let location = value.location
@@ -138,7 +138,7 @@ extension Tabstrip {
         }
 
         if targetChanged && !isStartingDrag {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            HapticFeedback.perform(.alignment, performanceTime: .now)
         }
 
         let newDragState = TabDragState(
@@ -187,7 +187,7 @@ extension Tabstrip {
     /// apply, and the drag stays local to the tabstrip.
     func handleFolderDragChanged(folder: TabFolder, rowIndex: Int, value: DragGesture.Value) {
         if activeDrag == nil {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            HapticFeedback.perform(.alignment, performanceTime: .now)
             browserState.clearSidebarSelection()
         }
 
@@ -206,7 +206,7 @@ extension Tabstrip {
         }
 
         if let previous = activeDrag?.targetIndex, previous != targetIdx {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            HapticFeedback.perform(.alignment, performanceTime: .now)
         }
 
         let placeholder = TabItem(id: folder.id, title: folder.name)
@@ -294,7 +294,7 @@ extension Tabstrip {
         // Folder header drop: reorder the whole folder block.
         if let folder = drag.folder {
             if !didResolveFinalTargetChange {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                HapticFeedback.perform(.alignment, performanceTime: .now)
             }
             withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
                 if drag.location.x < browserState.sidebarWidth {
@@ -322,7 +322,7 @@ extension Tabstrip {
            drag.effectiveDraggedUnits.first?.isSplit == false,
            browserState.canOpenInSplit(id: drag.tab.id) {
             if !didResolveFinalTargetChange {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                HapticFeedback.perform(.alignment, performanceTime: .now)
             }
             activeDrag = nil
             browserState.activeTabDrag = nil
@@ -333,7 +333,7 @@ extension Tabstrip {
         let destination: SidebarTabDropDestination?
         if drag.location.x < browserState.sidebarWidth {
             if !didResolveFinalTargetChange {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                HapticFeedback.perform(.alignment, performanceTime: .now)
             }
 
             if drag.isHoveringPinZone && drag.canPinPayload {

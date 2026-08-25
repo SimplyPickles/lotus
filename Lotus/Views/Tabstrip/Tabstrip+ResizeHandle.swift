@@ -40,7 +40,7 @@ extension Tabstrip {
                             if rawWidth < collapseThreshold {
                                 if !isDragCollapsed {
                                     isDragCollapsed = true
-                                    NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                                    HapticFeedback.perform(.levelChange, performanceTime: .now)
                                     var transaction = Transaction()
                                     transaction.animation = nil
                                     withTransaction(transaction) {
@@ -54,7 +54,7 @@ extension Tabstrip {
                             } else {
                                 if isDragCollapsed {
                                     isDragCollapsed = false
-                                    NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                                    HapticFeedback.perform(.levelChange, performanceTime: .now)
                                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                                         browserState.isSidebarVisible = true
                                     }
@@ -68,7 +68,7 @@ extension Tabstrip {
 
                         if isNearDefault != isSnappedToDefault {
                             if isNearDefault {
-                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                                HapticFeedback.perform(.alignment, performanceTime: .now)
                             }
                             isSnappedToDefault = isNearDefault
                         }

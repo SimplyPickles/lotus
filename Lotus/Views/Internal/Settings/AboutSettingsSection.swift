@@ -60,7 +60,7 @@ private struct UserAgentSettingsRow: View {
                     Text("Custom").tag("custom")
                 }
                 .labelsHidden()
-                .pickerStyle(.menu)
+                .untintedDropdown()
                 .frame(width: 190, alignment: .trailing)
             }
             .padding(.horizontal, 14)

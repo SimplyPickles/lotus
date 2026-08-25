@@ -17,6 +17,8 @@ struct GeneralSettingsSection: View {
         SettingsSectionCard(title: SettingsCategory.general.rawValue, systemImage: SettingsCategory.general.systemImage) {
             StartupBehaviorSettingsRow(startupBehavior: $startupBehavior)
             SettingsDivider()
+            WarnOnQuitSettingsRow()
+            SettingsDivider()
             SearchEngineSettingsRow(searchEngine: $searchEngine)
             SettingsDivider()
             SearchSuggestionsSettingsRow(searchSuggestionsEnabled: $searchSuggestionsEnabled)
@@ -27,6 +29,44 @@ struct GeneralSettingsSection: View {
 }
 
 // MARK: - Rows
+
+private struct WarnOnQuitSettingsRow: View {
+    @AppStorage("lotus.browser.warnOnQuit") private var warnOnQuit: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Warn before quitting")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Prompt for confirmation when closing Lotus (⌘Q)")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            Toggle("Warn before quitting", isOn: Binding(
+                get: { warnOnQuit },
+                set: { newValue in
+                    warnOnQuit = newValue
+                    UserDefaults.standard.set(!newValue, forKey: BrowserState.alwaysQuitKey)
+                }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+    }
+}
 
 private struct StartupBehaviorSettingsRow: View {
     @Binding var startupBehavior: String
@@ -57,7 +97,7 @@ private struct StartupBehaviorSettingsRow: View {
                 Text("Open pinned tabs only").tag("pinnedOnly")
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 190, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -88,7 +128,7 @@ private struct SearchEngineSettingsRow: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 150, alignment: .trailing)
         }
         .padding(.horizontal, 14)

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct AppearanceSettingsSection: View {
+    @AppStorage("lotus.browser.accentColor") private var accentColor: String = "white"
     @AppStorage("lotus.browser.appearance") private var appearanceMode: String = "system"
     @AppStorage("lotus.browser.chromeTintingMode") private var chromeTintingMode: String = "adaptive"
     @AppStorage("lotus.browser.centerURLPreview") private var centerURLPreview: Bool = false
@@ -19,6 +20,8 @@ struct AppearanceSettingsSection: View {
 
     var body: some View {
         SettingsSectionCard(title: SettingsCategory.appearance.rawValue, systemImage: SettingsCategory.appearance.systemImage) {
+            AccentColorPickerRow(selectedAccent: $accentColor)
+            SettingsDivider()
             AppearanceSettingsRow(appearanceMode: $appearanceMode)
             SettingsDivider()
             ChromeTintingSettingsRow(chromeTintingMode: $chromeTintingMode)
@@ -39,6 +42,89 @@ struct AppearanceSettingsSection: View {
 }
 
 // MARK: - Rows
+
+private struct AccentColorPickerRow: View {
+    @Binding var selectedAccent: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "paintpalette.fill")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            Text("Accent color")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+            Spacer()
+
+            HStack(spacing: 10) {
+                ForEach(LotusAccentColor.allCases) { accent in
+                    AccentColorDot(
+                        accent: accent,
+                        isSelected: selectedAccent == accent.rawValue,
+                        action: {
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.8)) {
+                                selectedAccent = accent.rawValue
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 52)
+    }
+}
+
+private struct AccentColorDot: View {
+    let accent: LotusAccentColor
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var isHovered: Bool = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if isSelected {
+                    Circle()
+                        .strokeBorder(
+                            colorScheme == .dark ? Color.white : Color(nsColor: .labelColor),
+                            lineWidth: 1.5
+                        )
+                        .frame(width: 26, height: 26)
+                        .transition(.scale.combined(with: .opacity))
+                }
+
+                Circle()
+                    .fill(accent.swatchColor)
+                    .frame(width: 19, height: 19)
+                    .overlay(
+                        Group {
+                            if accent == .white && colorScheme == .light {
+                                Circle()
+                                    .strokeBorder(Color.black.opacity(0.2), lineWidth: 1)
+                            }
+                        }
+                    )
+            }
+            .frame(width: 28, height: 28)
+            .scaleEffect(isHovered ? 1.08 : 1.0)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(accent.displayName)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
 
 private struct AppearanceSettingsRow: View {
     @Binding var appearanceMode: String
@@ -63,7 +149,7 @@ private struct AppearanceSettingsRow: View {
                 Text("Dark").tag("dark")
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 150, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -97,10 +183,10 @@ private struct ChromeTintingSettingsRow: View {
             Picker("Dynamic site chrome tinting", selection: $chromeTintingMode) {
                 Text("Adaptive").tag("adaptive")
                 Text("Neutral").tag("neutral")
-                Text("System").tag("systemAccent")
+                Text("Accent").tag("systemAccent")
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 140, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -120,18 +206,18 @@ private struct CenterURLPreviewSettingsRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Center URL preview")
+                Text("Center address bar preview")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text("Centers the domain preview and lock icon in the address bar when not hovering")
+                Text("Centers text in inactive URL address bar")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
             Spacer()
 
-            Toggle("Center URL preview", isOn: $centerURLPreview)
+            Toggle("Center address bar preview", isOn: $centerURLPreview)
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -146,24 +232,24 @@ private struct CenterCommandPaletteSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "sidebar.left")
+            Image(systemName: "command")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Center command palette over webview")
+                Text("Center Command Palette")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text("Aligns the command palette to the web content area instead of the full window when sidebar is open")
+                Text("Centers the palette in the window instead of top-aligning")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
             Spacer()
 
-            Toggle("Center command palette over webview", isOn: $centerCommandPaletteOverWebview)
+            Toggle("Center Command Palette", isOn: $centerCommandPaletteOverWebview)
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -178,7 +264,7 @@ private struct TopBarSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "rectangle.topthird.inset.filled")
+            Image(systemName: "menubar.rectangle")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
@@ -195,7 +281,7 @@ private struct TopBarSettingsRow: View {
                 Text("Never").tag("never")
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 150, alignment: .trailing)
         }
         .padding(.horizontal, 14)

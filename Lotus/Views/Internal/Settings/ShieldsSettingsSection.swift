@@ -181,7 +181,7 @@ private struct ShieldsStrictCanvasBlockSettingsRow: View {
                 Text("Strict Complete Block").tag(true)
             }
             .labelsHidden()
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .frame(width: 180, alignment: .trailing)
             .disabled(!contentBlocker.fingerprintProtectionEnabled || !contentBlocker.isAdBlockingEnabled)
             .opacity((contentBlocker.fingerprintProtectionEnabled && contentBlocker.isAdBlockingEnabled) ? 1.0 : 0.45)

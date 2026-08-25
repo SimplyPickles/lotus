@@ -186,7 +186,7 @@ struct SecurityDetailsPopover: View {
                 Text("Allow").tag(SitePermissionState.allow)
                 Text("Block").tag(SitePermissionState.deny)
             }
-            .pickerStyle(.menu)
+            .untintedDropdown()
             .labelsHidden()
             .controlSize(.small)
             .frame(width: 80)

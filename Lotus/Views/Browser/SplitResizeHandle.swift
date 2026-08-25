@@ -48,7 +48,7 @@ struct SplitResizeHandle: View {
                 }
             }
             .onTapGesture(count: 2) {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                HapticFeedback.perform(.alignment, performanceTime: .now)
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
                     browserState.swapSplitTabs(for: group)
                 }
@@ -112,7 +112,7 @@ struct SplitResizeHandle: View {
 
                         if currentlySnapped != isSnappedToCenter {
                             if currentlySnapped {
-                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                                HapticFeedback.perform(.alignment, performanceTime: .now)
                             }
                             isSnappedToCenter = currentlySnapped
                         }
