@@ -55,11 +55,36 @@ extension BrowserState {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         extractThemeColor(from: webView)
         extractFavicon(from: webView)
+        if let tabId = webViewStore.first(where: { $0.value === webView })?.key {
+            applyZapRules(for: tabId)
+            if wakingTabIds.contains(tabId) {
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        self.wakingTabIds.remove(tabId)
+                    }
+                }
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         extractThemeColor(from: webView)
         extractFavicon(from: webView)
+        if let tabId = webViewStore.first(where: { $0.value === webView })?.key {
+            applyZapRules(for: tabId)
+            if wakingTabIds.contains(tabId) {
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        self.wakingTabIds.remove(tabId)
+                    }
+                }
+            }
+            // Capture updated snapshot once DOM is fully rendered and idle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self, let wv = self.webViewStore[tabId] else { return }
+                TabSnapshotStore.shared.captureSnapshot(for: tabId, webView: wv)
+            }
+        }
     }
 
     func extractThemeColor(from webView: WKWebView) {

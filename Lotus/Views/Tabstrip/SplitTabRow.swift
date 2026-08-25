@@ -109,7 +109,6 @@ struct SplitTabRow: View {
                             .frame(width: totalWidth, height: 34)
                             .zIndex(10)
                             .matchedGeometryEffect(id: "activeTabHighlight", in: namespace)
-                            .animation(.easeInOut(duration: 0.22), value: activeTabBackgroundColor)
                     } else {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(activeTabBackgroundColor)
@@ -119,7 +118,6 @@ struct SplitTabRow: View {
                             )
                             .frame(width: totalWidth, height: 34)
                             .zIndex(10)
-                            .animation(.easeInOut(duration: 0.22), value: activeTabBackgroundColor)
                     }
                 }
             }

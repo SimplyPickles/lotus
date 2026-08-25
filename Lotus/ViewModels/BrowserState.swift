@@ -31,6 +31,9 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     }
     @Published var selectedTabId: UUID {
         didSet {
+            if isZapModeActive {
+                stopZapMode(for: oldValue)
+            }
             wakeTab(id: selectedTabId)
             updateNavigationState()
             syncFocusStateForActiveTab()
@@ -117,6 +120,9 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var httpAllowedDomains: Set<String> = []
     @Published var tabMediaStates: [UUID: TabMediaState] = [:]
     @Published var detectedOpenSearch: [UUID: OpenSearchDescriptor] = [:]
+    @Published var isZapModeActive: Bool = false
+    @Published var lastZappedElement: ZappedElement? = nil
+    @Published var wakingTabIds: Set<UUID> = []
     var tabServerTrusts: [UUID: SecTrust] = [:]
     let isPrivate: Bool
 

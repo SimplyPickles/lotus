@@ -263,6 +263,24 @@ extension BrowserState {
             registerOpenSearchDescriptor(for: tabId, title: title, href: href, origin: origin, host: host)
             return
         }
+
+        if message.name == UserScripts.zapHandlerName,
+           let body = message.body as? [String: Any],
+           let action = body["action"] as? String,
+           let tabId = webViewStore.first(where: { $0.value === message.webView })?.key {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if action == "zap",
+                   let selector = body["selector"] as? String,
+                   let domain = body["domain"] as? String {
+                    let summary = (body["summary"] as? String) ?? selector
+                    self.handleZapEvent(domain: domain, selector: selector, summary: summary, tabId: tabId)
+                } else if action == "cancel" {
+                    self.stopZapMode(for: tabId)
+                }
+            }
+            return
+        }
     }
 
     func syncFocusStateForActiveTab() {

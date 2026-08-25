@@ -29,7 +29,6 @@ struct Tabstrip: View {
     @State var wasInitiallyVisibleOnDragStart: Bool = false
     @State private var renamingFolderId: UUID? = nil
     @State private var renamingTabId: UUID? = nil
-    @State private var visualSelectedTabId: UUID? = nil
     @State var unpinnedScrollOffset: CGFloat = 0
 
     private let tabSelectionAnimation = Animation.spring(
@@ -38,15 +37,12 @@ struct Tabstrip: View {
         blendDuration: 0.02
     )
 
-    /// The highlight intentionally trails the browser's authoritative state by
-    /// one layout pass. That keeps the outgoing and incoming tab frames alive
-    /// together even when selection also expands a folder or changes a split.
     private var highlightedTabId: UUID {
-        visualSelectedTabId ?? browserState.selectedTabId
+        browserState.selectedTabId
     }
 
     private var highlightedCurrentTabIds: [UUID] {
-        browserState.splitGroup(containing: highlightedTabId) ?? [highlightedTabId]
+        browserState.splitGroup(containing: browserState.selectedTabId) ?? [browserState.selectedTabId]
     }
 
     private var isPinnedTabSelected: Bool {
@@ -259,7 +255,7 @@ struct Tabstrip: View {
                                         renamingTabId = nil
                                     },
                                     onSelect: {
-                                        withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                                        withAnimation(tabSelectionAnimation) {
                                             browserState.selectSidebarTab(
                                                 tab.id,
                                                 extendingRange: NSEvent.modifierFlags.contains(.shift)
@@ -381,7 +377,7 @@ struct Tabstrip: View {
                                     renamingTabId = nil
                                 },
                                 onSelect: {
-                                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                                    withAnimation(tabSelectionAnimation) {
                                         browserState.selectSidebarTab(
                                             tab.id,
                                             extendingRange: NSEvent.modifierFlags.contains(.shift)
@@ -437,7 +433,7 @@ struct Tabstrip: View {
                                 activeDrag: activeDrag,
                                 isDraggingAnyTab: activeDrag != nil,
                                 onSelect: { tab in
-                                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                                    withAnimation(tabSelectionAnimation) {
                                         browserState.selectSidebarTab(
                                             tab.id,
                                             extendingRange: NSEvent.modifierFlags.contains(.shift)
@@ -493,33 +489,6 @@ struct Tabstrip: View {
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(WindowDragArea())
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isDragCollapsed)
-        .onAppear {
-            visualSelectedTabId = browserState.selectedTabId
-        }
-        .onChange(of: browserState.selectedTabId) { _, selectedTabId in
-            guard selectedTabId != visualSelectedTabId else { return }
-
-            DispatchQueue.main.async {
-                guard browserState.selectedTabId == selectedTabId else { return }
-                withAnimation(tabSelectionAnimation) {
-                    visualSelectedTabId = selectedTabId
-                }
-            }
-        }
-        .onChange(of: browserState.tabs) { _, tabs in
-            guard let visualSelectedTabId,
-                  !tabs.contains(where: { $0.id == visualSelectedTabId }) else {
-                return
-            }
-
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                self.visualSelectedTabId = tabs.contains(where: { $0.id == browserState.selectedTabId })
-                    ? browserState.selectedTabId
-                    : nil
-            }
-        }
     }
 
     @ViewBuilder

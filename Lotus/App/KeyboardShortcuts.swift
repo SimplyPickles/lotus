@@ -84,7 +84,7 @@ enum LotusShortcuts {
 
     private static func animated(_ perform: @escaping (BrowserState) -> Void) -> (BrowserState) -> Void {
         { state in
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+            withAnimation(.spring(response: 0.20, dampingFraction: 0.86, blendDuration: 0.02)) {
                 perform(state)
             }
         }
@@ -147,6 +147,9 @@ enum LotusShortcuts {
         },
         LotusShortcut("inspectElement", key: "i", modifiers: [.command, .option], usesEventMonitor: true) {
             $0.inspectElement()
+        },
+        LotusShortcut("toggleZapMode", key: "z", modifiers: [.command, .option], usesEventMonitor: true) {
+            $0.toggleZapMode()
         },
         LotusShortcut("back", key: "[", modifiers: .command) {
             $0.goBack()

@@ -132,6 +132,36 @@ struct SecurityDetailsPopover: View {
                 Divider()
 
                 Button {
+                    browserState.startZapMode(for: tabId)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color.accentColor)
+
+                        Text("Zap Element on Page")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        Spacer()
+
+                        Text("⌘⌥Z")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(Color.primary.opacity(0.06))
+                            )
+                    }
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+
+                Button {
                     browserState.removeWebsiteData(for: host)
                 } label: {
                     HStack {

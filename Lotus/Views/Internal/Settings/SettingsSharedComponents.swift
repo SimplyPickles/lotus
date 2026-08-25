@@ -112,9 +112,40 @@ enum LotusAccentColor: String, CaseIterable, Identifiable {
         }
     }
 
+    var hexString: String {
+        switch self {
+        case .white:
+            if let accentPref = UserDefaults.standard.object(forKey: "AppleAccentColor") as? Int {
+                switch accentPref {
+                case 0: return "#FF3B30" // Red
+                case 1: return "#FF9500" // Orange
+                case 2: return "#FFCC00" // Yellow
+                case 3: return "#34C759" // Green
+                case 4: return "#007AFF" // Blue
+                case 5: return "#AF52DE" // Purple
+                case 6: return "#FF2D55" // Pink
+                case -1: return "#8E8E93" // Graphite
+                default: return "#007AFF"
+                }
+            }
+            return "#007AFF"
+        case .blue: return "#007AFF"
+        case .purple: return "#AF52DE"
+        case .pink: return "#FF2D55"
+        case .red: return "#FF3B30"
+        case .orange: return "#FF9500"
+        case .yellow: return "#FFCC00"
+        case .green: return "#34C759"
+        }
+    }
+
     static var current: LotusAccentColor {
         let key = UserDefaults.standard.string(forKey: "lotus.browser.accentColor") ?? "white"
         return LotusAccentColor(rawValue: key) ?? .white
+    }
+
+    static var currentAccentHex: String {
+        current.hexString
     }
 }
 

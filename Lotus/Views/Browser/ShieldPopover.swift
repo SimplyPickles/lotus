@@ -48,6 +48,13 @@ struct ShieldPopover: View {
         colorScheme == .dark ? .white.opacity(0.50) : Color(nsColor: .secondaryLabelColor)
     }
 
+    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
+
+    private var currentAccentColor: Color {
+        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+        return accent.color
+    }
+
     private var cardFill: Color {
         colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)
     }
@@ -220,6 +227,61 @@ struct ShieldPopover: View {
                 }
                 .padding(.horizontal, 4)
                 .padding(.top, 2)
+
+                // Zap Element Tool (Visual DOM Blocker)
+                Button {
+                    onDismiss()
+                    browserState.startZapMode(for: tabId)
+                } label: {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(currentAccentColor.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                                .frame(width: 30, height: 30)
+
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 14.5, weight: .semibold))
+                                .foregroundColor(currentAccentColor)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Zap Element on Page")
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundColor(foregroundPrimary)
+
+                            Text("Click to permanently block any element")
+                                .font(.system(size: 10.5, weight: .regular))
+                                .foregroundColor(foregroundSecondary)
+                        }
+
+                        Spacer()
+
+                        Text("⌘⌥Z")
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                            .foregroundColor(foregroundSecondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 0.5)
+                            )
+                    }
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(cardFill)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(cardStroke, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             .padding(14)
 

@@ -45,6 +45,7 @@ extension BrowserState {
             }
         }
 
+        applyZapRules(for: tabId)
         return webView
     }
 
@@ -92,6 +93,12 @@ extension BrowserState {
                 if self.selectedTabId == tabId {
                     self.estimatedProgress = wv.estimatedProgress
                 }
+                // When page reaches sufficient load progress, dismiss waking snapshot placeholder
+                if wv.estimatedProgress >= 0.85 && self.wakingTabIds.contains(tabId) {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        self.wakingTabIds.remove(tabId)
+                    }
+                }
             }
         }
         tabObservers.append(progressObs)
@@ -107,6 +114,7 @@ extension BrowserState {
                     let title = wv.title ?? newURL.host ?? newURL.absoluteString
                     self.recordHistoryVisit(title: title, url: newURL)
                 }
+                self.applyZapRules(for: tabId)
             }
         }
         tabObservers.append(urlObs)
@@ -143,14 +151,19 @@ extension BrowserState {
         observers[tabId] = tabObservers
     }
 
-    // MARK: - Tab Snoozing / Memory Suspension
+    // MARK: - Tab Snoozing / Memory Suspension & Snapshot Illusion
 
-    /// Snoozes a background tab by releasing its WKWebView and observers to free system memory.
+    /// Snoozes a background tab by capturing a high-res viewport snapshot, then releasing its WKWebView.
     func snoozeTab(id: UUID) {
         // Do not snooze currently active tab or visible split tabs
         guard id != selectedTabId, !currentTabIds.contains(id) else { return }
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         guard !tabs[index].isSnoozed else { return }
+
+        // Capture high-res snapshot for instant zero-latency visual wake
+        if let webView = webViewStore[id] {
+            TabSnapshotStore.shared.captureSnapshot(for: id, webView: webView)
+        }
 
         // Invalidate KVO observers
         observers[id]?.forEach { $0.invalidate() }
@@ -169,10 +182,14 @@ extension BrowserState {
         saveSession()
     }
 
-    /// Wakes up a snoozed tab, recreating its WKWebView and restoring its URL.
+    /// Wakes up a snoozed tab with zero-latency snapshot illusion and background page re-hydration.
     func wakeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         if tabs[index].isSnoozed {
+            // If we have a cached snapshot, engage zero-latency visual placeholder
+            if TabSnapshotStore.shared.snapshot(for: id) != nil {
+                wakingTabIds.insert(id)
+            }
             tabs[index].isSnoozed = false
             tabs[index].lastViewedAt = Date()
             _ = getWebView(for: id)

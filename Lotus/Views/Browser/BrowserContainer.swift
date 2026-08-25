@@ -161,6 +161,19 @@ struct BrowserContainer: View {
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+
+                    // The Snapshot Memory Illusion: instant zero-latency visual feedback for waking tabs
+                    if browserState.wakingTabIds.contains(activeTabId),
+                       let snapshot = TabSnapshotStore.shared.snapshot(for: activeTabId) {
+                        Image(nsImage: snapshot)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                            .clipped()
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                            .zIndex(20)
+                    }
                 }
                 .transaction { $0.animation = nil }
 
@@ -181,6 +194,20 @@ struct BrowserContainer: View {
             .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.isFindPresented)
             .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
+        .overlay(alignment: .bottom) {
+            if browserState.isZapModeActive && browserState.selectedTabId == activeTabId && !isInternalLotusPage {
+                ZapHUDView(browserState: browserState, tabId: activeTabId)
+                    .padding(.bottom, 22)
+                    .zIndex(120)
+                    .transition(
+                        .asymmetric(
+                            insertion: .offset(y: 32).combined(with: .opacity),
+                            removal: .offset(y: 32).combined(with: .opacity)
+                        )
+                    )
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: browserState.isZapModeActive)
         .overlay(alignment: .top) {
             if topBarVisibility == "hover" && showsTopBar {
                 topBar

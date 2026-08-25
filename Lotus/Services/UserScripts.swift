@@ -21,6 +21,7 @@ enum UserScripts {
     static let notificationHandlerName = "lotusNotificationHandler"
     static let mediaHandlerName = "lotusMediaHandler"
     static let openSearchHandlerName = "lotusOpenSearchHandler"
+    static let zapHandlerName = "lotusZapHandler"
 
     // MARK: - Injected at Document Start
 
@@ -644,9 +645,11 @@ enum UserScripts {
             // Never interfere with identity providers, authentication, passkeys & WebAuthn flows
             var authHosts = [
                 'accounts.google.com',
+                'myaccount.google.com',
                 'google.com',
                 'gstatic.com',
                 'googleapis.com',
+                'googleusercontent.com',
                 'appleid.apple.com',
                 'apple.com',
                 'icloud.com',
@@ -1393,4 +1396,295 @@ enum UserScripts {
         }
     })();
     """
+
+    // MARK: - Zap Element Blocker (DOM Manipulation & Boosts)
+
+    /// Injects persistent CSS hiding rules and dynamic mutation observers for a website's zapped elements.
+    static func zapRulesScript(for elements: [ZappedElement]) -> String {
+        guard !elements.isEmpty else { return "" }
+        let combinedSelectors = elements.map { $0.selector }.joined(separator: ", ")
+        let escapedCSS = combinedSelectors.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"")
+
+        return """
+        (function() {
+            try {
+                var styleId = '__lotus_zap_styles__';
+                var existing = document.getElementById(styleId);
+                var css = "\(escapedCSS) { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }";
+                if (existing) {
+                    existing.textContent = css;
+                } else {
+                    var style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = css;
+                    (document.head || document.documentElement).appendChild(style);
+                }
+
+                // Immediate removal of existing nodes
+                var selector = "\(escapedCSS)";
+                function pruneNodes() {
+                    try {
+                        var nodes = document.querySelectorAll(selector);
+                        for (var i = 0; i < nodes.length; i++) {
+                            nodes[i].style.setProperty('display', 'none', 'important');
+                        }
+                    } catch(e) {}
+                }
+                pruneNodes();
+
+                // MutationObserver for dynamic SPAs (YouTube, Reddit, Twitter, etc.)
+                if (!window.__lotusZapObserver) {
+                    var observer = new MutationObserver(function() {
+                        pruneNodes();
+                    });
+                    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+                    window.__lotusZapObserver = observer;
+                }
+            } catch(e) {}
+        })();
+        """
+    }
+
+    /// Injects the interactive visual element inspector allowing users to hover and click elements to zap them.
+    static func startZapModeScript(accentHex: String = "#007AFF") -> String {
+        let safeHex = accentHex.hasPrefix("#") ? accentHex : "#007AFF"
+        return """
+        (function() {
+            if (window.__lotusZapActive) return;
+            window.__lotusZapActive = true;
+
+            var accentColor = '\(safeHex)';
+            var highlightOverlay = document.createElement('div');
+            highlightOverlay.id = '__lotus_zap_overlay__';
+            highlightOverlay.style.cssText = 'position: absolute; pointer-events: none; z-index: 2147483647; border: 2.5px solid ' + accentColor + '; background: ' + accentColor + '26; box-shadow: 0 0 20px ' + accentColor + '66; border-radius: 6px; transition: all 0.08s ease-out; display: none;';
+
+            var badge = document.createElement('div');
+            badge.id = '__lotus_zap_badge__';
+            badge.style.cssText = 'position: absolute; top: -28px; left: 0; background: ' + accentColor + '; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; font-size: 11.5px; font-weight: 600; padding: 4px 8px; border-radius: 5px; pointer-events: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.30); z-index: 2147483647;';
+            highlightOverlay.appendChild(badge);
+
+            document.documentElement.appendChild(highlightOverlay);
+
+            var currentTarget = null;
+
+            function computeSelector(el) {
+                if (!el || el === document.body || el === document.documentElement) return null;
+                if (el.id && !/\\d{4,}/.test(el.id)) {
+                    return '#' + CSS.escape(el.id);
+                }
+                if (el.getAttribute('data-testid')) {
+                    return '[' + 'data-testid="' + CSS.escape(el.getAttribute('data-testid')) + '"]';
+                }
+                if (el.getAttribute('data-component')) {
+                    return '[' + 'data-component="' + CSS.escape(el.getAttribute('data-component')) + '"]';
+                }
+                var tag = el.tagName.toLowerCase();
+                var classList = Array.from(el.classList).filter(function(c) {
+                    return c && !c.startsWith('__lotus') && !/\\d{4,}/.test(c);
+                });
+                if (classList.length > 0) {
+                    var candidate = tag + '.' + classList.slice(0, 2).map(CSS.escape).join('.');
+                    if (document.querySelectorAll(candidate).length === 1) {
+                        return candidate;
+                    }
+                }
+                // Generate hierarchical path
+                var path = [];
+                var curr = el;
+                while (curr && curr !== document.body && curr !== document.documentElement && path.length < 4) {
+                    var nodeTag = curr.tagName.toLowerCase();
+                    if (curr.id && !/\\d{4,}/.test(curr.id)) {
+                        path.unshift('#' + CSS.escape(curr.id));
+                        break;
+                    } else {
+                        var parent = curr.parentElement;
+                        if (parent) {
+                            var siblings = Array.from(parent.children).filter(function(s) { return s.tagName === curr.tagName; });
+                            if (siblings.length > 1) {
+                                var index = siblings.indexOf(curr) + 1;
+                                path.unshift(nodeTag + ':nth-of-type(' + index + ')');
+                            } else {
+                                path.unshift(nodeTag);
+                            }
+                        } else {
+                            path.unshift(nodeTag);
+                        }
+                    }
+                    curr = curr.parentElement;
+                }
+                return path.join(' > ');
+            }
+
+            function computeSummary(el) {
+                var tag = el.tagName.toLowerCase();
+                if (el.id) return '<' + tag + ' id="' + el.id + '">';
+                if (el.className && typeof el.className === 'string') {
+                    var cls = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
+                    if (cls) return '<' + tag + '.' + cls + '>';
+                }
+                return '<' + tag + '>';
+            }
+
+            function updateOverlay(el) {
+                if (!el || el === highlightOverlay || el.id === '__lotus_zap_overlay__' || el.id === '__lotus_zap_badge__') {
+                    highlightOverlay.style.display = 'none';
+                    return;
+                }
+                var rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) {
+                    highlightOverlay.style.display = 'none';
+                    return;
+                }
+
+                var scrollX = window.scrollX || window.pageXOffset;
+                var scrollY = window.scrollY || window.pageYOffset;
+
+                highlightOverlay.style.display = 'block';
+                highlightOverlay.style.top = (rect.top + scrollY) + 'px';
+                highlightOverlay.style.left = (rect.left + scrollX) + 'px';
+                highlightOverlay.style.width = rect.width + 'px';
+                highlightOverlay.style.height = rect.height + 'px';
+
+                badge.textContent = computeSummary(el);
+                if (rect.top < 32) {
+                    badge.style.top = '4px';
+                } else {
+                    badge.style.top = '-28px';
+                }
+            }
+
+            function onMouseMove(e) {
+                var el = document.elementFromPoint(e.clientX, e.clientY);
+                if (el && el !== currentTarget && el !== highlightOverlay && el.id !== '__lotus_zap_overlay__' && el.id !== '__lotus_zap_badge__') {
+                    currentTarget = el;
+                    updateOverlay(el);
+                }
+            }
+
+            function onClick(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+
+                var el = currentTarget || document.elementFromPoint(e.clientX, e.clientY);
+                if (!el || el === highlightOverlay || el.id === '__lotus_zap_overlay__' || el.id === '__lotus_zap_badge__') return;
+
+                var selector = computeSelector(el);
+                var summary = computeSummary(el);
+                if (!selector) return;
+
+                // Disintegration / poof animation
+                el.style.transition = 'all 0.28s cubic-bezier(0.4, 0, 0.2, 1)';
+                el.style.transform = 'scale(0.85)';
+                el.style.opacity = '0';
+                el.style.filter = 'blur(6px)';
+                el.style.boxShadow = '0 0 24px ' + accentColor;
+                el.style.outline = '2px solid ' + accentColor;
+
+                highlightOverlay.style.display = 'none';
+
+                setTimeout(function() {
+                    el.style.display = 'none';
+                }, 280);
+
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusZapHandler) {
+                    window.webkit.messageHandlers.lotusZapHandler.postMessage({
+                        action: 'zap',
+                        selector: selector,
+                        summary: summary,
+                        domain: window.location.hostname
+                    });
+                }
+            }
+
+            function onKeyDown(e) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusZapHandler) {
+                        window.webkit.messageHandlers.lotusZapHandler.postMessage({
+                            action: 'cancel'
+                        });
+                    }
+                } else if (e.key === 'ArrowUp' && currentTarget && currentTarget.parentElement) {
+                    e.preventDefault();
+                    currentTarget = currentTarget.parentElement;
+                    updateOverlay(currentTarget);
+                } else if (e.key === 'ArrowDown' && currentTarget && currentTarget.firstElementChild) {
+                    e.preventDefault();
+                    currentTarget = currentTarget.firstElementChild;
+                    updateOverlay(currentTarget);
+                }
+            }
+
+            window.addEventListener('mousemove', onMouseMove, true);
+            window.addEventListener('click', onClick, true);
+            window.addEventListener('keydown', onKeyDown, true);
+
+            window.__lotusZapCleanup = function() {
+                try {
+                    window.removeEventListener('mousemove', onMouseMove, true);
+                    window.removeEventListener('click', onClick, true);
+                    window.removeEventListener('keydown', onKeyDown, true);
+                } catch(e) {}
+
+                try {
+                    var allOverlays = document.querySelectorAll('#__lotus_zap_overlay__, #__lotus_zap_badge__, [id^="__lotus_zap_"]');
+                    for (var i = 0; i < allOverlays.length; i++) {
+                        if (allOverlays[i].parentNode) {
+                            allOverlays[i].parentNode.removeChild(allOverlays[i]);
+                        }
+                    }
+                } catch(e) {}
+
+                window.__lotusZapActive = false;
+                window.__lotusZapCleanup = null;
+            };
+        })();
+        """
+    }
+
+    /// Stops and removes the visual element inspector overlay.
+    static let stopZapModeScript = """
+    (function() {
+        try {
+            if (typeof window.__lotusZapCleanup === 'function') {
+                window.__lotusZapCleanup();
+            }
+        } catch(e) {}
+
+        try {
+            var overlays = document.querySelectorAll('#__lotus_zap_overlay__, #__lotus_zap_badge__, [id^="__lotus_zap_"]');
+            for (var i = 0; i < overlays.length; i++) {
+                if (overlays[i].parentNode) {
+                    overlays[i].parentNode.removeChild(overlays[i]);
+                }
+            }
+        } catch(e) {}
+
+        window.__lotusZapActive = false;
+        window.__lotusZapCleanup = null;
+    })();
+    """
+
+    /// Restores a zapped element in the live DOM.
+    static func undoZapScript(selector: String) -> String {
+        let escaped = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return """
+        (function() {
+            try {
+                var nodes = document.querySelectorAll("\(escaped)");
+                for (var i = 0; i < nodes.length; i++) {
+                    nodes[i].style.removeProperty('display');
+                    nodes[i].style.removeProperty('visibility');
+                    nodes[i].style.removeProperty('opacity');
+                    nodes[i].style.removeProperty('filter');
+                    nodes[i].style.removeProperty('transform');
+                    nodes[i].style.removeProperty('outline');
+                    nodes[i].style.removeProperty('box-shadow');
+                    nodes[i].style.removeProperty('pointer-events');
+                }
+            } catch(e) {}
+        })();
+        """
+    }
 }

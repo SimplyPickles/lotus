@@ -201,8 +201,12 @@ extension BrowserState {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         DispatchQueue.main.async { [weak self] in
-            if let tabId = self?.webViewStore.first(where: { $0.value === webView })?.key {
-                self?.pageLoadErrors[tabId] = nil
+            guard let self = self else { return }
+            if let tabId = self.webViewStore.first(where: { $0.value === webView })?.key {
+                self.pageLoadErrors[tabId] = nil
+                if self.isZapModeActive && self.selectedTabId == tabId {
+                    self.stopZapMode(for: tabId)
+                }
             }
         }
     }

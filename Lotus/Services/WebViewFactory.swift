@@ -15,16 +15,16 @@ enum WebViewFactory {
     static let safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
     static let chromeUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-    static var currentUserAgent: String {
+    static var currentUserAgent: String? {
         let mode = UserDefaults.standard.string(forKey: "lotus.browser.userAgentMode") ?? "safari"
         switch mode {
         case "chrome":
             return chromeUserAgent
         case "custom":
             let custom = UserDefaults.standard.string(forKey: "lotus.browser.customUserAgentString") ?? ""
-            return custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? safariUserAgent : custom
+            return custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : custom
         default:
-            return safariUserAgent
+            return nil
         }
     }
 
@@ -39,6 +39,7 @@ enum WebViewFactory {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.isElementFullscreenEnabled = true
+        configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
 
         // Autoplay Policy
         let autoplayPolicy = UserDefaults.standard.string(forKey: "lotus.browser.autoplayPolicy") ?? "audio"
@@ -59,7 +60,9 @@ enum WebViewFactory {
             "setWebAuthenticationModernEnabled:",
             "_setWebAuthenticationModernEnabled:",
             "setWebAuthenticationLocalAuthenticatorEnabled:",
-            "_setWebAuthenticationLocalAuthenticatorEnabled:"
+            "_setWebAuthenticationLocalAuthenticatorEnabled:",
+            "setWebAuthenticationPanelEnabled:",
+            "_setWebAuthenticationPanelEnabled:"
         ]
         for selStr in webAuthnSelectors {
             let sel = NSSelectorFromString(selStr)
@@ -156,6 +159,16 @@ enum WebViewFactory {
             contentWorld: .defaultClient,
             name: UserScripts.openSearchHandlerName
         )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .page,
+            name: UserScripts.zapHandlerName
+        )
+        configuration.userContentController.add(
+            weakMessageHandler,
+            contentWorld: .defaultClient,
+            name: UserScripts.zapHandlerName
+        )
         configuration.userContentController.addUserScript(
             WKUserScript(
                 source: UserScripts.inputFocusMonitor,
@@ -241,7 +254,9 @@ enum WebViewFactory {
     static func makeWebView(configuration: WKWebViewConfiguration, delegate: WKNavigationDelegate & WKUIDelegate) -> WKWebView {
         let webView = LotusWebView(frame: .zero, configuration: configuration)
         webView.browserState = delegate as? BrowserState
-        webView.customUserAgent = currentUserAgent
+        if let ua = currentUserAgent {
+            webView.customUserAgent = ua
+        }
         webView.navigationDelegate = delegate
         webView.uiDelegate = delegate
         webView.allowsBackForwardNavigationGestures = true
