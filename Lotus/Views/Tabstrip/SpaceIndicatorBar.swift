@@ -80,7 +80,7 @@ struct SpaceIndicatorBar: View {
                     if browserState.profiles.count > 1 && !profile.isDefault {
                         Divider()
                         Button("Delete Space", role: .destructive) {
-                            browserState.deleteProfile(id: profile.id)
+                            browserState.requestDeleteProfile(profile)
                         }
                     }
                 }

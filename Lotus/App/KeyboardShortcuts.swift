@@ -355,7 +355,43 @@ enum KeyboardShortcutRouter {
             return nil
         }
 
-        // 4. Find on Page dismiss on Escape
+        // 4. Delete profile confirmation modal keyboard handling (Enter / Esc)
+        if browserState.profileToDeleteConfirmation != nil {
+            if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
+                DispatchQueue.main.async {
+                    browserState.confirmDeleteProfile()
+                }
+                return nil
+            }
+            if event.keyCode == 53 { // Escape
+                DispatchQueue.main.async {
+                    browserState.cancelDeleteProfile()
+                }
+                return nil
+            }
+            return nil
+        }
+
+        // 5. Clear all data confirmation modal keyboard handling (Enter / Esc)
+        if browserState.isClearAllDataConfirmationPresented {
+            if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
+                DispatchQueue.main.async {
+                    browserState.clearAllBrowserData {
+                        browserState.isClearAllDataConfirmationPresented = false
+                    }
+                }
+                return nil
+            }
+            if event.keyCode == 53 { // Escape
+                DispatchQueue.main.async {
+                    browserState.isClearAllDataConfirmationPresented = false
+                }
+                return nil
+            }
+            return nil
+        }
+
+        // 6. Find on Page dismiss on Escape
         if browserState.isFindPresented && event.keyCode == 53 { // Escape
             DispatchQueue.main.async {
                 browserState.closeFind()

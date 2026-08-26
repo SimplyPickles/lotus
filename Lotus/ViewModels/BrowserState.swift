@@ -105,6 +105,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var isQuitConfirmationPresented: Bool = false
     @Published var folderToCloseConfirmation: UUID? = nil
     @Published var pendingPopupRequest: PopupConfirmationRequest? = nil
+    @Published var profileToDeleteConfirmation: Profile? = nil
     @Published var spaceTransitionDirection: SpaceTransitionDirection = .forward
     @Published var spaceSwipeOffset: CGFloat = 0
     @Published var lastSelectedTabPerProfile: [UUID: UUID] = [:]
@@ -299,7 +300,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     // MARK: - Focus
 
     var isAnyTextInputFocused: Bool {
-        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented {
+        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented || profileToDeleteConfirmation != nil {
             return true
         }
         if let responder = NSApp.keyWindow?.firstResponder {

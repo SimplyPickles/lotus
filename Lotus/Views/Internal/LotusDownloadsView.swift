@@ -140,6 +140,8 @@ struct LotusDownloadsView: View {
     @State private var totalFilteredCount: Int = 0
     @State private var displayLimit: Int = 60
     @State private var confirmationType: DownloadConfirmationType? = nil
+    @State private var isHoveringCancel: Bool = false
+    @State private var isHoveringConfirm: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeTabId: UUID {
@@ -514,26 +516,41 @@ struct LotusDownloadsView: View {
                     .foregroundColor(Color.white.opacity(0.65))
                     .padding(.bottom, 22)
 
-                // Buttons
+                // Buttons row
                 HStack(spacing: 8) {
-                    Spacer()
+                    Spacer(minLength: 12)
 
+                    // Cancel button
                     Button {
                         confirmationType = nil
                     } label: {
-                        Text("Cancel")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color.white.opacity(0.12))
-                            )
+                        HStack(spacing: 6) {
+                            Text("Cancel")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+
+                            Text("ESC")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .foregroundColor(.white.opacity(0.55))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(Color.white.opacity(0.08))
+                                )
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(isHoveringCancel ? Color.white.opacity(0.18) : Color.white.opacity(0.12))
+                        )
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.escape, modifiers: [])
+                    .onHover { isHoveringCancel = $0 }
 
+                    // Confirm / Delete button
                     Button {
                         switch confirmation {
                         case .clearAll:
@@ -545,18 +562,25 @@ struct LotusDownloadsView: View {
                         }
                         confirmationType = nil
                     } label: {
-                        Text(confirmationButtonTitle(for: confirmation))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color(red: 0.90, green: 0.15, blue: 0.15))
-                            )
+                        HStack(spacing: 5) {
+                            Text(confirmationButtonTitle(for: confirmation))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+
+                            Image(systemName: "return")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(isHoveringConfirm ? Color(red: 0.98, green: 0.15, blue: 0.15) : Color(red: 0.90, green: 0.05, blue: 0.05))
+                        )
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.return, modifiers: [])
+                    .onHover { isHoveringConfirm = $0 }
                 }
             }
             .padding(22)

@@ -194,6 +194,11 @@ struct ContentView: View {
             }
         }
         .overlay {
+            if let profile = browserState.profileToDeleteConfirmation {
+                DeleteProfileConfirmationView(browserState: browserState, profile: profile)
+            }
+        }
+        .overlay {
             if let flyingPayload = browserState.activeFlyingDownload {
                 GeometryReader { overlayGeo in
                     let targetX = overlayGeo.size.width - 80
@@ -214,6 +219,8 @@ struct ContentView: View {
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.isQuitConfirmationPresented)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.folderToCloseConfirmation != nil)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.pendingPopupRequest != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.isClearAllDataConfirmationPresented)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.profileToDeleteConfirmation != nil)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isStaticSidebarPresented)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: shouldShowFloatingSidebar)
         .onChange(of: browserState.isSidebarVisible) { _, visible in

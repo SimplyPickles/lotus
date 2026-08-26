@@ -12,7 +12,6 @@ struct ProfilesSettingsSection: View {
     var tabId: UUID? = nil
 
     @State private var editingProfile: Profile? = nil
-    @State private var profileToDelete: Profile? = nil
     @State private var isCreatingProfile: Bool = false
     @State private var newProfileName: String = ""
     @State private var newProfileIcon: String = "briefcase"
@@ -76,26 +75,6 @@ struct ProfilesSettingsSection: View {
         }
         .sheet(item: $editingProfile) { profile in
             editProfileSheet(for: profile)
-        }
-        .confirmationDialog(
-            "Delete Profile \"\(profileToDelete?.name ?? "")\"?",
-            isPresented: Binding(
-                get: { profileToDelete != nil },
-                set: { if !$0 { profileToDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete Profile and Clear Data", role: .destructive) {
-                if let p = profileToDelete {
-                    browserState.deleteProfile(id: p.id)
-                    profileToDelete = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                profileToDelete = nil
-            }
-        } message: {
-            Text("All open tabs, folders, and isolated website data (cookies, storage, cache) for this profile will be permanently deleted.")
         }
     }
 
@@ -167,7 +146,7 @@ struct ProfilesSettingsSection: View {
 
                 if !profile.isDefault && browserState.profiles.count > 1 {
                     Button(role: .destructive) {
-                        profileToDelete = profile
+                        browserState.requestDeleteProfile(profile)
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 11, weight: .regular))

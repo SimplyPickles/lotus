@@ -181,6 +181,27 @@ extension BrowserState {
         }
     }
 
+    func requestDeleteProfile(_ profile: Profile) {
+        guard profiles.count > 1, !profile.isDefault else { return }
+        withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
+            profileToDeleteConfirmation = profile
+        }
+    }
+
+    func confirmDeleteProfile() {
+        guard let p = profileToDeleteConfirmation else { return }
+        withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
+            profileToDeleteConfirmation = nil
+        }
+        deleteProfile(id: p.id)
+    }
+
+    func cancelDeleteProfile() {
+        withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
+            profileToDeleteConfirmation = nil
+        }
+    }
+
     func deleteProfile(id: UUID) {
         guard profiles.count > 1 else { return }
         guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
