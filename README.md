@@ -1,4 +1,4 @@
-# Lotus 🪷
+# Lotus
 
 A native, lightweight macOS web browser built entirely in Swift and SwiftUI on top of WebKit (`WKWebView`).
 
