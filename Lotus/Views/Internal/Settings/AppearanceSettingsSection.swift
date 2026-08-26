@@ -9,6 +9,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AppearanceSettingsSection: View {
+    var browserState: BrowserState? = nil
+
     @AppStorage("lotus.browser.accentColor") private var accentColor: String = "white"
     @AppStorage("lotus.browser.appearance") private var appearanceMode: String = "system"
     @AppStorage("lotus.browser.titlebarChromeTintingMode") private var titlebarChromeTintingMode: String = "adaptive"
@@ -19,13 +21,13 @@ struct AppearanceSettingsSection: View {
     @AppStorage("lotus.browser.topBarVisibility") private var topBarVisibility: String = "always"
     @AppStorage("lotus.browser.showsBrowserFrame") private var showsBrowserFrame: Bool = true
     @AppStorage("lotus.browser.showsRoundedWebCorners") private var showsRoundedWebCorners: Bool = true
-    @AppStorage("lotus.browser.showsWebpageShimmer") private var showsWebpageShimmer: Bool = true
+    @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
     @AppStorage("lotus.browser.toolbarLayout") private var toolbarLayoutRaw: String = ToolbarItemType.serializeLayout(ToolbarItemType.defaultOrder)
 
     var body: some View {
         VStack(spacing: 20) {
             SettingsSectionCard(title: "Theme & Accent", systemImage: "paintpalette") {
-                AccentColorPickerRow(selectedAccent: $accentColor)
+                AccentColorPickerRow(selectedAccent: $accentColor, browserState: browserState)
                 SettingsDivider()
                 AppearanceSettingsRow(appearanceMode: $appearanceMode)
             }
@@ -49,7 +51,7 @@ struct AppearanceSettingsSection: View {
                 SettingsDivider()
                 RoundedWebCornersSettingsRow(showsRoundedWebCorners: $showsRoundedWebCorners)
                 SettingsDivider()
-                WebpageShimmerSettingsRow(showsWebpageShimmer: $showsWebpageShimmer)
+                SmoothTabSwitchAnimationSettingsRow(smoothTabSwitchAnimation: $smoothTabSwitchAnimation)
             }
 
             ToolbarArrangementSettingsCard(toolbarLayoutRaw: $toolbarLayoutRaw)
@@ -61,7 +63,15 @@ struct AppearanceSettingsSection: View {
 
 private struct AccentColorPickerRow: View {
     @Binding var selectedAccent: String
+    var browserState: BrowserState? = nil
     @Environment(\.colorScheme) private var colorScheme
+
+    private var currentAccentKey: String {
+        if let bs = browserState, !bs.isPrivate {
+            return bs.currentProfile.color.accentColorEquivalent.rawValue
+        }
+        return selectedAccent
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -80,10 +90,15 @@ private struct AccentColorPickerRow: View {
                 ForEach(LotusAccentColor.allCases) { accent in
                     AccentColorDot(
                         accent: accent,
-                        isSelected: selectedAccent == accent.rawValue,
+                        isSelected: currentAccentKey == accent.rawValue,
                         action: {
                             withAnimation(.spring(response: 0.22, dampingFraction: 0.8)) {
                                 selectedAccent = accent.rawValue
+                                if let bs = browserState, !bs.isPrivate {
+                                    var updated = bs.currentProfile
+                                    updated.color = accent.folderColorEquivalent
+                                    bs.updateProfile(updated)
+                                }
                             }
                         }
                     )
@@ -431,29 +446,34 @@ private struct RoundedWebCornersSettingsRow: View {
     }
 }
 
-private struct WebpageShimmerSettingsRow: View {
-    @Binding var showsWebpageShimmer: Bool
+private struct SmoothTabSwitchAnimationSettingsRow: View {
+    @Binding var smoothTabSwitchAnimation: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "sparkles")
+            Image(systemName: "slider.horizontal.below.rectangle")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
 
-            Text("Webpage shimmer")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Smooth tab switch animation")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+                Text("Animate tab selection highlights and sliding transitions")
+                    .font(.system(size: 11))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
 
             Spacer()
 
-            Toggle("Webpage shimmer", isOn: $showsWebpageShimmer)
+            Toggle("Smooth tab switch animation", isOn: $smoothTabSwitchAnimation)
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
         .padding(.horizontal, 14)
-        .frame(height: 46)
+        .frame(height: 48)
     }
 }
 

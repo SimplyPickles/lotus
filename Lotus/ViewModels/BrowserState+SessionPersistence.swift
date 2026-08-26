@@ -20,6 +20,16 @@ extension BrowserState {
             }
         }
 
+        var selectedDict: [String: UUID] = [:]
+        for (profId, tabId) in lastSelectedTabPerProfile {
+            selectedDict[profId.uuidString] = tabId
+        }
+
+        var currentsDict: [String: [UUID]] = [:]
+        for (profId, tabIds) in lastCurrentTabsPerProfile {
+            currentsDict[profId.uuidString] = tabIds
+        }
+
         return BrowserSessionData(
             tabs: tabs,
             selectedTabId: selectedTabId,
@@ -30,7 +40,10 @@ extension BrowserState {
             recentlyClosed: recentlyClosed,
             isSidebarVisible: isSidebarVisible,
             sidebarWidth: sidebarWidth,
-            tabZoomLevels: zoomDict.isEmpty ? nil : zoomDict
+            tabZoomLevels: zoomDict.isEmpty ? nil : zoomDict,
+            currentProfileId: currentProfileId,
+            lastSelectedTabPerProfile: selectedDict.isEmpty ? nil : selectedDict,
+            lastCurrentTabsPerProfile: currentsDict.isEmpty ? nil : currentsDict
         )
     }
 

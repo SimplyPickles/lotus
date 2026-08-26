@@ -15,6 +15,7 @@ struct BookmarkItem: Identifiable, Codable, Equatable, Hashable {
     var faviconURL: URL?
     var createdAt: Date
     var previewSnippet: String?
+    var profileId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -22,7 +23,8 @@ struct BookmarkItem: Identifiable, Codable, Equatable, Hashable {
         url: URL,
         faviconURL: URL? = nil,
         createdAt: Date = Date(),
-        previewSnippet: String? = nil
+        previewSnippet: String? = nil,
+        profileId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -30,6 +32,7 @@ struct BookmarkItem: Identifiable, Codable, Equatable, Hashable {
         self.faviconURL = faviconURL
         self.createdAt = createdAt
         self.previewSnippet = previewSnippet
+        self.profileId = profileId
     }
 
     var displayDomain: String {

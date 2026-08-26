@@ -23,6 +23,8 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
     var isMuted: Bool = false
     /// Whether this tab's webview resources are currently suspended to save memory.
     var isSnoozed: Bool = false
+    /// The profile this tab belongs to (nil implies the default profile).
+    var profileId: UUID? = nil
 
     init(
         id: UUID = UUID(),
@@ -33,7 +35,8 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
         customFaviconURL: URL? = nil,
         lastViewedAt: Date? = Date(),
         isMuted: Bool = false,
-        isSnoozed: Bool = false
+        isSnoozed: Bool = false,
+        profileId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -44,10 +47,11 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
         self.lastViewedAt = lastViewedAt
         self.isMuted = isMuted
         self.isSnoozed = isSnoozed
+        self.profileId = profileId
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, url, isPinned, folderId, customFaviconURL, lastViewedAt, isMuted, isSnoozed
+        case id, title, url, isPinned, folderId, customFaviconURL, lastViewedAt, isMuted, isSnoozed, profileId
     }
 
     init(from decoder: Decoder) throws {
@@ -61,6 +65,7 @@ struct TabItem: Identifiable, Hashable, Equatable, Codable {
         self.lastViewedAt = try container.decodeIfPresent(Date.self, forKey: .lastViewedAt)
         self.isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         self.isSnoozed = try container.decodeIfPresent(Bool.self, forKey: .isSnoozed) ?? false
+        self.profileId = try container.decodeIfPresent(UUID.self, forKey: .profileId)
     }
 
     var faviconURL: URL? {

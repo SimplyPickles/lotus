@@ -30,12 +30,16 @@ struct Tabstrip: View {
     @State private var renamingFolderId: UUID? = nil
     @State private var renamingTabId: UUID? = nil
     @State var unpinnedScrollOffset: CGFloat = 0
+    @State private var swipeOffset: CGFloat = 0
+    @State private var isSwipingSpaces: Bool = false
 
-    private let tabSelectionAnimation = Animation.spring(
-        response: 0.20,
-        dampingFraction: 0.86,
-        blendDuration: 0.02
-    )
+    @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
+
+    private var tabSelectionAnimation: Animation? {
+        smoothTabSwitchAnimation
+            ? Animation.spring(response: 0.20, dampingFraction: 0.86, blendDuration: 0.02)
+            : nil
+    }
 
     private var highlightedTabId: UUID {
         browserState.selectedTabId
@@ -69,9 +73,11 @@ struct Tabstrip: View {
         case "neutral":
             return Color(nsColor: .windowBackgroundColor)
         case "systemAccent":
-            return Color.accentColor
+            return browserState.currentProfile.color.color
         default: // "adaptive"
-            return browserState.activeThemeColor ?? Color(nsColor: .windowBackgroundColor)
+            return browserState.themeColor(for: browserState.selectedTabId)
+                ?? browserState.activeThemeColor
+                ?? Color(nsColor: .windowBackgroundColor)
         }
     }
 
@@ -84,39 +90,56 @@ struct Tabstrip: View {
         case "neutral":
             return colorScheme == .light
         case "systemAccent":
-            let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+            let accent = LotusAccentColor(rawValue: browserState.currentProfile.color.accentColorEquivalent.rawValue) ?? .white
             return accent == .yellow
         default: // "adaptive"
-            if browserState.themeColor(for: tabId) == nil {
+            if browserState.themeColor(for: tabId) == nil && (tabId != browserState.selectedTabId || browserState.activeThemeColor == nil) {
                 return colorScheme == .light
             }
             return browserState.isThemeLight(for: tabId)
         }
     }
 
+    func pinnedTabs(for profileId: UUID) -> [TabItem] {
+        browserState.tabs.filter { $0.isPinned && ($0.profileId ?? browserState.defaultProfileId) == profileId }
+    }
+
     /// Pinned-grid footprint after removing the drag payload from its source
     /// and, when applicable, reserving all of its destination slots.
-    private var effectivePinnedCount: Int {
-        guard let drag = activeDrag, drag.folder == nil else {
-            return browserState.pinnedTabs.count
+    func effectivePinnedCount(for profileId: UUID) -> Int {
+        let baseCount = pinnedTabs(for: profileId).count
+        guard profileId == browserState.currentProfileId, let drag = activeDrag, drag.folder == nil else {
+            return baseCount
         }
-        let draggedPinnedCount = browserState.pinnedTabs.filter { drag.draggedTabIds.contains($0.id) }.count
-        let remainingCount = browserState.pinnedTabs.count - draggedPinnedCount
+        let draggedPinnedCount = pinnedTabs(for: profileId).filter { drag.draggedTabIds.contains($0.id) }.count
+        let remainingCount = baseCount - draggedPinnedCount
         if drag.isHoveringPinZone && drag.canPinPayload {
             return remainingCount + drag.draggedTabIds.count
         }
         return remainingCount
     }
 
+    var effectivePinnedCount: Int {
+        effectivePinnedCount(for: browserState.currentProfileId)
+    }
+
     /// Dynamic column count: up to 4 tabs sit in a single row; 5+ wraps to 3 columns.
-    var pinnedColumnCount: Int {
-        let count = effectivePinnedCount
+    func pinnedColumnCount(for profileId: UUID) -> Int {
+        let count = effectivePinnedCount(for: profileId)
         guard count > 0 else { return 1 }
         return count <= 4 ? count : 3
     }
 
+    var pinnedColumnCount: Int {
+        pinnedColumnCount(for: browserState.currentProfileId)
+    }
+
+    func pinnedGridColumns(for profileId: UUID) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 8), count: pinnedColumnCount(for: profileId))
+    }
+
     private var pinnedGridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 8), count: pinnedColumnCount)
+        pinnedGridColumns(for: browserState.currentProfileId)
     }
 
     private var pinnedCardWidth: CGFloat {
@@ -124,12 +147,16 @@ struct Tabstrip: View {
         return max(20, (browserState.sidebarWidth - 16 - CGFloat(cols - 1) * 8) / CGFloat(cols))
     }
 
-    var pinnedGridHeight: CGFloat {
-        let count = effectivePinnedCount
+    func pinnedGridHeight(for profileId: UUID) -> CGFloat {
+        let count = effectivePinnedCount(for: profileId)
         if count == 0 { return 0 }
         let cols = count <= 4 ? count : 3
         let rows = (count + cols - 1) / cols
         return CGFloat(rows) * 38 + CGFloat(max(0, rows - 1)) * 8 + 10
+    }
+
+    var pinnedGridHeight: CGFloat {
+        pinnedGridHeight(for: browserState.currentProfileId)
     }
 
     enum UnpinnedTabRow: Identifiable {
@@ -180,14 +207,15 @@ struct Tabstrip: View {
         }
     }
 
-    var unpinnedRows: [UnpinnedTabRow] {
-        let unpinned = browserState.unpinnedTabs
+    func unpinnedRows(for profileId: UUID) -> [UnpinnedTabRow] {
+        let unpinned = browserState.tabs.filter { ($0.profileId ?? browserState.defaultProfileId) == profileId && !$0.isPinned }
+        let profileFolders = browserState.folders.filter { ($0.profileId ?? browserState.defaultProfileId) == profileId }
         var rows: [UnpinnedTabRow] = []
         var archiveRows: [UnpinnedTabRow] = []
         var handledIds = Set<UUID>()
         var emittedFolders = Set<UUID>()
 
-        let archiveFolder = browserState.folders.first(where: { $0.isArchive })
+        let archiveFolder = profileFolders.first(where: { $0.isArchive })
         let archiveFolderId = archiveFolder?.id
 
         for tab in unpinned {
@@ -239,7 +267,7 @@ struct Tabstrip: View {
         }
 
         // Folders with no member tabs still render so they can receive drops and be managed.
-        for folder in browserState.folders where !emittedFolders.contains(folder.id) {
+        for folder in profileFolders where !emittedFolders.contains(folder.id) {
             if folder.isArchive {
                 archiveRows.append(.folderHeader(folder))
             } else {
@@ -250,28 +278,76 @@ struct Tabstrip: View {
         return rows + archiveRows
     }
 
+    var unpinnedRows: [UnpinnedTabRow] {
+        unpinnedRows(for: browserState.currentProfileId)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Fixed top section for traffic light clearance
             WindowDragArea()
                 .frame(width: browserState.sidebarWidth, height: headerHeight, alignment: .leading)
 
+            // Multi-Space continuous horizontal strip (Pinned tabs + New tab button + Unpinned tabs)
+            let sidebarWidth = browserState.sidebarWidth
+            let profiles = browserState.profiles
+            let currIdx = profiles.firstIndex(where: { $0.id == browserState.currentProfileId }) ?? 0
+            let totalOffset = browserState.spaceSwipeOffset + swipeOffset
+
+            HStack(spacing: 0) {
+                ForEach(profiles, id: \.id) { profile in
+                    spaceContentView(for: profile)
+                        .frame(width: sidebarWidth, alignment: .topLeading)
+                }
+            }
+            .frame(width: sidebarWidth * CGFloat(max(1, profiles.count)), alignment: .leading)
+            .offset(x: -(CGFloat(currIdx) * sidebarWidth) + totalOffset)
+            .frame(width: sidebarWidth, alignment: .leading)
+            .clipped()
+            .simultaneousGesture(spaceSwipeGesture)
+
+            // Space Indicator Dock at the bottom
+            if !browserState.isPrivate {
+                SpaceIndicatorBar(browserState: browserState)
+            }
+        }
+        .frame(width: isDragCollapsed ? 0 : browserState.sidebarWidth, alignment: .leading)
+        .opacity(isDragCollapsed ? 0 : 1)
+        .clipped()
+        .overlay(alignment: .trailing) {
+            resizeHandle
+        }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(WindowDragArea())
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isDragCollapsed)
+    }
+
+    // MARK: - Space Content View per Profile
+
+    @ViewBuilder
+    private func spaceContentView(for profile: Profile) -> some View {
+        let isCurrent = (profile.id == browserState.currentProfileId)
+        let pinned = pinnedTabs(for: profile.id)
+        let gridHeight = pinnedGridHeight(for: profile.id)
+        let gridCols = pinnedGridColumns(for: profile.id)
+
+        VStack(alignment: .leading, spacing: 0) {
             // Pinned Tabs Grid / Drop Zone
             VStack(spacing: 0) {
-                if pinnedGridHeight > 0 {
-                    LazyVGrid(columns: pinnedGridColumns, spacing: 8) {
-                        ForEach(browserState.pinnedTabs, id: \.id) { tab in
-                            let isBeingDragged = activeDrag?.draggedTabIds.contains(tab.id) == true
+                if gridHeight > 0 {
+                    LazyVGrid(columns: gridCols, spacing: 8) {
+                        ForEach(pinned, id: \.id) { tab in
+                            let isBeingDragged = isCurrent && (activeDrag?.draggedTabIds.contains(tab.id) == true)
 
                             ZStack {
                                 PinnedTabButton(
                                     tab: tab,
-                                    isSelected: highlightedTabId == tab.id,
-                                    isMultiSelected: hasMultipleSelectedTabs && browserState.selectedSidebarTabIds.contains(tab.id),
-                                    isInSplit: browserState.currentTabIds.contains(tab.id),
-                                    isDraggingAnyTab: activeDrag != nil,
+                                    isSelected: isCurrent && (highlightedTabId == tab.id),
+                                    isMultiSelected: isCurrent && hasMultipleSelectedTabs && browserState.selectedSidebarTabIds.contains(tab.id),
+                                    isInSplit: isCurrent && browserState.currentTabIds.contains(tab.id),
+                                    isDraggingAnyTab: isCurrent && (activeDrag != nil),
                                     namespace: nil,
-                                    isRenaming: renamingTabId == tab.id,
+                                    isRenaming: isCurrent && (renamingTabId == tab.id),
                                     isPlayingAudio: browserState.tabMediaStates[tab.id]?.isPlayingAudio ?? false,
                                     isMuted: browserState.tabMediaStates[tab.id]?.isMuted ?? false,
                                     onToggleMute: {
@@ -284,8 +360,19 @@ struct Tabstrip: View {
                                     onCancelRename: {
                                         renamingTabId = nil
                                     },
+                                    profileAccentColor: profile.color.color,
                                     onSelect: {
-                                        withAnimation(tabSelectionAnimation) {
+                                        if !isCurrent {
+                                            browserState.switchProfile(to: profile.id)
+                                        }
+                                        if let anim = tabSelectionAnimation {
+                                            withAnimation(anim) {
+                                                browserState.selectSidebarTab(
+                                                    tab.id,
+                                                    extendingRange: NSEvent.modifierFlags.contains(.shift)
+                                                )
+                                            }
+                                        } else {
                                             browserState.selectSidebarTab(
                                                 tab.id,
                                                 extendingRange: NSEvent.modifierFlags.contains(.shift)
@@ -294,7 +381,7 @@ struct Tabstrip: View {
                                     }
                                 )
                                 .opacity(isBeingDragged ? 0.0 : 1.0)
-                                .offset(pinnedShiftOffset(for: tab.id))
+                                .offset(isCurrent ? pinnedShiftOffset(for: tab.id) : .zero)
                                 .zIndex(highlightedTabId == tab.id ? 10 : 0)
                                 .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: pinnedShiftOffset(for: tab.id))
                             }
@@ -304,9 +391,11 @@ struct Tabstrip: View {
                             .gesture(
                                 DragGesture(minimumDistance: 3, coordinateSpace: .named("lotusWindow"))
                                     .onChanged { value in
+                                        guard isCurrent else { return }
                                         handleDragChanged(tab: tab, source: .pinned, value: value)
                                     }
                                     .onEnded { value in
+                                        guard isCurrent else { return }
                                         handleDragEnded(value: value)
                                     }
                             )
@@ -317,212 +406,243 @@ struct Tabstrip: View {
                     .padding(.bottom, 6)
                 }
             }
-            .frame(width: browserState.sidebarWidth, height: pinnedGridHeight, alignment: .topLeading)
-            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: pinnedGridHeight)
+            .frame(width: browserState.sidebarWidth, height: gridHeight, alignment: .topLeading)
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: gridHeight)
 
             // New Tab button
             NewTabButton {
+                if !isCurrent {
+                    browserState.switchProfile(to: profile.id)
+                }
                 browserState.openCommandPalette()
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 1)
             .frame(width: browserState.sidebarWidth, alignment: .leading)
 
-            // Scrollable unpinned tab list
-            ScrollView(.vertical, showsIndicators: false) {
-                let rows = unpinnedRows
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { rowIndex, row in
-                        switch row {
-                        case .folderHeader(let folder):
-                            FolderRow(
-                                folder: folder,
-                                isRenaming: renamingFolderId == folder.id,
-                                onToggleCollapse: {
-                                    browserState.clearSidebarSelection()
-                                    browserState.toggleFolderCollapsed(id: folder.id)
-                                },
-                                onCommitRename: { name in
-                                    browserState.renameFolder(id: folder.id, to: name)
-                                    renamingFolderId = nil
-                                },
-                                onCancelRename: {
-                                    renamingFolderId = nil
-                                },
-                                onClose: {
-                                    browserState.requestCloseFolder(id: folder.id)
-                                }
-                            )
-                            .opacity(activeDrag?.folder?.id == folder.id ? 0.0 : 1.0)
-                            .padding(.bottom, 3)
-                            .offset(y: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
-                            .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
-                            .overlay(
-                                FolderContextMenuHost(
-                                    folder: folder,
-                                    browserState: browserState,
-                                    onRename: { renamingFolderId = folder.id },
-                                    onClose: { browserState.requestCloseFolder(id: folder.id) },
-                                    onDelete: { browserState.deleteFolder(id: folder.id) }
-                                )
-                            )
-                            .gesture(
-                                DragGesture(minimumDistance: 3, coordinateSpace: .named("lotusWindow"))
-                                    .onChanged { value in
-                                        handleFolderDragChanged(folder: folder, rowIndex: rowIndex, value: value)
-                                    }
-                                    .onEnded { value in
-                                        handleDragEnded(value: value)
-                                    }
-                            )
+            // Unpinned tabs list
+            unpinnedTabsListView(for: profile.id)
+        }
+        .frame(width: browserState.sidebarWidth, alignment: .topLeading)
+    }
 
-                        case .single(let tab):
-                            let isBeingDragged = activeDrag?.draggedTabIds.contains(tab.id) == true
-                            let isDraggedFolderMember = activeDrag?.folder != nil && activeDrag?.folder?.id == tab.folderId
+    // MARK: - Unpinned Tabs List View per Profile
 
-                            TabButton(
-                                tab: tab,
-                                isSelected: highlightedTabId == tab.id,
-                                isMultiSelected: hasMultipleSelectedTabs && browserState.selectedSidebarTabIds.contains(tab.id),
-                                isDragging: isBeingDragged,
-                                isDraggingAnyTab: activeDrag != nil,
-                                isThemeLight: isTabThemeLight(for: tab.id),
-                                activeTabBackgroundColor: activeTabBackgroundColor,
-                                namespace: tabAnimationNamespace,
-                                // Foldered tabs render narrower so their right
-                                // edge stays aligned while indented.
-                                sidebarWidth: browserState.sidebarWidth - (tab.folderId != nil ? 14 : 0),
-                                isRenaming: renamingTabId == tab.id,
-                                isPlayingAudio: browserState.tabMediaStates[tab.id]?.isPlayingAudio ?? false,
-                                isMuted: browserState.tabMediaStates[tab.id]?.isMuted ?? false,
-                                onToggleMute: {
-                                    browserState.toggleMuteTab(id: tab.id)
-                                },
-                                onCommitRename: { title in
-                                    browserState.renameTab(id: tab.id, to: title)
-                                    renamingTabId = nil
-                                },
-                                onCancelRename: {
-                                    renamingTabId = nil
-                                },
-                                onSelect: {
-                                    withAnimation(tabSelectionAnimation) {
-                                        browserState.selectSidebarTab(
-                                            tab.id,
-                                            extendingRange: NSEvent.modifierFlags.contains(.shift)
-                                        )
-                                    }
-                                },
-                                onClose: {
-                                    browserState.removeTab(id: tab.id)
-                                }
-                            )
-                            .padding(.leading, tab.folderId != nil ? 14 : 0)
-                            .opacity(isBeingDragged || isDraggedFolderMember ? 0.0 : 1.0)
-                            .frame(height: isDraggedFolderMember ? 0 : nil)
-                            .padding(.bottom, isDraggedFolderMember ? 0 : 3)
-                            .offset(y: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
-                            .zIndex(highlightedTabId == tab.id ? 10 : 0)
-                            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDraggedFolderMember)
-                            .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
-                            .contextMenu {
-                                tabContextMenu(for: tab)
+    @ViewBuilder
+    private func unpinnedTabsListView(for profileId: UUID) -> some View {
+        let rows = unpinnedRows(for: profileId)
+        let isCurrent = (profileId == browserState.currentProfileId)
+
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { rowIndex, row in
+                    switch row {
+                    case .folderHeader(let folder):
+                        FolderRow(
+                            folder: folder,
+                            isRenaming: isCurrent && (renamingFolderId == folder.id),
+                            onToggleCollapse: {
+                                guard isCurrent else { return }
+                                browserState.clearSidebarSelection()
+                                browserState.toggleFolderCollapsed(id: folder.id)
+                            },
+                            onCommitRename: { name in
+                                browserState.renameFolder(id: folder.id, to: name)
+                                renamingFolderId = nil
+                            },
+                            onCancelRename: {
+                                renamingFolderId = nil
+                            },
+                            onClose: {
+                                browserState.requestCloseFolder(id: folder.id)
                             }
-                            .gesture(
-                                DragGesture(minimumDistance: 3, coordinateSpace: .named("lotusWindow"))
-                                    .onChanged { value in
-                                        handleDragChanged(tab: tab, source: .unpinned, rowIndex: rowIndex, value: value)
-                                    }
-                                    .onEnded { value in
-                                        handleDragEnded(value: value)
-                                    }
+                        )
+                        .opacity(isCurrent && activeDrag?.folder?.id == folder.id ? 0.0 : 1.0)
+                        .padding(.bottom, 3)
+                        .offset(y: isCurrent ? unpinnedShiftOffset(forRowIndex: rowIndex, in: rows) : 0)
+                        .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
+                        .overlay(
+                            FolderContextMenuHost(
+                                folder: folder,
+                                browserState: browserState,
+                                onRename: { renamingFolderId = folder.id },
+                                onClose: { browserState.requestCloseFolder(id: folder.id) },
+                                onDelete: { browserState.deleteFolder(id: folder.id) }
                             )
+                        )
+                        .gesture(
+                            DragGesture(minimumDistance: 3, coordinateSpace: .named("lotusWindow"))
+                                .onChanged { value in
+                                    guard isCurrent else { return }
+                                    handleFolderDragChanged(folder: folder, rowIndex: rowIndex, value: value)
+                                }
+                                .onEnded { value in
+                                    guard isCurrent else { return }
+                                    handleDragEnded(value: value)
+                                }
+                        )
 
-                        case .split(let tab1, let tab2):
-                            let isBeingDragged = activeDrag?.draggedTabIds.contains(tab1.id) == true || activeDrag?.draggedTabIds.contains(tab2.id) == true
-                            let isDraggedFolderMember = activeDrag?.folder != nil && (activeDrag?.folder?.id == tab1.folderId || activeDrag?.folder?.id == tab2.folderId)
+                    case .single(let tab):
+                        let isBeingDragged = isCurrent && activeDrag?.draggedTabIds.contains(tab.id) == true
+                        let isDraggedFolderMember = isCurrent && activeDrag?.folder != nil && activeDrag?.folder?.id == tab.folderId
 
-                            SplitTabRow(
-                                tab1: tab1,
-                                tab2: tab2,
-                                selectedTabId: highlightedTabId,
-                                currentTabIds: highlightedCurrentTabIds,
-                                sidebarWidth: browserState.sidebarWidth - (tab1.folderId != nil ? 14 : 0),
-                                isMultiSelected: hasMultipleSelectedTabs && (browserState.selectedSidebarTabIds.contains(tab1.id) || browserState.selectedSidebarTabIds.contains(tab2.id)),
-                                isThemeLight: isTabThemeLight(for: highlightedTabId),
-                                isPlayingAudio1: browserState.tabMediaStates[tab1.id]?.isPlayingAudio ?? false,
-                                isMuted1: browserState.tabMediaStates[tab1.id]?.isMuted ?? false,
-                                isPlayingAudio2: browserState.tabMediaStates[tab2.id]?.isPlayingAudio ?? false,
-                                isMuted2: browserState.tabMediaStates[tab2.id]?.isMuted ?? false,
-                                onToggleMute: { tab in
-                                    browserState.toggleMuteTab(id: tab.id)
-                                },
-                                activeTabBackgroundColor: activeTabBackgroundColor,
-                                namespace: tabAnimationNamespace,
-                                activeDrag: activeDrag,
-                                isDraggingAnyTab: activeDrag != nil,
-                                onSelect: { tab in
+                        TabButton(
+                            tab: tab,
+                            isSelected: isCurrent && (highlightedTabId == tab.id),
+                            isMultiSelected: isCurrent && hasMultipleSelectedTabs && browserState.selectedSidebarTabIds.contains(tab.id),
+                            isDragging: isBeingDragged,
+                            isDraggingAnyTab: isCurrent && activeDrag != nil,
+                            isThemeLight: isTabThemeLight(for: tab.id),
+                            activeTabBackgroundColor: activeTabBackgroundColor,
+                            namespace: smoothTabSwitchAnimation ? tabAnimationNamespace : nil,
+                            sidebarWidth: browserState.sidebarWidth - (tab.folderId != nil ? 14 : 0),
+                            isRenaming: isCurrent && (renamingTabId == tab.id),
+                            isPlayingAudio: browserState.tabMediaStates[tab.id]?.isPlayingAudio ?? false,
+                            isMuted: browserState.tabMediaStates[tab.id]?.isMuted ?? false,
+                            onToggleMute: {
+                                browserState.toggleMuteTab(id: tab.id)
+                            },
+                            onCommitRename: { title in
+                                browserState.renameTab(id: tab.id, to: title)
+                                renamingTabId = nil
+                            },
+                            onCancelRename: {
+                                renamingTabId = nil
+                            },
+                            onSelect: {
+                                if !isCurrent {
+                                    browserState.switchProfile(to: profileId)
+                                }
+                                if let anim = tabSelectionAnimation {
+                                    withAnimation(anim) {
+                                        browserState.selectSidebarTab(
+                                            tab.id,
+                                            extendingRange: NSEvent.modifierFlags.contains(.shift)
+                                        )
+                                    }
+                                } else {
+                                    browserState.selectSidebarTab(
+                                        tab.id,
+                                        extendingRange: NSEvent.modifierFlags.contains(.shift)
+                                    )
+                                }
+                            },
+                            onClose: {
+                                browserState.removeTab(id: tab.id)
+                            }
+                        )
+                        .padding(.leading, tab.folderId != nil ? 14 : 0)
+                        .opacity(isBeingDragged || isDraggedFolderMember ? 0.0 : 1.0)
+                        .frame(height: isDraggedFolderMember ? 0 : nil)
+                        .padding(.bottom, isDraggedFolderMember ? 0 : 3)
+                        .offset(y: isCurrent ? unpinnedShiftOffset(forRowIndex: rowIndex, in: rows) : 0)
+                        .zIndex(highlightedTabId == tab.id ? 10 : 0)
+                        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDraggedFolderMember)
+                        .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
+                        .contextMenu {
+                            tabContextMenu(for: tab)
+                        }
+                        .gesture(
+                            DragGesture(minimumDistance: 3, coordinateSpace: .named("lotusWindow"))
+                                .onChanged { value in
+                                    guard isCurrent else { return }
+                                    handleDragChanged(tab: tab, source: .unpinned, rowIndex: rowIndex, value: value)
+                                }
+                                .onEnded { value in
+                                    guard isCurrent else { return }
+                                    handleDragEnded(value: value)
+                                }
+                        )
+
+                    case .split(let tab1, let tab2):
+                        let isBeingDragged = isCurrent && (activeDrag?.draggedTabIds.contains(tab1.id) == true || activeDrag?.draggedTabIds.contains(tab2.id) == true)
+                        let isDraggedFolderMember = isCurrent && activeDrag?.folder != nil && (activeDrag?.folder?.id == tab1.folderId || activeDrag?.folder?.id == tab2.folderId)
+
+                        SplitTabRow(
+                            tab1: tab1,
+                            tab2: tab2,
+                            selectedTabId: highlightedTabId,
+                            currentTabIds: highlightedCurrentTabIds,
+                            sidebarWidth: browserState.sidebarWidth - (tab1.folderId != nil ? 14 : 0),
+                            isMultiSelected: isCurrent && hasMultipleSelectedTabs && (browserState.selectedSidebarTabIds.contains(tab1.id) || browserState.selectedSidebarTabIds.contains(tab2.id)),
+                            isThemeLight: isTabThemeLight(for: highlightedTabId),
+                            isPlayingAudio1: browserState.tabMediaStates[tab1.id]?.isPlayingAudio ?? false,
+                            isMuted1: browserState.tabMediaStates[tab1.id]?.isMuted ?? false,
+                            isPlayingAudio2: browserState.tabMediaStates[tab2.id]?.isPlayingAudio ?? false,
+                            isMuted2: browserState.tabMediaStates[tab2.id]?.isMuted ?? false,
+                            onToggleMute: { tab in
+                                browserState.toggleMuteTab(id: tab.id)
+                            },
+                            activeTabBackgroundColor: activeTabBackgroundColor,
+                            namespace: smoothTabSwitchAnimation ? tabAnimationNamespace : nil,
+                            activeDrag: activeDrag,
+                            isDraggingAnyTab: isCurrent && activeDrag != nil,
+                            onSelect: { tab in
+                                if !isCurrent {
+                                    browserState.switchProfile(to: profileId)
+                                }
+                                if tabSelectionAnimation != nil {
                                     withAnimation(tabSelectionAnimation) {
                                         browserState.selectSidebarTab(
                                             tab.id,
                                             extendingRange: NSEvent.modifierFlags.contains(.shift)
                                         )
                                     }
-                                },
-                                onClose: { tab in
-                                    browserState.removeTab(id: tab.id)
-                                },
-                                onDragChanged: { tab, value in
-                                    handleDragChanged(tab: tab, source: .unpinned, rowIndex: rowIndex, value: value)
-                                },
-                                onDragEnded: { value in
-                                    handleDragEnded(value: value)
-                                },
-                                contextMenuBuilder: { tab in
-                                    AnyView(tabContextMenu(for: tab))
+                                } else {
+                                    browserState.selectSidebarTab(
+                                        tab.id,
+                                        extendingRange: NSEvent.modifierFlags.contains(.shift)
+                                    )
                                 }
-                            )
-                            .padding(.leading, tab1.folderId != nil ? 14 : 0)
-                            .opacity(isBeingDragged || isDraggedFolderMember ? 0.0 : 1.0)
-                            .frame(height: isDraggedFolderMember ? 0 : nil)
-                            .padding(.bottom, isDraggedFolderMember ? 0 : 3)
-                            .offset(y: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
-                            .zIndex(highlightedCurrentTabIds.contains(tab1.id) || highlightedCurrentTabIds.contains(tab2.id) ? 10 : 0)
-                            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDraggedFolderMember)
-                            .animation(activeDrag == nil ? nil : .spring(response: 0.28, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
-                        }
+                            },
+                            onClose: { tab in
+                                browserState.removeTab(id: tab.id)
+                            },
+                            onDragChanged: { tab, value in
+                                guard isCurrent else { return }
+                                handleDragChanged(tab: tab, source: .unpinned, rowIndex: rowIndex, value: value)
+                            },
+                            onDragEnded: { value in
+                                guard isCurrent else { return }
+                                handleDragEnded(value: value)
+                            },
+                            contextMenuBuilder: { tab in
+                                AnyView(tabContextMenu(for: tab))
+                            }
+                        )
+                        .padding(.leading, tab1.folderId != nil ? 14 : 0)
+                        .opacity(isBeingDragged || isDraggedFolderMember ? 0.0 : 1.0)
+                        .frame(height: isDraggedFolderMember ? 0 : nil)
+                        .padding(.bottom, isDraggedFolderMember ? 0 : 3)
+                        .offset(y: isCurrent ? unpinnedShiftOffset(forRowIndex: rowIndex, in: rows) : 0)
+                        .zIndex(highlightedCurrentTabIds.contains(tab1.id) || highlightedCurrentTabIds.contains(tab2.id) ? 10 : 0)
+                        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDraggedFolderMember)
+                        .animation(activeDrag == nil ? nil : .spring(response: 0.28, dampingFraction: 0.82), value: unpinnedShiftOffset(forRowIndex: rowIndex, in: rows))
                     }
-
-                    // Native window drag area in empty space below tabs
-                    WindowDragArea()
-                        .frame(maxWidth: .infinity, minHeight: 40)
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
-                .frame(width: browserState.sidebarWidth, alignment: .topLeading)
+
+                // Native window drag area in empty space below tabs
+                WindowDragArea()
+                    .frame(maxWidth: .infinity, minHeight: 30)
             }
-            .frame(width: browserState.sidebarWidth, alignment: .leading)
-            .background(WindowDragArea())
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollContentBackground(.hidden)
-            .onScrollGeometryChange(
-                for: CGFloat.self,
-                of: { geometry in geometry.contentOffset.y },
-                action: { _, offset in
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            .frame(width: browserState.sidebarWidth, alignment: .topLeading)
+        }
+        .frame(width: browserState.sidebarWidth, alignment: .leading)
+        .background(WindowDragArea())
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollContentBackground(.hidden)
+        .onScrollGeometryChange(
+            for: CGFloat.self,
+            of: { geometry in geometry.contentOffset.y },
+            action: { _, offset in
+                if isCurrent {
                     unpinnedScrollOffset = max(0, offset)
                 }
-            )
-        }
-        .frame(width: isDragCollapsed ? 0 : browserState.sidebarWidth, alignment: .leading)
-        .opacity(isDragCollapsed ? 0 : 1)
-        .clipped()
-        .overlay(alignment: .trailing) {
-            resizeHandle
-        }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(WindowDragArea())
-        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isDragCollapsed)
+            }
+        )
     }
 
     @ViewBuilder
@@ -645,12 +765,75 @@ struct Tabstrip: View {
             }
         }
 
+        if browserState.profiles.count > 1 {
+            let currentTabProfileId = tab.profileId ?? browserState.defaultProfileId
+            let otherProfiles = browserState.profiles.filter { $0.id != currentTabProfileId }
+            if !otherProfiles.isEmpty {
+                Divider()
+                let moveProfileTitle = isMulti && closeTargetIds.count > 1 ? "Move \(closeTargetIds.count) Tabs to Profile" : "Move to Profile"
+                Menu(moveProfileTitle) {
+                    ForEach(otherProfiles) { profile in
+                        Button {
+                            browserState.moveTabs(closeTargetIds, toProfile: profile.id)
+                        } label: {
+                            Label(profile.name, systemImage: profile.icon)
+                        }
+                    }
+                }
+            }
+        }
+
+        Divider()
+
         let closeTitle = isMulti && closeTargetIds.count > 1 ? "Close \(closeTargetIds.count) Tabs" : "Close"
         Button(closeTitle, role: .destructive) {
             for id in closeTargetIds {
                 browserState.removeTab(id: id)
             }
         }
+    }
+
+    // MARK: - Space Swipe Gesture
+
+    private var spaceSwipeGesture: some Gesture {
+        let sidebarWidth = browserState.sidebarWidth
+        return DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                guard activeDrag == nil else { return }
+                let dx = value.translation.width
+                let dy = value.translation.height
+                if abs(dx) > abs(dy) * 1.05 || isSwipingSpaces {
+                    isSwipingSpaces = true
+                    let profiles = browserState.profiles
+                    let currIdx = profiles.firstIndex(where: { $0.id == browserState.currentProfileId }) ?? 0
+                    let rawDx: CGFloat
+                    if (currIdx == 0 && dx > 0) || (currIdx == profiles.count - 1 && dx < 0) {
+                        rawDx = dx * 0.25
+                    } else {
+                        rawDx = dx
+                    }
+                    swipeOffset = max(-sidebarWidth, min(sidebarWidth, rawDx))
+                }
+            }
+            .onEnded { value in
+                guard isSwipingSpaces else {
+                    swipeOffset = 0
+                    return
+                }
+                let dx = value.translation.width
+                let velocity = value.predictedEndTranslation.width - dx
+
+                if dx < -45 || velocity < -100 {
+                    browserState.switchToNextProfile()
+                } else if dx > 45 || velocity > 100 {
+                    browserState.switchToPreviousProfile()
+                }
+
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+                    swipeOffset = 0
+                    isSwipingSpaces = false
+                }
+            }
     }
 }
 

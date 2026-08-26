@@ -22,7 +22,8 @@ extension BrowserState {
             return existing
         }
 
-        let config = WebViewFactory.makeConfiguration(messageHandler: self, isPrivate: isPrivate)
+        let profileId = tab?.profileId ?? currentProfileId
+        let config = WebViewFactory.makeConfiguration(messageHandler: self, isPrivate: isPrivate, profileId: profileId)
         let webView = WebViewFactory.makeWebView(configuration: config, delegate: self)
         webView.pageZoom = zoomLevel(for: tabId)
         webViewStore[tabId] = webView

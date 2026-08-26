@@ -19,6 +19,7 @@ struct ClosedTabRecord: Codable, Equatable {
     var folderColor: FolderColor?
     var folderNameOrigin: FolderNameOrigin?
     var splitPartnerId: UUID?
+    var profileId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -30,7 +31,8 @@ struct ClosedTabRecord: Codable, Equatable {
         folderName: String? = nil,
         folderColor: FolderColor? = nil,
         folderNameOrigin: FolderNameOrigin? = nil,
-        splitPartnerId: UUID? = nil
+        splitPartnerId: UUID? = nil,
+        profileId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -42,6 +44,7 @@ struct ClosedTabRecord: Codable, Equatable {
         self.folderColor = folderColor
         self.folderNameOrigin = folderNameOrigin
         self.splitPartnerId = splitPartnerId
+        self.profileId = profileId
     }
 
     init(from decoder: Decoder) throws {
@@ -56,5 +59,6 @@ struct ClosedTabRecord: Codable, Equatable {
         self.folderColor = try container.decodeIfPresent(FolderColor.self, forKey: .folderColor)
         self.folderNameOrigin = try container.decodeIfPresent(FolderNameOrigin.self, forKey: .folderNameOrigin)
         self.splitPartnerId = try container.decodeIfPresent(UUID.self, forKey: .splitPartnerId)
+        self.profileId = try container.decodeIfPresent(UUID.self, forKey: .profileId)
     }
 }

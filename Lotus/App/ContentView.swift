@@ -26,6 +26,9 @@ struct ContentView: View {
     @State private var temporaryFloatingDismissTask: DispatchWorkItem? = nil
 
     private var currentAccentColor: Color {
+        if !browserState.isPrivate {
+            return browserState.currentProfile.color.color
+        }
         let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
         return accent.color
     }
@@ -58,23 +61,8 @@ struct ContentView: View {
                         .zIndex(1)
 
                     // MARK - Browser Containers
-                    Group {
-                        if browserState.currentTabIds.isEmpty {
-                            // No open tabs — a clean, empty container matching
-                            // the browser card chrome, with no page UI inside.
-                            emptyBrowserContainer
-                        } else if browserState.currentTabIds.count == 2 {
-                            splitBrowserContainers(for: browserState.currentTabIds)
-                        } else {
-                            ForEach(Array(browserState.currentTabIds.enumerated()), id: \.offset) { _, tabId in
-                                BrowserContainer(browserState: browserState, tabId: tabId)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .zIndex(browserState.selectedTabId == tabId ? 1 : 0)
-                                    .transition(.identity)
-                            }
-                        }
-                    }
-                    .animation(nil, value: browserState.currentTabIds)
+                    browserContentArea
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding([.top, .trailing, .bottom], showsBrowserFrame ? 6 : 0)
                     .padding(.leading, isStaticSidebarPresented ? 0 : (showsBrowserFrame ? 6 : 0))
@@ -262,10 +250,10 @@ struct ContentView: View {
             .background(
                 ZStack {
                     VisualEffectView(material: .sidebar, blendingMode: .withinWindow, state: .active)
-                    if accentColorKey != "white" {
-                        currentAccentColor
-                            .opacity(colorScheme == .dark ? 0.18 : 0.32)
-                    }
+                    currentAccentColor
+                        .opacity((browserState.currentProfile.color == .grey || accentColorKey == "white") ? 0 : (colorScheme == .dark ? 0.18 : 0.32))
+                        .animation(.spring(response: 0.35, dampingFraction: 0.88), value: browserState.currentProfileId)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.88), value: accentColorKey)
                     (colorScheme == .dark ? Color.black.opacity(0.35) : Color(nsColor: .windowBackgroundColor).opacity(0.75))
                 }
             )
@@ -304,6 +292,22 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
+    private var browserContentArea: some View {
+        let currentTabIds = browserState.currentTabIds
+        if currentTabIds.isEmpty {
+            emptyBrowserContainer
+        } else if currentTabIds.count == 2 {
+            splitBrowserContainers(for: currentTabIds)
+        } else if let tabId = currentTabIds.first {
+            BrowserContainer(browserState: browserState, tabId: tabId)
+                .id(tabId)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .zIndex(browserState.selectedTabId == tabId ? 1 : 0)
+                .transition(.identity)
+        }
+    }
+
     private func splitBrowserContainers(for currentTabIds: [UUID]) -> some View {
         GeometryReader { splitGeo in
             let totalWidth = splitGeo.size.width
@@ -319,6 +323,7 @@ struct ContentView: View {
 
             HStack(spacing: 0) {
                 BrowserContainer(browserState: browserState, tabId: leftId)
+                    .id(leftId)
                     .frame(width: leftWidth)
                     .frame(maxHeight: .infinity)
                     .zIndex(browserState.selectedTabId == leftId ? 2 : 0)
@@ -335,6 +340,7 @@ struct ContentView: View {
                 .zIndex(50)
 
                 BrowserContainer(browserState: browserState, tabId: rightId)
+                    .id(rightId)
                     .frame(width: rightWidth)
                     .frame(maxHeight: .infinity)
                     .zIndex(browserState.selectedTabId == rightId ? 2 : 0)
@@ -367,10 +373,10 @@ struct ContentView: View {
                 blendingMode: .behindWindow,
                 state: .active
             )
-            if accentColorKey != "white" {
-                currentAccentColor
-                    .opacity(colorScheme == .dark ? 0.16 : 0.2)
-            }
+            currentAccentColor
+                .opacity((browserState.currentProfile.color == .grey || accentColorKey == "white") ? 0 : (colorScheme == .dark ? 0.16 : 0.20))
+                .animation(.spring(response: 0.35, dampingFraction: 0.88), value: browserState.currentProfileId)
+                .animation(.spring(response: 0.35, dampingFraction: 0.88), value: accentColorKey)
             (colorScheme == .dark ? Color.black.opacity(0.12) : Color.white.opacity(0.04))
         }
         .ignoresSafeArea()

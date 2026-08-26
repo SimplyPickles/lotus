@@ -228,6 +228,9 @@ struct LotusDownloadsView: View {
             selectedIds = selectedIds.intersection(valid)
             refreshSections()
         }
+        .onChange(of: browserState.currentProfileId) { _, _ in
+            refreshSections()
+        }
         .onChange(of: searchText) { _, _ in
             displayLimit = 60
             refreshSections()
@@ -245,9 +248,16 @@ struct LotusDownloadsView: View {
         }
     }
 
+    private var activeProfileId: UUID {
+        if let tabId = tabId, let tab = browserState.tab(for: tabId) {
+            return tab.profileId ?? browserState.defaultProfileId
+        }
+        return browserState.currentProfileId
+    }
+
     private func refreshSections() {
         let result = DownloadGrouping.filterAndGroup(
-            from: browserState.downloads,
+            from: browserState.downloads(for: activeProfileId),
             query: searchText,
             limit: displayLimit
         )
@@ -269,7 +279,7 @@ struct LotusDownloadsView: View {
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundColor(foregroundPrimary)
 
-                    Text("\(browserState.downloads.count) files")
+                    Text("\(browserState.downloads(for: activeProfileId).count) files")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(foregroundSecondary)
                 }
@@ -288,9 +298,9 @@ struct LotusDownloadsView: View {
                     DownloadHeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
                         selectedIds.removeAll()
                     }
-                } else if !browserState.downloads.isEmpty {
+                } else if !browserState.downloads(for: activeProfileId).isEmpty {
                     DownloadHeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: browserState.downloads.count)
+                        confirmationType = .clearAll(totalCount: browserState.downloads(for: activeProfileId).count)
                     }
                 }
             }
@@ -527,7 +537,7 @@ struct LotusDownloadsView: View {
                     Button {
                         switch confirmation {
                         case .clearAll:
-                            browserState.clearAllDownloads()
+                            browserState.clearAllDownloads(for: activeProfileId)
                             selectedIds.removeAll()
                         case .deleteSelected(let ids):
                             browserState.removeDownloads(ids: ids)

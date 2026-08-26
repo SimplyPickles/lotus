@@ -178,6 +178,14 @@ extension BrowserState: WKDownloadDelegate {
         let mimeType = response.mimeType
 
         let originalURL = download.originalRequest?.url ?? response.url ?? destinationURL
+        var originatingProfileId = currentProfileId
+        if let webView = download.webView {
+            if let matchingTabId = webViewStore.first(where: { $0.value === webView })?.key,
+               let matchingTab = tab(for: matchingTabId) {
+                originatingProfileId = matchingTab.profileId ?? defaultProfileId
+            }
+        }
+
         let item = DownloadItem(
             filename: destinationURL.lastPathComponent,
             originalURL: originalURL,
@@ -186,7 +194,8 @@ extension BrowserState: WKDownloadDelegate {
             bytesReceived: 0,
             startedAt: Date(),
             state: .downloading,
-            mimeType: mimeType
+            mimeType: mimeType,
+            profileId: originatingProfileId
         )
 
         ActiveDownloadTracker.shared.set(item, for: download)
@@ -608,7 +617,8 @@ extension BrowserState {
                         bytesReceived: Int64(decodedData.count),
                         startedAt: Date(),
                         completedAt: Date(),
-                        state: .completed
+                        state: .completed,
+                        profileId: currentProfileId
                     )
                     downloadStore.upsert(item, in: &downloads)
                     triggerFlyingDownloadAnimation(filename: item.filename, iconName: item.systemIconName)
@@ -630,7 +640,8 @@ extension BrowserState {
             originalURL: url,
             destinationURL: destinationURL,
             startedAt: Date(),
-            state: .downloading
+            state: .downloading,
+            profileId: currentProfileId
         )
         downloadStore.upsert(item, in: &downloads)
         triggerFlyingDownloadAnimation(filename: item.filename, iconName: item.systemIconName)
@@ -855,17 +866,27 @@ extension BrowserState {
         }
     }
 
-    /// Clears completed and failed downloads from the list (Safari-style clear).
-    func clearCompletedDownloads() {
+    /// Clears completed and failed downloads from the list (Safari-style clear), optionally scoped to a profile.
+    func clearCompletedDownloads(for profileId: UUID? = nil) {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-            downloadStore.clearCompleted(from: &downloads)
+            if let profId = profileId {
+                let idsToClear = Set(downloads.filter { ($0.profileId ?? defaultProfileId) == profId && $0.state != .downloading }.map(\.id))
+                downloadStore.removeEntries(ids: idsToClear, from: &downloads)
+            } else {
+                downloadStore.clearCompleted(from: &downloads)
+            }
         }
     }
 
-    /// Clears all downloads entirely.
-    func clearAllDownloads() {
+    /// Clears all downloads entirely, optionally scoped to a profile.
+    func clearAllDownloads(for profileId: UUID? = nil) {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-            downloadStore.clearAll(entries: &downloads)
+            if let profId = profileId {
+                let idsToClear = Set(downloads.filter { ($0.profileId ?? defaultProfileId) == profId }.map(\.id))
+                downloadStore.removeEntries(ids: idsToClear, from: &downloads)
+            } else {
+                downloadStore.clearAll(entries: &downloads)
+            }
         }
     }
 

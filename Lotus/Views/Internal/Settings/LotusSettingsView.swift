@@ -33,7 +33,9 @@ struct LotusSettingsView: View {
                 case .general:
                     GeneralSettingsSection()
                 case .appearance:
-                    AppearanceSettingsSection()
+                    AppearanceSettingsSection(browserState: browserState)
+                case .profiles:
+                    ProfilesSettingsSection(browserState: browserState, tabId: tabId)
                 case .tabs:
                     TabsSettingsSection(browserState: browserState)
                 case .media:

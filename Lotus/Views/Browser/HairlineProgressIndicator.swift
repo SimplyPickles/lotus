@@ -257,7 +257,6 @@ struct HairlineProgressIndicator: View {
                 currentProgress = 1.0
                 isFinishing = false
                 startFadeOut()
-                browserState.triggerPageLoadShimmer(for: activeTabId)
                 return false
             }
         } else {

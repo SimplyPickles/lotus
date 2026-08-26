@@ -201,7 +201,7 @@ struct LotusBookmarksView: View {
         .background(Color.clear)
         .transaction { $0.animation = nil }
         .sheet(isPresented: $isAddSheetPresented) {
-            AddBookmarkSheet(browserState: browserState)
+            AddBookmarkSheet(browserState: browserState, profileId: activeProfileId)
         }
         .sheet(item: $editingBookmark) { item in
             EditBookmarkSheet(browserState: browserState, bookmark: item)
@@ -214,6 +214,9 @@ struct LotusBookmarksView: View {
             selectedIds = selectedIds.intersection(valid)
             refreshSections()
         }
+        .onChange(of: browserState.currentProfileId) { _, _ in
+            refreshSections()
+        }
         .onChange(of: searchText) { _, _ in
             refreshSections()
         }
@@ -223,9 +226,16 @@ struct LotusBookmarksView: View {
         }
     }
 
+    private var activeProfileId: UUID {
+        if let tabId = tabId, let tab = browserState.tab(for: tabId) {
+            return tab.profileId ?? browserState.defaultProfileId
+        }
+        return browserState.currentProfileId
+    }
+
     private func refreshSections() {
         let result = BookmarkGrouping.filterAndGroup(
-            from: browserState.bookmarks,
+            from: browserState.bookmarks(for: activeProfileId),
             query: searchText
         )
         sections = result.sections
@@ -246,7 +256,7 @@ struct LotusBookmarksView: View {
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundColor(foregroundPrimary)
 
-                    Text("\(browserState.bookmarks.count) bookmarks")
+                    Text("\(browserState.bookmarks(for: activeProfileId).count) bookmarks")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(foregroundSecondary)
                 }
@@ -407,7 +417,7 @@ struct LotusBookmarksView: View {
     }
 
     private func exportBookmarks() {
-        let html = browserState.exportBookmarksHTML()
+        let html = browserState.exportBookmarksHTML(profileId: activeProfileId)
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.html]
         savePanel.nameFieldStringValue = "Lotus Bookmarks.html"
@@ -683,6 +693,7 @@ private struct BookmarkHeaderActionButton: View {
 
 private struct AddBookmarkSheet: View {
     @ObservedObject var browserState: BrowserState
+    var profileId: UUID? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String = ""
@@ -728,7 +739,8 @@ private struct AddBookmarkSheet: View {
         guard let url = URL(string: urlString) else { return }
         browserState.addOrUpdateBookmark(
             title: title,
-            url: url
+            url: url,
+            profileId: profileId
         )
     }
 }

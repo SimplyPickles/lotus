@@ -35,6 +35,10 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 stopZapMode(for: oldValue)
             }
             wakeTab(id: selectedTabId)
+            if let tab = tabs.first(where: { $0.id == selectedTabId }) {
+                let profId = tab.profileId ?? defaultProfileId
+                lastSelectedTabPerProfile[profId] = selectedTabId
+            }
             updateNavigationState()
             syncFocusStateForActiveTab()
             handlePictureInPictureOnTabSwitch(from: oldValue, to: selectedTabId)
@@ -47,6 +51,10 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     }
     @Published var currentTabIds: [UUID] {
         didSet {
+            if let firstId = currentTabIds.first, let tab = tabs.first(where: { $0.id == firstId }) {
+                let profId = tab.profileId ?? defaultProfileId
+                lastCurrentTabsPerProfile[profId] = currentTabIds
+            }
             if !currentTabIds.contains(selectedTabId), let first = currentTabIds.first {
                 selectedTabId = first
             }
@@ -97,6 +105,10 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var isQuitConfirmationPresented: Bool = false
     @Published var folderToCloseConfirmation: UUID? = nil
     @Published var pendingPopupRequest: PopupConfirmationRequest? = nil
+    @Published var spaceTransitionDirection: SpaceTransitionDirection = .forward
+    @Published var spaceSwipeOffset: CGFloat = 0
+    @Published var lastSelectedTabPerProfile: [UUID: UUID] = [:]
+    @Published var lastCurrentTabsPerProfile: [UUID: [UUID]] = [:]
     @Published var isClearAllDataConfirmationPresented: Bool = false
     @Published var isCommandPaletteOpen: Bool = false
     @Published var commandPaletteMode: CommandPaletteMode = .newTab
@@ -188,6 +200,9 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     // MARK: - Services & Stores
 
+    let profileStore = ProfileStore()
+    @Published var profiles: [Profile] = []
+    @Published var currentProfileId: UUID
     let sessionStore = SessionStore()
     let historyStore = HistoryStore()
     @Published var historyEntries: [HistoryItem] = []
@@ -202,17 +217,8 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var activeFlyingDownload: FlyingDownloadPayload? = nil
     @Published var downloadCatchPulseTrigger: Int = 0
     @Published var themeBloomTrigger: [UUID: Int] = [:]
-    @Published var pageLoadShimmerTrigger: [UUID: Int] = [:]
     @Published var shieldDeflectTrigger: [UUID: Int] = [:]
     private var lastShieldDeflectTime: [UUID: Date] = [:]
-    var initialShimmerPlayedTabs: Set<UUID> = []
-
-    func triggerPageLoadShimmer(for tabId: UUID) {
-        // Only trigger shimmer on the tab's initial load/creation, not on reloads or redirects
-        guard !initialShimmerPlayedTabs.contains(tabId) else { return }
-        initialShimmerPlayedTabs.insert(tabId)
-        pageLoadShimmerTrigger[tabId, default: 0] += 1
-    }
 
     func triggerShieldDeflect(for tabId: UUID) {
         let now = Date()
@@ -308,9 +314,26 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     init(tabs: [TabItem]? = nil, initialSelectedId: UUID? = nil, isPrivate: Bool = false) {
         self.isPrivate = isPrivate
+        let pStore = ProfileStore()
+        let loadedProfiles = isPrivate ? [Profile.defaultProfile] : pStore.load()
+        self.profiles = loadedProfiles
+        let defaultProfId = loadedProfiles.first(where: { $0.isDefault })?.id ?? Profile.defaultProfileId
         let store = SessionStore()
         let restoredSession = (!isPrivate && tabs == nil) ? store.load() : nil
         let startupBehavior = isPrivate ? "empty" : (UserDefaults.standard.string(forKey: "lotus.browser.startupBehavior") ?? "restore")
+
+        let activeProfId: UUID
+        if isPrivate {
+            activeProfId = Profile.defaultProfileId
+        } else if let savedId = restoredSession?.currentProfileId, loadedProfiles.contains(where: { $0.id == savedId }) {
+            activeProfId = savedId
+        } else {
+            activeProfId = defaultProfId
+        }
+        self.currentProfileId = activeProfId
+        if !isPrivate, let currentProf = loadedProfiles.first(where: { $0.id == activeProfId }) {
+            UserDefaults.standard.set(currentProf.color.accentColorEquivalent.rawValue, forKey: "lotus.browser.accentColor")
+        }
 
         if isPrivate {
             self.tabs = []
@@ -320,8 +343,13 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             self.currentTabIds = []
             self.isCommandPaletteOpen = true
         } else if let explicitTabs = tabs {
-            self.tabs = explicitTabs
-            let sel = initialSelectedId ?? explicitTabs.first?.id ?? UUID()
+            let normalizedTabs = explicitTabs.map { tab -> TabItem in
+                var t = tab
+                if t.profileId == nil { t.profileId = activeProfId }
+                return t
+            }
+            self.tabs = normalizedTabs
+            let sel = initialSelectedId ?? normalizedTabs.first?.id ?? UUID()
             self.selectedTabId = sel
             self.splitGroups = []
             self.currentTabIds = [sel]
@@ -343,10 +371,18 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
             // Restore folders; clear membership that points at a missing
             // folder, and never let pinned tabs carry folder membership.
-            let restoredFolders = (startupBehavior == "pinnedOnly") ? [] : (session.folders ?? [])
+            let rawFolders = (startupBehavior == "pinnedOnly") ? [] : (session.folders ?? [])
+            let restoredFolders = rawFolders.map { folder -> TabFolder in
+                var f = folder
+                if f.profileId == nil { f.profileId = defaultProfId }
+                return f
+            }
             let folderIds = Set(restoredFolders.map { $0.id })
             restoredTabs = restoredTabs.map { tab in
                 var tab = tab
+                if tab.profileId == nil {
+                    tab.profileId = defaultProfId
+                }
                 if let folderId = tab.folderId, !folderIds.contains(folderId) || tab.isPinned {
                     tab.folderId = nil
                 }
@@ -354,7 +390,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             }
             self.folders = restoredFolders
             self.tabs = restoredTabs
-            let sel = restoredTabs.contains(where: { $0.id == session.selectedTabId }) ? session.selectedTabId : (restoredTabs.first?.id ?? UUID())
+            let sel = restoredTabs.contains(where: { $0.id == session.selectedTabId }) ? session.selectedTabId : (restoredTabs.first(where: { ($0.profileId ?? defaultProfId) == activeProfId })?.id ?? restoredTabs.first?.id ?? UUID())
             self.selectedTabId = sel
             let validTabsSet = Set(restoredTabs.map { $0.id })
             let validGroups = (startupBehavior == "pinnedOnly") ? [] : (session.splitGroups ?? []).map { group in
@@ -373,7 +409,11 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             } else {
                 self.currentTabIds = [sel]
             }
-            self.recentlyClosed = session.recentlyClosed
+            self.recentlyClosed = session.recentlyClosed.map { rec in
+                var r = rec
+                if r.profileId == nil { r.profileId = defaultProfId }
+                return r
+            }
             self.isSidebarVisible = session.isSidebarVisible
             self.sidebarWidth = session.sidebarWidth
             if let savedZooms = session.tabZoomLevels {
@@ -385,9 +425,35 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 }
                 self.tabZoomLevels = loadedZooms
             }
+            if let savedSelected = session.lastSelectedTabPerProfile {
+                var loaded: [UUID: UUID] = [:]
+                for (key, val) in savedSelected {
+                    if let profUUID = UUID(uuidString: key), validTabsSet.contains(val) {
+                        loaded[profUUID] = val
+                    }
+                }
+                self.lastSelectedTabPerProfile = loaded
+            }
+            if let savedCurrents = session.lastCurrentTabsPerProfile {
+                var loaded: [UUID: [UUID]] = [:]
+                for (key, val) in savedCurrents {
+                    if let profUUID = UUID(uuidString: key) {
+                        let filtered = val.filter { validTabsSet.contains($0) }
+                        if !filtered.isEmpty {
+                            loaded[profUUID] = filtered
+                        }
+                    }
+                }
+                self.lastCurrentTabsPerProfile = loaded
+            }
         } else {
-            self.tabs = TabItem.samples
-            let sel = TabItem.samples.first?.id ?? UUID()
+            let sampleTabs = TabItem.samples.map { tab -> TabItem in
+                var t = tab
+                t.profileId = defaultProfId
+                return t
+            }
+            self.tabs = sampleTabs
+            let sel = sampleTabs.first?.id ?? UUID()
             self.selectedTabId = sel
             self.splitGroups = []
             self.currentTabIds = [sel]
@@ -404,6 +470,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         self.setupTerminationObserver()
         self.setupKeyMonitor()
+        self.setupScrollMonitor()
     }
 
     deinit {
@@ -414,6 +481,9 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         if let km = keyMonitor {
             NSEvent.removeMonitor(km)
+        }
+        if let sm = scrollMonitor {
+            NSEvent.removeMonitor(sm)
         }
     }
 
@@ -499,6 +569,144 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             return KeyboardShortcutRouter.handleKeyEvent(event, browserState: self)
+        }
+    }
+
+    // MARK: - Scroll / Trackpad Space Gesture Monitor
+
+    private var scrollMonitor: Any? = nil
+    private var horizontalScrollAccumulator: CGFloat = 0
+    private var isTrackpadSwipingSpaces: Bool = false
+    private var hasSwitchedInCurrentGesture: Bool = false
+    private var lastSpaceSwipeTime: Date = Date.distantPast
+
+    private func setupScrollMonitor() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self = self else { return event }
+            guard self.isSidebarVisible && !self.isPrivate && self.profiles.count > 1 else { return event }
+
+            guard let window = event.window ?? NSApp.keyWindow else { return event }
+            let mouseLoc = event.locationInWindow
+            let sidebarWidth = self.sidebarWidth
+            guard mouseLoc.x >= 0 && mouseLoc.x <= (sidebarWidth + 12) && mouseLoc.y >= 0 && mouseLoc.y <= window.frame.height else {
+                if self.isTrackpadSwipingSpaces {
+                    self.isTrackpadSwipingSpaces = false
+                    self.horizontalScrollAccumulator = 0
+                    self.hasSwitchedInCurrentGesture = false
+                    DispatchQueue.main.async {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            self.spaceSwipeOffset = 0
+                        }
+                    }
+                }
+                return event
+            }
+
+            let deltaX: CGFloat = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : (event.deltaX * 10)
+            let deltaY: CGFloat = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : (event.deltaY * 10)
+
+            // Has gesture phases (Trackpad continuous scroll)
+            if !event.phase.isEmpty {
+                if event.phase.contains(.began) {
+                    self.horizontalScrollAccumulator = 0
+                    self.isTrackpadSwipingSpaces = false
+                    self.hasSwitchedInCurrentGesture = false
+                }
+
+                if event.phase.contains(.changed) {
+                    guard !self.hasSwitchedInCurrentGesture else {
+                        return nil
+                    }
+
+                    if !self.isTrackpadSwipingSpaces && abs(deltaX) > abs(deltaY) * 1.15 && abs(deltaX) > 0.8 {
+                        self.isTrackpadSwipingSpaces = true
+                    }
+
+                    if self.isTrackpadSwipingSpaces {
+                        self.horizontalScrollAccumulator += deltaX
+
+                        let profiles = self.profiles
+                        let currIdx = profiles.firstIndex(where: { $0.id == self.currentProfileId }) ?? 0
+                        let isAtLeadingEdge = (currIdx == 0 && self.horizontalScrollAccumulator > 0)
+                        let isAtTrailingEdge = (currIdx == profiles.count - 1 && self.horizontalScrollAccumulator < 0)
+
+                        let rawOffset: CGFloat = (isAtLeadingEdge || isAtTrailingEdge)
+                            ? (self.horizontalScrollAccumulator * 0.25)
+                            : self.horizontalScrollAccumulator
+
+                        // Strictly clamp between -sidebarWidth and +sidebarWidth (1 space distance max)
+                        let clampedOffset = max(-sidebarWidth, min(sidebarWidth, rawOffset))
+
+                        DispatchQueue.main.async {
+                            self.spaceSwipeOffset = clampedOffset
+                        }
+                        return nil
+                    }
+                }
+
+                if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                    if self.isTrackpadSwipingSpaces && !self.hasSwitchedInCurrentGesture {
+                        let finalAccum = self.horizontalScrollAccumulator
+                        self.horizontalScrollAccumulator = 0
+                        self.isTrackpadSwipingSpaces = false
+                        self.hasSwitchedInCurrentGesture = true
+
+                        let threshold: CGFloat = 45.0
+                        let profiles = self.profiles
+                        let currIdx = profiles.firstIndex(where: { $0.id == self.currentProfileId }) ?? 0
+
+                        DispatchQueue.main.async {
+                            if finalAccum < -threshold && currIdx + 1 < profiles.count {
+                                self.switchToNextProfile()
+                            } else if finalAccum > threshold && currIdx > 0 {
+                                self.switchToPreviousProfile()
+                            } else {
+                                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+                                    self.spaceSwipeOffset = 0
+                                }
+                            }
+                        }
+                        return nil
+                    }
+                    self.horizontalScrollAccumulator = 0
+                    self.isTrackpadSwipingSpaces = false
+                    self.hasSwitchedInCurrentGesture = false
+                }
+            } else if !event.momentumPhase.isEmpty {
+                // 2. Trackpad Momentum Phase (user lifted fingers, trackpad coasting)
+                // Swallow momentum events so they do not skip past spaces or trigger duplicate transitions
+                if self.isTrackpadSwipingSpaces || self.hasSwitchedInCurrentGesture {
+                    if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+                        self.hasSwitchedInCurrentGesture = false
+                        self.isTrackpadSwipingSpaces = false
+                    }
+                    return nil
+                }
+            } else {
+                // 3. Discrete Mouse Wheel (notched physical wheel, no gesture phases)
+                if !event.hasPreciseScrollingDeltas && abs(deltaX) > abs(deltaY) * 1.5 && abs(deltaX) > 4.0 {
+                    let now = Date()
+                    if now.timeIntervalSince(self.lastSpaceSwipeTime) > 0.45 {
+                        let profiles = self.profiles
+                        let currIdx = profiles.firstIndex(where: { $0.id == self.currentProfileId }) ?? 0
+                        if deltaX < -8 && currIdx + 1 < profiles.count {
+                            self.lastSpaceSwipeTime = now
+                            DispatchQueue.main.async {
+                                self.switchToNextProfile()
+                            }
+                            return nil
+                        } else if deltaX > 8 && currIdx > 0 {
+                            self.lastSpaceSwipeTime = now
+                            DispatchQueue.main.async {
+                                self.switchToPreviousProfile()
+                            }
+                            return nil
+                        }
+                    }
+                }
+            }
+
+            return event
         }
     }
 }

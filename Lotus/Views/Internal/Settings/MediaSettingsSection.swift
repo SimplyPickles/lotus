@@ -114,7 +114,7 @@ private struct LowPowerPerformanceSettingsRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text("Suppresses animations and page shimmers during Low Power Mode")
+                Text("Suppresses animations and intensive visuals during Low Power Mode")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }

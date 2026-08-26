@@ -15,13 +15,16 @@ struct HistoryItem: Identifiable, Codable, Equatable {
     let visitedAt: Date
     /// Cached host for fast grouping / display.
     let host: String?
+    /// The profile this history entry was recorded in.
+    let profileId: UUID?
 
-    init(id: UUID = UUID(), title: String, url: URL, visitedAt: Date = Date()) {
+    init(id: UUID = UUID(), title: String, url: URL, visitedAt: Date = Date(), profileId: UUID? = nil) {
         self.id = id
         self.title = title
         self.url = url
         self.visitedAt = visitedAt
         self.host = url.host
+        self.profileId = profileId
     }
 
     /// Prettified host string for display (strips "www." prefix).

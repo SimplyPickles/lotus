@@ -303,6 +303,42 @@ private struct LotusMenuCommands: Commands {
             }
         }
 
+        // MARK: Profiles
+        CommandMenu("Profiles") {
+            if let state = AppDelegate.sharedBrowserState {
+                ForEach(state.profiles) { p in
+                    Button {
+                        state.switchProfile(to: p.id)
+                    } label: {
+                        HStack {
+                            Text(p.name)
+                            if p.id == state.currentProfileId {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Next Space") {
+                    state.switchToNextProfile()
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.control, .option])
+
+                Button("Previous Space") {
+                    state.switchToPreviousProfile()
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.control, .option])
+
+                Divider()
+
+                Button("Manage Profiles…") {
+                    state.openSettingsPage()
+                }
+            }
+        }
+
         // MARK: Develop
         CommandMenu("Develop") {
             Button("Reload Page") {

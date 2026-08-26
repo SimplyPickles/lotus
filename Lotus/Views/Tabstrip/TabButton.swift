@@ -32,6 +32,7 @@ struct TabButton: View {
     @State private var isHovered: Bool = false
     @State private var draftTitle: String = ""
     @FocusState private var isTitleFocused: Bool
+    @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
     @Environment(\.colorScheme) private var colorScheme
 
     private var effectiveHovered: Bool {
@@ -156,7 +157,7 @@ struct TabButton: View {
                     .opacity(isMultiSelected ? 1 : 0)
 
                 if isSelected {
-                    if let namespace = namespace {
+                    if let namespace = namespace, smoothTabSwitchAnimation {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(activeTabBackgroundColor)
                             .overlay(
@@ -175,6 +176,8 @@ struct TabButton: View {
                             )
                             .frame(width: targetWidth, height: 34)
                             .zIndex(10)
+                            .animation(nil, value: activeTabBackgroundColor)
+                            .animation(nil, value: isSelected)
                     }
                 }
             }

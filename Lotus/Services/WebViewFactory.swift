@@ -28,14 +28,31 @@ enum WebViewFactory {
         }
     }
 
-    /// Shared WebKit process pool ensuring all tabs and popup webviews
+    /// Shared WebKit process pool ensuring all default tabs and popup webviews
     /// share identical network session state, WebAuthn sessions, and cookies.
     static let sharedProcessPool = WKProcessPool()
 
+    /// Process pools isolated per custom profile ID.
+    static var profileProcessPools: [UUID: WKProcessPool] = [:]
+
+    static func processPool(for profileId: UUID?) -> WKProcessPool {
+        guard let profileId = profileId, profileId != Profile.defaultProfileId else {
+            return sharedProcessPool
+        }
+        if let existing = profileProcessPools[profileId] {
+            return existing
+        }
+        let newPool = WKProcessPool()
+        profileProcessPools[profileId] = newPool
+        return newPool
+    }
+
     /// Preferences applied to every configuration, including configurations
     /// handed to us by WebKit for popups (`createWebViewWith`).
-    static func applySharedPreferences(to configuration: WKWebViewConfiguration) {
-        configuration.processPool = sharedProcessPool
+    static func applySharedPreferences(to configuration: WKWebViewConfiguration, processPool: WKProcessPool? = nil) {
+        if let pool = processPool {
+            configuration.processPool = pool
+        }
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.isElementFullscreenEnabled = true
@@ -96,18 +113,30 @@ enum WebViewFactory {
     }
 
     /// Builds the full configuration for a new tab's webview.
-    static func makeConfiguration(messageHandler: WKScriptMessageHandler, isPrivate: Bool = false) -> WKWebViewConfiguration {
+    static func makeConfiguration(messageHandler: WKScriptMessageHandler, isPrivate: Bool = false, profileId: UUID? = nil) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        config.processPool = isPrivate ? WKProcessPool() : sharedProcessPool
-        config.websiteDataStore = isPrivate ? WKWebsiteDataStore.nonPersistent() : WKWebsiteDataStore.default()
-        configure(config, messageHandler: messageHandler)
+        if isPrivate {
+            config.processPool = WKProcessPool()
+            config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        } else if let profileId = profileId, profileId != Profile.defaultProfileId {
+            config.processPool = processPool(for: profileId)
+            if #available(macOS 14.0, *) {
+                config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profileId)
+            } else {
+                config.websiteDataStore = WKWebsiteDataStore.default()
+            }
+        } else {
+            config.processPool = sharedProcessPool
+            config.websiteDataStore = WKWebsiteDataStore.default()
+        }
+        configure(config, messageHandler: messageHandler, processPool: config.processPool)
         return config
     }
 
     /// Applies Lotus behavior to a newly-created configuration before it is
     /// used to construct a webview.
-    static func configure(_ configuration: WKWebViewConfiguration, messageHandler: WKScriptMessageHandler) {
-        applySharedPreferences(to: configuration)
+    static func configure(_ configuration: WKWebViewConfiguration, messageHandler: WKScriptMessageHandler, processPool: WKProcessPool? = nil) {
+        applySharedPreferences(to: configuration, processPool: processPool)
         // Internal pages load through the lotus:// scheme handler so they
         // participate in the webview's back-forward list.
         configuration.setURLSchemeHandler(LotusSchemeHandler(), forURLScheme: LotusSchemeHandler.scheme)

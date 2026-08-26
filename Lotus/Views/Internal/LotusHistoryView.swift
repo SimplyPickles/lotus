@@ -221,7 +221,7 @@ struct LotusHistoryView: View {
                     onConfirm: {
                         switch confirmation {
                         case .clearAll:
-                            browserState.clearHistory()
+                            browserState.clearHistory(for: activeProfileId)
                             selectedIds.removeAll()
                         case .deleteSelected(let ids):
                             browserState.removeHistoryEntries(ids: ids)
@@ -241,6 +241,9 @@ struct LotusHistoryView: View {
             selectedIds = selectedIds.intersection(valid)
             refreshSections()
         }
+        .onChange(of: browserState.currentProfileId) { _, _ in
+            refreshSections()
+        }
         .onChange(of: searchText) { _, _ in
             displayLimit = 60
             refreshSections(debounce: true)
@@ -258,10 +261,17 @@ struct LotusHistoryView: View {
         }
     }
 
+    private var activeProfileId: UUID {
+        if let tabId = tabId, let tab = browserState.tab(for: tabId) {
+            return tab.profileId ?? browserState.defaultProfileId
+        }
+        return browserState.currentProfileId
+    }
+
     private func refreshSections(debounce: Bool = false) {
         searchDebounceTask?.cancel()
 
-        let entries = browserState.historyEntries
+        let entries = browserState.historyEntries(for: activeProfileId)
         let query = searchText
         let limit = displayLimit
 
@@ -313,7 +323,7 @@ struct LotusHistoryView: View {
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundColor(foregroundPrimary)
 
-                    Text("\(browserState.historyEntries.count) pages")
+                    Text("\(browserState.historyEntries(for: activeProfileId).count) pages")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(foregroundSecondary)
                 }
@@ -332,9 +342,9 @@ struct LotusHistoryView: View {
                     HeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
                         selectedIds.removeAll()
                     }
-                } else if !browserState.historyEntries.isEmpty {
+                } else if !browserState.historyEntries(for: activeProfileId).isEmpty {
                     HeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: browserState.historyEntries.count)
+                        confirmationType = .clearAll(totalCount: browserState.historyEntries(for: activeProfileId).count)
                     }
                 }
             }

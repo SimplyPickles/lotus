@@ -28,14 +28,20 @@ struct BrowserChromeTheme {
         switch tintMode {
         case "neutral":
             self.themeColor = nil
-            self.isThemeLight = false
+            self.isThemeLight = colorScheme == .light
         case "systemAccent":
-            self.themeColor = Color.accentColor
-            self.isThemeLight = false
+            self.themeColor = browserState.currentProfile.color.color
+            let accent = LotusAccentColor(rawValue: browserState.currentProfile.color.accentColorEquivalent.rawValue) ?? .white
+            self.isThemeLight = accent == .yellow
         default: // "adaptive"
-            let rawTheme = (isInternal || !isShieldActive) ? nil : browserState.themeColor(for: id)
-            self.themeColor = rawTheme
-            self.isThemeLight = (isInternal || !isShieldActive) ? false : browserState.isThemeLight(for: id)
+            if isInternal {
+                self.themeColor = nil
+                self.isThemeLight = colorScheme == .light
+            } else {
+                let resolvedTheme = browserState.themeColor(for: id) ?? (id == browserState.selectedTabId ? browserState.activeThemeColor : nil)
+                self.themeColor = resolvedTheme
+                self.isThemeLight = resolvedTheme != nil ? browserState.isThemeLight(for: id) : (colorScheme == .light)
+            }
         }
         
         self.colorScheme = colorScheme

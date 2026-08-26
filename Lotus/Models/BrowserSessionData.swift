@@ -19,4 +19,7 @@ struct BrowserSessionData: Codable {
     var isSidebarVisible: Bool
     var sidebarWidth: CGFloat
     var tabZoomLevels: [String: CGFloat]?
+    var currentProfileId: UUID?
+    var lastSelectedTabPerProfile: [String: UUID]?
+    var lastCurrentTabsPerProfile: [String: [UUID]]?
 }

@@ -19,11 +19,11 @@ extension BrowserState {
     // MARK: - Tab Accessors
 
     var pinnedTabs: [TabItem] {
-        tabs.filter { $0.isPinned }
+        tabs.filter { $0.isPinned && ($0.profileId ?? defaultProfileId) == currentProfileId }
     }
 
     var unpinnedTabs: [TabItem] {
-        tabs.filter { !$0.isPinned }
+        tabs.filter { !$0.isPinned && ($0.profileId ?? defaultProfileId) == currentProfileId }
     }
 
     /// Tabs in visual order: pinned grid first, then unpinned rows left-to-right, top-to-bottom.
@@ -364,7 +364,7 @@ extension BrowserState {
     }
 
     func addTab(title: String = "New Tab", url: URL? = nil) {
-        var newTab = TabItem(title: title, url: url)
+        var newTab = TabItem(title: title, url: url, profileId: currentProfileId)
         withAnimation(Self.tabMutationAnimation) {
             // A tab opened while a foldered tab is active joins that folder,
             // at the top (right under the header).
@@ -400,7 +400,7 @@ extension BrowserState {
 
     @discardableResult
     func addTabAtEnd(title: String = "New Tab", url: URL? = nil, select: Bool = true) -> TabItem {
-        let newTab = TabItem(title: title, url: url)
+        let newTab = TabItem(title: title, url: url, profileId: currentProfileId)
         withAnimation(Self.tabMutationAnimation) {
             tabs.append(newTab)
             if select {
@@ -421,7 +421,7 @@ extension BrowserState {
 
     @discardableResult
     func addTabBelow(currentTabId: UUID? = nil, title: String = "New Tab", url: URL? = nil, select: Bool = true) -> TabItem {
-        var newTab = TabItem(title: title, url: url)
+        var newTab = TabItem(title: title, url: url, profileId: currentProfileId)
         let targetId = currentTabId ?? selectedTabId
 
         withAnimation(Self.tabMutationAnimation) {
@@ -472,7 +472,8 @@ extension BrowserState {
             folderName: folderName,
             folderColor: folderColor,
             folderNameOrigin: folderNameOrigin,
-            splitPartnerId: partnerId
+            splitPartnerId: partnerId,
+            profileId: closingTab.profileId ?? currentProfileId
         )
         recentlyClosed.append(record)
         if recentlyClosed.count > maxRecentlyClosed {
@@ -498,9 +499,19 @@ extension BrowserState {
         tabLoadingStates.removeValue(forKey: id)
         tabEstimatedProgress.removeValue(forKey: id)
         themeColors.removeValue(forKey: id)
-        pageLoadShimmerTrigger.removeValue(forKey: id)
-        initialShimmerPlayedTabs.remove(id)
         autoPiPTabs.remove(id)
+
+        for (profId, tabId) in lastSelectedTabPerProfile where tabId == id {
+            lastSelectedTabPerProfile.removeValue(forKey: profId)
+        }
+        for (profId, tabIds) in lastCurrentTabsPerProfile {
+            let filtered = tabIds.filter { $0 != id }
+            if filtered.isEmpty {
+                lastCurrentTabsPerProfile.removeValue(forKey: profId)
+            } else {
+                lastCurrentTabsPerProfile[profId] = filtered
+            }
+        }
 
         if let groupIndex = splitGroups.firstIndex(where: { $0.contains(id) }) {
             let remaining = splitGroups[groupIndex].filter { $0 != id }
@@ -521,11 +532,11 @@ extension BrowserState {
                 selectTab(list[closedIdx - 1].id)
             } else if let nextCurrent = currentTabIds.first {
                 selectedTabId = nextCurrent
-            } else if index < tabs.count {
+            } else if index < tabs.count, (tabs[index].profileId ?? defaultProfileId) == currentProfileId {
                 let nextId = tabs[index].id
                 selectedTabId = nextId
                 currentTabIds = [nextId]
-            } else if let last = tabs.last {
+            } else if let last = activeProfileTabs.last {
                 selectedTabId = last.id
                 currentTabIds = [last.id]
             } else {
@@ -534,13 +545,13 @@ extension BrowserState {
                 openCommandPalette()
             }
         } else if currentTabIds.isEmpty {
-            if let first = tabs.first?.id {
+            if let first = activeProfileTabs.first?.id {
                 currentTabIds = [first]
                 selectedTabId = first
             } else {
                 openCommandPalette()
             }
-        } else if tabs.isEmpty {
+        } else if activeProfileTabs.isEmpty {
             openCommandPalette()
         }
 
@@ -571,7 +582,8 @@ extension BrowserState {
             title: record.title,
             url: record.url,
             isPinned: record.isPinned,
-            folderId: record.folderId
+            folderId: record.folderId,
+            profileId: record.profileId ?? currentProfileId
         )
 
         // Reopen folder if it was deleted or ensure existing folder is expanded
@@ -581,7 +593,8 @@ extension BrowserState {
                     id: folderId,
                     name: record.folderName ?? "New Folder",
                     color: record.folderColor ?? .blue,
-                    nameOrigin: record.folderNameOrigin ?? .manual
+                    nameOrigin: record.folderNameOrigin ?? .manual,
+                    profileId: record.profileId ?? currentProfileId
                 )
                 folders.append(restoredFolder)
             }
@@ -647,7 +660,8 @@ extension BrowserState {
             url: originalTab.url,
             isPinned: originalTab.isPinned,
             folderId: originalTab.folderId,
-            customFaviconURL: originalTab.customFaviconURL
+            customFaviconURL: originalTab.customFaviconURL,
+            profileId: originalTab.profileId ?? currentProfileId
         )
 
         withAnimation(Self.tabMutationAnimation) {

@@ -65,9 +65,9 @@ extension BrowserState {
         }
     }
 
-    /// Focuses the existing Settings tab, or opens the integrated Settings page.
+    /// Focuses the existing Settings tab in the current profile, or opens a new Settings tab.
     func openSettingsPage() {
-        if let settingsTab = tabs.first(where: { $0.url == .lotusSettings }) {
+        if let settingsTab = activeProfileTabs.first(where: { $0.url == .lotusSettings }) {
             selectTab(settingsTab)
         } else {
             addTabBelow(title: "Settings", url: .lotusSettings)

@@ -210,6 +210,14 @@ enum LotusShortcuts {
         LotusShortcut("previousTabArrow", key: .leftArrow, modifiers: [.command, .option], action: animated {
             $0.selectPreviousTab()
         }),
+
+        // MARK: Spaces
+        LotusShortcut("nextSpace", key: .rightArrow, modifiers: [.control, .option], usesEventMonitor: true) {
+            $0.switchToNextProfile()
+        },
+        LotusShortcut("previousSpace", key: .leftArrow, modifiers: [.control, .option], usesEventMonitor: true) {
+            $0.switchToPreviousProfile()
+        },
     ] + (1...9).map { index in
         LotusShortcut("selectTab\(index)", key: KeyEquivalent(Character("\(index)")), modifiers: .command, action: animated {
             $0.selectTabAtIndex(index - 1)

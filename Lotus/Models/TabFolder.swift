@@ -98,6 +98,7 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
     var color: FolderColor
     var nameOrigin: FolderNameOrigin
     var isArchive: Bool
+    var profileId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -105,7 +106,8 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
         isCollapsed: Bool = false,
         color: FolderColor = .blue,
         nameOrigin: FolderNameOrigin = .automatic,
-        isArchive: Bool = false
+        isArchive: Bool = false,
+        profileId: UUID? = nil
     ) {
         self.id = id
         self.name = name
@@ -113,10 +115,11 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
         self.color = color
         self.nameOrigin = nameOrigin
         self.isArchive = isArchive
+        self.profileId = profileId
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, isCollapsed, color, nameOrigin, isArchive
+        case id, name, isCollapsed, color, nameOrigin, isArchive, profileId
     }
 
     init(from decoder: Decoder) throws {
@@ -127,5 +130,6 @@ struct TabFolder: Identifiable, Codable, Equatable, Hashable {
         self.color = try container.decodeIfPresent(FolderColor.self, forKey: .color) ?? .blue
         self.nameOrigin = try container.decodeIfPresent(FolderNameOrigin.self, forKey: .nameOrigin) ?? .manual
         self.isArchive = try container.decodeIfPresent(Bool.self, forKey: .isArchive) ?? false
+        self.profileId = try container.decodeIfPresent(UUID.self, forKey: .profileId)
     }
 }

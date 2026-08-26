@@ -59,13 +59,13 @@ final class HistoryStore {
     }
 
     /// Appends or merges a new entry and saves asynchronously.
-    func addEntry(title: String, url: URL, to entries: inout [HistoryItem]) {
+    func addEntry(title: String, url: URL, profileId: UUID? = nil, to entries: inout [HistoryItem]) {
         if let last = entries.last,
            last.url == url || (last.host == url.host && Date().timeIntervalSince(last.visitedAt) < 3.0) {
             let preferredTitle = !title.isEmpty && title != url.host ? title : last.title
-            entries[entries.count - 1] = HistoryItem(id: last.id, title: preferredTitle, url: url, visitedAt: Date())
+            entries[entries.count - 1] = HistoryItem(id: last.id, title: preferredTitle, url: url, visitedAt: Date(), profileId: profileId ?? last.profileId)
         } else {
-            let entry = HistoryItem(title: title, url: url)
+            let entry = HistoryItem(title: title, url: url, profileId: profileId)
             entries.append(entry)
             if entries.count > Self.maxEntries {
                 entries.removeFirst(entries.count - Self.maxEntries)
@@ -82,7 +82,7 @@ final class HistoryStore {
         guard !title.isEmpty else { return }
         for i in entries.indices.reversed() {
             if entries[i].url == url || (entries[i].url.host == url.host && entries[i].title == entries[i].displayHost) {
-                entries[i] = HistoryItem(id: entries[i].id, title: title, url: entries[i].url, visitedAt: entries[i].visitedAt)
+                entries[i] = HistoryItem(id: entries[i].id, title: title, url: entries[i].url, visitedAt: entries[i].visitedAt, profileId: entries[i].profileId)
                 let snapshot = entries
                 saveQueue.async { [weak self] in
                     self?.save(snapshot)

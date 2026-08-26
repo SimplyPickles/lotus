@@ -21,6 +21,7 @@ struct PinnedTabButton: View {
     var onToggleMute: () -> Void = {}
     var onCommitRename: (String) -> Void = { _ in }
     var onCancelRename: () -> Void = {}
+    var profileAccentColor: Color = .blue
     let onSelect: () -> Void
 
     @State private var isHovered: Bool = false
@@ -28,45 +29,109 @@ struct PinnedTabButton: View {
     @FocusState private var isTitleFocused: Bool
     @ObservedObject private var colorExtractor = FaviconColorExtractor.shared
     @AppStorage("lotus.browser.pinnedTabTintingMode") private var pinnedTabTintingMode: String = "adaptive"
+    @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
     @Environment(\.colorScheme) private var colorScheme
 
     private var effectiveHovered: Bool {
         isHovered && !isDraggingAnyTab
     }
 
-    private var faviconColors: [Color] {
-        switch pinnedTabTintingMode {
-        case "neutral":
-            return [colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.12)]
-        case "systemAccent":
-            return [Color.accentColor]
-        default: // "adaptive"
-            var rawColors: [Color] = []
-            if let faviconURL = tab.faviconURL, let extracted = colorExtractor.colors(for: faviconURL), !extracted.isEmpty {
-                rawColors = extracted
-            } else if let faviconURL = tab.faviconURL, let extracted = colorExtractor.color(for: faviconURL) {
-                rawColors = [extracted]
-            }
-
-            let vibrant = rawColors.compactMap { Self.makeVibrant($0) }
-            if !vibrant.isEmpty {
-                return Array(vibrant.prefix(3))
-            }
-
-            return Self.vibrantDomainColors(for: tab)
+    private var adaptiveColor: Color {
+        if let faviconURL = tab.faviconURL,
+           let extracted = colorExtractor.colors(for: faviconURL),
+           let first = extracted.compactMap({ Self.makeVibrant($0) }).first {
+            return first
+        } else if let faviconURL = tab.faviconURL,
+                  let extracted = colorExtractor.color(for: faviconURL),
+                  let vibrant = Self.makeVibrant(extracted) {
+            return vibrant
         }
+        return Self.vibrantDomainColors(for: tab).first ?? profileAccentColor
     }
 
     private var primaryColor: Color {
-        faviconColors.first ?? Self.vibrantDomainColors(for: tab)[0]
+        switch pinnedTabTintingMode {
+        case "neutral":
+            return colorScheme == .dark ? Color.white.opacity(0.40) : Color.black.opacity(0.30)
+        case "systemAccent":
+            return profileAccentColor
+        default: // "adaptive"
+            return adaptiveColor
+        }
     }
 
-    private var secondaryColor: Color? {
-        faviconColors.count > 1 ? faviconColors[1] : nil
+    private var cardFillColor: Color {
+        if colorScheme == .light {
+            if isSelected {
+                return Color.white
+            } else if pinnedTabTintingMode == "adaptive" {
+                return effectiveHovered ? primaryColor.opacity(0.10) : primaryColor.opacity(0.05)
+            } else if pinnedTabTintingMode == "systemAccent" {
+                return effectiveHovered ? profileAccentColor.opacity(0.10) : profileAccentColor.opacity(0.05)
+            } else {
+                return effectiveHovered ? Color.black.opacity(0.08) : Color.black.opacity(0.05)
+            }
+        } else {
+            if isSelected {
+                return Color.white.opacity(0.14)
+            } else if pinnedTabTintingMode == "adaptive" {
+                return effectiveHovered ? primaryColor.opacity(0.12) : primaryColor.opacity(0.06)
+            } else if pinnedTabTintingMode == "systemAccent" {
+                return effectiveHovered ? profileAccentColor.opacity(0.12) : profileAccentColor.opacity(0.06)
+            } else {
+                return effectiveHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.05)
+            }
+        }
     }
 
-    private var tertiaryColor: Color? {
-        faviconColors.count > 2 ? faviconColors[2] : nil
+    private var cardStrokeColor: Color {
+        if isSelected {
+            return primaryColor
+        } else if isInSplit {
+            return primaryColor.opacity(0.60)
+        } else if effectiveHovered {
+            if pinnedTabTintingMode == "neutral" {
+                return colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+            } else {
+                return primaryColor.opacity(0.40)
+            }
+        } else {
+            if pinnedTabTintingMode == "neutral" {
+                return colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)
+            } else {
+                return primaryColor.opacity(0.20)
+            }
+        }
+    }
+
+    private var cardStrokeWidth: CGFloat {
+        if isSelected {
+            return 2.0
+        } else if isInSplit {
+            return 1.5
+        } else {
+            return 1.0
+        }
+    }
+
+    private var cardShadowColor: Color {
+        if isSelected {
+            if pinnedTabTintingMode == "neutral" {
+                return Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08)
+            } else {
+                return primaryColor.opacity(colorScheme == .dark ? 0.35 : 0.22)
+            }
+        } else {
+            return Color.black.opacity(effectiveHovered ? 0.04 : 0.02)
+        }
+    }
+
+    private var cardShadowRadius: CGFloat {
+        isSelected ? 3.5 : (effectiveHovered ? 1.2 : 0.8)
+    }
+
+    private var cardShadowY: CGFloat {
+        isSelected ? 1.2 : 0.4
     }
 
     /// Checks if a color is non-plain (not white, gray, black, or washed out) and boosts its saturation if needed.
@@ -95,7 +160,7 @@ struct PinnedTabButton: View {
             hash = ((hash << 5) &+ hash) &+ UInt64(byte)
         }
 
-        // 12 curated vibrant hues: Sapphire, Emerald, Violet, Rose, Amber, Cyan, Indigo, Magenta, Coral, Teal, Amethyst, Ruby
+        // 12 curated vibrant hues
         let hues: [CGFloat] = [
             0.58, // Sapphire Blue
             0.38, // Emerald Green
@@ -120,132 +185,6 @@ struct PinnedTabButton: View {
         let c3 = Color(nsColor: NSColor(hue: tertiaryHue, saturation: 0.68, brightness: 0.88, alpha: 1.0))
 
         return [c1, c2, c3]
-    }
-
-    private var backgroundGradient: LinearGradient {
-        let startOpacity: Double
-        let endOpacity: Double
-
-        if colorScheme == .light {
-            if isSelected {
-                startOpacity = 0.08
-                endOpacity = 0.03
-            } else if isInSplit {
-                startOpacity = 0.06
-                endOpacity = 0.02
-            } else if effectiveHovered {
-                startOpacity = 0.05
-                endOpacity = 0.02
-            } else {
-                startOpacity = 0.03
-                endOpacity = 0.01
-            }
-        } else {
-            if isSelected {
-                startOpacity = 0.10
-                endOpacity = 0.04
-            } else if isInSplit {
-                startOpacity = 0.07
-                endOpacity = 0.03
-            } else if effectiveHovered {
-                startOpacity = 0.05
-                endOpacity = 0.02
-            } else {
-                startOpacity = 0.03
-                endOpacity = 0.01
-            }
-        }
-
-        var stops: [Gradient.Stop] = [
-            .init(color: primaryColor.opacity(startOpacity), location: 0.0),
-            .init(color: primaryColor.opacity(startOpacity * 0.85 + endOpacity * 0.15), location: 0.60)
-        ]
-
-        if let tertiary = tertiaryColor, let secondary = secondaryColor {
-            stops.append(.init(color: secondary.opacity(startOpacity * 0.4 + endOpacity * 0.6), location: 0.85))
-            stops.append(.init(color: tertiary.opacity(endOpacity), location: 1.0))
-        } else if let secondary = secondaryColor {
-            stops.append(.init(color: secondary.opacity(endOpacity), location: 1.0))
-        } else {
-            stops.append(.init(color: primaryColor.opacity(endOpacity), location: 1.0))
-        }
-
-        return LinearGradient(
-            stops: stops,
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var borderGradient: LinearGradient {
-        let startOpacity: Double
-        let endOpacity: Double
-
-        if colorScheme == .light {
-            if isSelected {
-                startOpacity = 0.75
-                endOpacity = 0.50
-            } else if isInSplit {
-                startOpacity = 0.60
-                endOpacity = 0.40
-            } else if effectiveHovered {
-                startOpacity = 0.50
-                endOpacity = 0.32
-            } else {
-                startOpacity = 0.35
-                endOpacity = 0.20
-            }
-        } else {
-            if isSelected {
-                startOpacity = 0.85
-                endOpacity = 0.60
-            } else if isInSplit {
-                startOpacity = 0.70
-                endOpacity = 0.48
-            } else if effectiveHovered {
-                startOpacity = 0.58
-                endOpacity = 0.38
-            } else {
-                startOpacity = 0.42
-                endOpacity = 0.25
-            }
-        }
-
-        var stops: [Gradient.Stop] = [
-            .init(color: primaryColor.opacity(startOpacity), location: 0.0),
-            .init(color: primaryColor.opacity(startOpacity * 0.85 + endOpacity * 0.15), location: 0.60)
-        ]
-
-        if let tertiary = tertiaryColor, let secondary = secondaryColor {
-            stops.append(.init(color: secondary.opacity(startOpacity * 0.4 + endOpacity * 0.6), location: 0.85))
-            stops.append(.init(color: tertiary.opacity(endOpacity), location: 1.0))
-        } else if let secondary = secondaryColor {
-            stops.append(.init(color: secondary.opacity(endOpacity), location: 1.0))
-        } else {
-            stops.append(.init(color: primaryColor.opacity(endOpacity), location: 1.0))
-        }
-
-        return LinearGradient(
-            stops: stops,
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var shadowColor: Color {
-        if colorScheme == .light {
-            return isSelected ? primaryColor.opacity(0.12) : Color.black.opacity(effectiveHovered ? 0.04 : 0.02)
-        } else {
-            return isSelected ? primaryColor.opacity(0.18) : Color.black.opacity(effectiveHovered ? 0.10 : 0.04)
-        }
-    }
-
-    private var shadowRadius: CGFloat {
-        isSelected ? 1.8 : (effectiveHovered ? 1.2 : 0.8)
-    }
-
-    private var shadowY: CGFloat {
-        isSelected ? 0.8 : 0.4
     }
 
     var body: some View {
@@ -292,36 +231,18 @@ struct PinnedTabButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(height: 38)
         .background(
-            ZStack {
-                // Base opaque card layer so pinned tabs are never see-through transparent in light mode
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(
-                        colorScheme == .light
-                            ? (isSelected
-                                ? Color.white.opacity(0.95)
-                                : (effectiveHovered
-                                    ? Color.white.opacity(0.85)
-                                    : Color.white.opacity(0.70)))
-                            : (isSelected
-                                ? Color.white.opacity(0.10)
-                                : (effectiveHovered
-                                    ? Color.white.opacity(0.06)
-                                    : Color.white.opacity(0.035)))
-                    )
-
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(backgroundGradient)
-            }
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(cardFillColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(borderGradient, lineWidth: isSelected ? 2.0 : (isInSplit ? 1.75 : (effectiveHovered ? 1.6 : 1.35)))
+                .strokeBorder(cardStrokeColor, lineWidth: cardStrokeWidth)
         )
         .shadow(
-            color: shadowColor,
-            radius: shadowRadius,
+            color: cardShadowColor,
+            radius: cardShadowRadius,
             x: 0,
-            y: shadowY
+            y: cardShadowY
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -333,6 +254,8 @@ struct PinnedTabButton: View {
                 .opacity(isMultiSelected ? 1 : 0)
         )
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: isSelected)
+        .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: primaryColor)
         .onTapGesture {
             if !isRenaming {
                 onSelect()

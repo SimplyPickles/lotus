@@ -32,6 +32,7 @@ struct DownloadItem: Identifiable, Codable, Equatable {
     var errorMessage: String?
     var bytesPerSecond: Double?
     var resumeData: Data?
+    var profileId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -46,7 +47,8 @@ struct DownloadItem: Identifiable, Codable, Equatable {
         mimeType: String? = nil,
         errorMessage: String? = nil,
         bytesPerSecond: Double? = nil,
-        resumeData: Data? = nil
+        resumeData: Data? = nil,
+        profileId: UUID? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -61,6 +63,7 @@ struct DownloadItem: Identifiable, Codable, Equatable {
         self.errorMessage = errorMessage
         self.bytesPerSecond = bytesPerSecond
         self.resumeData = resumeData
+        self.profileId = profileId
     }
 
     // MARK: - Computed Properties

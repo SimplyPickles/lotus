@@ -32,6 +32,7 @@ struct SplitTabRow: View {
     let onDragEnded: (DragGesture.Value) -> Void
     let contextMenuBuilder: (TabItem) -> AnyView
 
+    @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
     @Environment(\.colorScheme) private var colorScheme
 
     private var isSplitActive: Bool {
@@ -118,7 +119,8 @@ struct SplitTabRow: View {
                         }
                     }
                     .frame(width: totalWidth, height: 34)
-                    .animation(.spring(response: 0.20, dampingFraction: 0.86), value: selectedTabId)
+                    .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: selectedTabId)
+                    .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: activeTabBackgroundColor)
                 }
             }
         )

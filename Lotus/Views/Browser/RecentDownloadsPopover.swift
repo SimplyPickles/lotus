@@ -18,11 +18,11 @@ struct RecentDownloadsPopover: View {
     @State private var hoveredItemId: UUID? = nil
 
     private var recentDownloads: [DownloadItem] {
-        Array(browserState.downloads.prefix(8))
+        Array(browserState.activeProfileDownloads.prefix(8))
     }
 
     private var hasCompletedDownloads: Bool {
-        browserState.downloads.contains(where: { $0.state != .downloading })
+        browserState.activeProfileDownloads.contains(where: { $0.state != .downloading })
     }
 
     private var foregroundPrimary: Color {
@@ -44,7 +44,7 @@ struct RecentDownloadsPopover: View {
                 Spacer()
 
                 Button {
-                    browserState.clearCompletedDownloads()
+                    browserState.clearCompletedDownloads(for: browserState.currentProfileId)
                 } label: {
                     Text("Clear")
                         .font(.system(size: 12, weight: .medium))

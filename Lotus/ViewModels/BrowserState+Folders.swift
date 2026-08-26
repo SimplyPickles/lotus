@@ -38,7 +38,7 @@ extension BrowserState {
     /// Retrieves or lazily creates the persistent Archive folder at the bottom of the tab list.
     @discardableResult
     func getOrCreateArchiveFolder() -> TabFolder {
-        if let existing = folders.first(where: { $0.isArchive }) {
+        if let existing = folders.first(where: { $0.isArchive && ($0.profileId ?? defaultProfileId) == currentProfileId }) {
             return existing
         }
         let archiveFolder = TabFolder(
@@ -46,7 +46,8 @@ extension BrowserState {
             isCollapsed: true,
             color: .grey,
             nameOrigin: .manual,
-            isArchive: true
+            isArchive: true,
+            profileId: currentProfileId
         )
         folders.append(archiveFolder)
         return archiveFolder
@@ -56,10 +57,10 @@ extension BrowserState {
     func archiveInactiveTabsIfNeeded() {
         guard let threshold = autoArchiveIntervalSeconds else { return }
         let cutoffDate = Date().addingTimeInterval(-threshold)
-        let archiveId = folders.first(where: { $0.isArchive })?.id
+        let archiveId = folders.first(where: { $0.isArchive && ($0.profileId ?? defaultProfileId) == currentProfileId })?.id
 
         var tabsToArchive: [UUID] = []
-        for tab in tabs {
+        for tab in activeProfileTabs {
             // Do not archive pinned tabs, active/split visible tabs, or tabs already in the Archive folder
             guard !tab.isPinned,
                   archiveId == nil || tab.folderId != archiveId,
@@ -82,8 +83,8 @@ extension BrowserState {
 
     /// Archives all unpinned tabs (excluding tabs already in the Archive folder).
     func archiveAllTabs() {
-        let archiveId = folders.first(where: { $0.isArchive })?.id
-        let tabsToArchive = tabs.filter {
+        let archiveId = folders.first(where: { $0.isArchive && ($0.profileId ?? defaultProfileId) == currentProfileId })?.id
+        let tabsToArchive = activeProfileTabs.filter {
             !$0.isPinned && (archiveId == nil || $0.folderId != archiveId)
         }.map(\.id)
 
@@ -110,7 +111,7 @@ extension BrowserState {
     /// Returns the next default folder color by cycling through the palette.
     func nextFolderColor() -> FolderColor {
         let palette = FolderColor.allCases
-        let index = folders.count % palette.count
+        let index = activeProfileFolders.count % palette.count
         return palette[index]
     }
 
@@ -129,7 +130,8 @@ extension BrowserState {
         let newFolder = TabFolder(
             name: initialFolderName(name, tabIds: tabIds, origin: effectiveOrigin),
             color: assignedColor,
-            nameOrigin: effectiveOrigin
+            nameOrigin: effectiveOrigin,
+            profileId: currentProfileId
         )
         withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
             folders.append(newFolder)

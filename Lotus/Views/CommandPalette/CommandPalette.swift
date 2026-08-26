@@ -102,13 +102,13 @@ struct CommandPalette: View {
     /// Inline ghost text remainder shown directly behind the cursor.
     private var ghostRemainder: String? {
         guard activeProvider == nil, selectedIndex == nil, !searchText.isEmpty else { return nil }
-        return suggestionService.ghostRemainder(for: searchText, history: browserState.historyEntries)
+        return suggestionService.ghostRemainder(for: searchText, history: browserState.activeProfileHistoryEntries)
     }
 
     /// Full string for the active ghost autocomplete match.
     private var fullGhostMatch: String? {
         guard activeProvider == nil, selectedIndex == nil, !searchText.isEmpty else { return nil }
-        return suggestionService.fullGhostMatch(for: searchText, history: browserState.historyEntries)
+        return suggestionService.fullGhostMatch(for: searchText, history: browserState.activeProfileHistoryEntries)
     }
 
     var body: some View {
@@ -219,8 +219,8 @@ struct CommandPalette: View {
             let areSuggestionsEnabled = UserDefaults.standard.object(forKey: "lotus.browser.searchSuggestionsEnabled") as? Bool ?? true
             suggestionService.update(
                 for: newValue,
-                history: browserState.historyEntries,
-                bookmarks: browserState.bookmarks,
+                history: browserState.activeProfileHistoryEntries,
+                bookmarks: browserState.activeProfileBookmarks,
                 allowsRemoteSuggestions: activeProvider == nil && areSuggestionsEnabled
             )
         }

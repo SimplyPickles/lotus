@@ -158,7 +158,7 @@ struct BrowserToolbar: View {
         case .splitView:
             splitViewButton
         case .downloads:
-            if !browserState.downloads.isEmpty || browserState.activeFlyingDownload != nil || isDownloadsPopoverPresented {
+            if !browserState.activeProfileDownloads.isEmpty || browserState.activeFlyingDownload != nil || isDownloadsPopoverPresented {
                 downloadsButton
             }
         case .shields:
@@ -296,7 +296,8 @@ struct BrowserToolbar: View {
         if shouldShowSplit {
             padding += 22
         }
-        let isCurrentBookmarked = browserState.isBookmarked(url: currentURL)
+        let activeTabProfileId = browserState.tab(for: activeTabId)?.profileId ?? browserState.currentProfileId
+        let isCurrentBookmarked = browserState.isBookmarked(url: currentURL, profileId: activeTabProfileId)
         let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
         if shouldShowBookmark {
             padding += 22
@@ -430,7 +431,8 @@ struct BrowserToolbar: View {
                         )
                     }
 
-                    let isCurrentBookmarked = browserState.isBookmarked(url: currentURL)
+                    let activeTabProfileId = browserState.tab(for: activeTabId)?.profileId ?? browserState.currentProfileId
+                    let isCurrentBookmarked = browserState.isBookmarked(url: currentURL, profileId: activeTabProfileId)
                     let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
                     if shouldShowBookmark {
                         Button {

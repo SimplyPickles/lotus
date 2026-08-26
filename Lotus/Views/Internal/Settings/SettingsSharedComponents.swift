@@ -10,6 +10,7 @@ import SwiftUI
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "General & Search"
     case appearance = "Appearance"
+    case profiles = "Profiles"
     case tabs = "Tabs & Sidebar"
     case media = "Media & Performance"
     case shields = "Shields & Blocking"
@@ -24,6 +25,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .appearance: return "paintpalette"
+        case .profiles: return "person.crop.circle.badge.plus"
         case .tabs: return "sidebar.left"
         case .media: return "bolt"
         case .shields: return "shield.fill"
@@ -112,6 +114,19 @@ enum LotusAccentColor: String, CaseIterable, Identifiable {
         }
     }
 
+    var folderColorEquivalent: FolderColor {
+        switch self {
+        case .white: return .grey
+        case .blue: return .blue
+        case .purple: return .purple
+        case .pink: return .pink
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        }
+    }
+
     var hexString: String {
         switch self {
         case .white:
@@ -146,6 +161,21 @@ enum LotusAccentColor: String, CaseIterable, Identifiable {
 
     static var currentAccentHex: String {
         current.hexString
+    }
+}
+
+extension FolderColor {
+    var accentColorEquivalent: LotusAccentColor {
+        switch self {
+        case .blue: return .blue
+        case .purple: return .purple
+        case .pink: return .pink
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .grey: return .white
+        }
     }
 }
 

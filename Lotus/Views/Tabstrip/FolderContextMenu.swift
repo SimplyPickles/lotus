@@ -189,7 +189,31 @@ final class FolderContextMenuNSView: NSView {
         deleteItem.target = self
         menu.addItem(deleteItem)
 
+        // 5. Move to Profile
+        if browserState.profiles.count > 1 {
+            let currentProfileId = folder.profileId ?? browserState.defaultProfileId
+            let otherProfiles = browserState.profiles.filter { $0.id != currentProfileId }
+            if !otherProfiles.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let moveMenu = NSMenu()
+                for p in otherProfiles {
+                    let pItem = NSMenuItem(title: p.name, action: #selector(handleMoveToProfile(_:)), keyEquivalent: "")
+                    pItem.target = self
+                    pItem.representedObject = p.id
+                    moveMenu.addItem(pItem)
+                }
+                let moveItem = NSMenuItem(title: "Move Folder to Profile", action: nil, keyEquivalent: "")
+                moveItem.submenu = moveMenu
+                menu.addItem(moveItem)
+            }
+        }
+
         return menu
+    }
+
+    @objc private func handleMoveToProfile(_ sender: NSMenuItem) {
+        guard let targetProfileId = sender.representedObject as? UUID, let folder = folder, let browserState = browserState else { return }
+        browserState.moveFolder(folder.id, toProfile: targetProfileId)
     }
 
     @objc private func handleRename() {

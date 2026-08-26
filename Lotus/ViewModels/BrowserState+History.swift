@@ -21,7 +21,8 @@ extension BrowserState {
         guard url.scheme == "http" || url.scheme == "https" else { return }
         guard let host = url.host, !host.isEmpty else { return }
 
-        historyStore.addEntry(title: title, url: url, to: &historyEntries)
+        let profId = activeTab?.profileId ?? currentProfileId
+        historyStore.addEntry(title: title, url: url, profileId: profId, to: &historyEntries)
     }
 
     /// Updates the title of the most recent browsing history visit for a URL.
@@ -38,8 +39,13 @@ extension BrowserState {
         historyStore.removeEntries(ids: ids, from: &historyEntries)
     }
 
-    /// Clears all browsing history.
-    func clearHistory() {
-        historyStore.clearAll(entries: &historyEntries)
+    /// Clears browsing history, optionally scoped to a profile.
+    func clearHistory(for profileId: UUID? = nil) {
+        if let profId = profileId {
+            let idsToClear = Set(historyEntries.filter { ($0.profileId ?? defaultProfileId) == profId }.map(\.id))
+            historyStore.removeEntries(ids: idsToClear, from: &historyEntries)
+        } else {
+            historyStore.clearAll(entries: &historyEntries)
+        }
     }
 }
