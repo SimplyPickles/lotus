@@ -210,6 +210,7 @@ struct LotusHistoryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
+        .focusEffectDisabled()
         .transaction { $0.animation = nil }
         .overlay {
             if let confirmation = confirmationType {

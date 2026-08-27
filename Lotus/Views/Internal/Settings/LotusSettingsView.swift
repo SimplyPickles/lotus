@@ -13,6 +13,15 @@ struct LotusSettingsView: View {
     @ObservedObject private var contentBlocker = ContentBlockerService.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedCategory: SettingsCategory = .general
+    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
+
+    private var activeAccentColor: Color {
+        if !browserState.isPrivate {
+            return browserState.currentProfile.color.color
+        }
+        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
+        return accent.color
+    }
 
     private var foregroundPrimary: Color {
         colorScheme == .dark ? .white : Color(nsColor: .labelColor)
@@ -23,84 +32,111 @@ struct LotusSettingsView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                headerSection
-                    .padding(.top, 40)
-                    .padding(.bottom, -4)
+        HStack(spacing: 0) {
+            // MARK: - Left Sidebar Navigation
+            VStack(spacing: 0) {
+                // Category List
+                ScrollView(.vertical, showsIndicators: false) {
+                    Spacer()
+                    Spacer()
+                    
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(SettingsCategoryGroup.allCases) { group in
+                            let categoriesInGroup = SettingsCategory.allCases.filter { $0.group == group }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(group.rawValue)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.38) : Color.black.opacity(0.42))
+                                    .padding(.leading, 8)
+                                    .padding(.bottom, 2)
 
-                switch selectedCategory {
-                case .general:
-                    GeneralSettingsSection()
-                case .appearance:
-                    AppearanceSettingsSection(browserState: browserState)
-                case .profiles:
-                    ProfilesSettingsSection(browserState: browserState, tabId: tabId)
-                case .tabs:
-                    TabsSettingsSection(browserState: browserState)
-                case .media:
-                    MediaSettingsSection(browserState: browserState)
-                case .shields:
-                    ShieldsSettingsSection(contentBlocker: contentBlocker)
-                case .privacy:
-                    PrivacySettingsSection(browserState: browserState, tabId: tabId, contentBlocker: contentBlocker)
-                case .downloads:
-                    DownloadsSettingsSection(browserState: browserState, tabId: tabId)
-                case .shortcuts:
-                    ShortcutsSettingsSection(browserState: browserState, tabId: tabId)
-                case .about:
-                    AboutSettingsSection(browserState: browserState)
-                }
-
-                Spacer(minLength: 40)
-            }
-            .frame(maxWidth: 680, alignment: .leading)
-            .padding(.horizontal, 32)
-            .frame(maxWidth: .infinity)
-        }
-        .background(Color.clear)
-        .transaction { $0.animation = nil }
-    }
-
-    // MARK: - Header
-
-    private var headerSection: some View {
-        VStack(spacing: 16) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 24, weight: .light))
-                    .foregroundColor(foregroundPrimary)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Settings")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(foregroundPrimary)
-
-                    Text("Customize Lotus preferences & behaviors")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(foregroundSecondary)
-                }
-
-                Spacer()
-            }
-
-            // Category Filter Bar
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(SettingsCategory.allCases) { category in
-                        SettingsCategoryPill(
-                            category: category,
-                            isSelected: selectedCategory == category,
-                            action: {
-                                withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-                                    selectedCategory = category
+                                ForEach(categoriesInGroup) { category in
+                                    SettingsSidebarItem(
+                                        category: category,
+                                        isSelected: selectedCategory == category,
+                                        accentColor: activeAccentColor,
+                                        onSelect: {
+                                            withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+                                                selectedCategory = category
+                                            }
+                                        }
+                                    )
                                 }
                             }
-                        )
+                        }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.top, 0)
+                    .padding(.bottom, 20)
                 }
-                .padding(.vertical, 2)
+
+                Spacer(minLength: 0)
+            }
+            .frame(width: 215)
+            .background(
+                colorScheme == .dark
+                    ? Color(nsColor: .windowBackgroundColor).opacity(0.4)
+                    : Color(nsColor: .windowBackgroundColor).opacity(0.6)
+            )
+
+            // Vertical Divider
+            Rectangle()
+                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                .frame(width: 0.5)
+
+            // MARK: - Right Detail Content Area
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Header for active category
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(selectedCategory.title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(foregroundPrimary)
+
+                        Text(selectedCategory.subtitle)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(foregroundSecondary)
+                    }
+                    .padding(.top, 48)
+                    .padding(.bottom, 2)
+
+                    // Active Section View
+                    switch selectedCategory {
+                    case .general:
+                        GeneralSettingsSection()
+                    case .appearance:
+                        AppearanceSettingsSection(browserState: browserState)
+                    case .profiles:
+                        ProfilesSettingsSection(browserState: browserState, tabId: tabId)
+                    case .tabs:
+                        TabsSettingsSection(browserState: browserState)
+                    case .media:
+                        MediaSettingsSection(browserState: browserState)
+                    case .shields:
+                        ShieldsSettingsSection(contentBlocker: contentBlocker)
+                    case .privacy:
+                        PrivacySettingsSection(browserState: browserState, tabId: tabId, contentBlocker: contentBlocker)
+                    case .downloads:
+                        DownloadsSettingsSection(browserState: browserState, tabId: tabId)
+                    case .shortcuts:
+                        ShortcutsSettingsSection(browserState: browserState, tabId: tabId)
+                    case .about:
+                        AboutSettingsSection(browserState: browserState)
+                    }
+
+                    Spacer(minLength: 40)
+                }
+                .frame(maxWidth: 620, alignment: .leading)
+                .padding(.horizontal, 36)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
+        .tint(activeAccentColor)
+        .accentColor(activeAccentColor)
+        .background(
+            Color(nsColor: .windowBackgroundColor)
+        )
+        .focusEffectDisabled()
+        .transaction { $0.animation = nil }
     }
 }

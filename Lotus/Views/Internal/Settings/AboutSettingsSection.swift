@@ -9,20 +9,56 @@ import SwiftUI
 
 struct AboutSettingsSection: View {
     @ObservedObject var browserState: BrowserState
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("lotus.browser.userAgentMode") private var userAgentMode: String = "safari"
     @AppStorage("lotus.browser.customUserAgentString") private var customUserAgentString: String = ""
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.about.rawValue, systemImage: SettingsCategory.about.systemImage) {
-            SettingsRow(
-                systemImage: "info.circle",
-                title: "Lotus Browser",
-                detail: "Version 1.0 (macOS)"
-            )
-            SettingsDivider()
-            UserAgentSettingsRow(userAgentMode: $userAgentMode, customUserAgentString: $customUserAgentString)
-            SettingsDivider()
-            ClearDataSettingsRow(browserState: browserState)
+        VStack(spacing: 16) {
+            // App Information Hero Card
+            SettingsSectionCard(
+                footer: "Lotus is built natively for macOS using Swift, SwiftUI, and WebKit."
+            ) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: "safari.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : Color(nsColor: .labelColor))
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Lotus Browser")
+                            .font(.system(size: 15, weight: .bold))
+
+                        Text("Version 1.0 (macOS)")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+
+                        Text("WebKit Engine • Sandboxed App")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundColor(.secondary.opacity(0.75))
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+
+            SettingsSectionCard(
+                title: "Identity & Networking",
+                footer: "Configuring a custom User-Agent affects how web servers identify Lotus."
+            ) {
+                UserAgentSettingsRow(userAgentMode: $userAgentMode, customUserAgentString: $customUserAgentString)
+            }
+
+            SettingsSectionCard(title: "Data Reset") {
+                ClearDataSettingsRow(browserState: browserState)
+            }
         }
     }
 }
@@ -67,9 +103,7 @@ private struct UserAgentSettingsRow: View {
             .frame(height: 50)
 
             if userAgentMode == "custom" {
-                Divider()
-                    .overlay(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
-                    .padding(.horizontal, 14)
+                SettingsDivider(leadingInset: 14)
 
                 HStack(spacing: 8) {
                     TextField("Enter custom User-Agent string…", text: $customUserAgentString)
@@ -116,6 +150,8 @@ private struct ClearDataSettingsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .frame(width: 150, height: 28, alignment: .trailing)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .frame(height: 50)

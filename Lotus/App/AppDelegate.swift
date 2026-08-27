@@ -21,6 +21,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            if url.isFileURL {
+                Self.sharedBrowserState?.openTab(at: url, title: url.lastPathComponent)
+            } else if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" || scheme == "lotus" {
+                Self.sharedBrowserState?.openTab(at: url, title: url.host ?? "New Tab")
+            }
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        Self.sharedBrowserState?.openTab(at: url, title: url.lastPathComponent)
+        NSApp.activate(ignoringOtherApps: true)
+        return true
+    }
+
     static func forceTerminate() {
         isForcedTermination = true
         NSApp.terminate(nil)

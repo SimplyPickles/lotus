@@ -270,6 +270,9 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Lotus uses Bluetooth to verify sign-in requests and passkeys across nearby devices.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites you visit in Lotus may request access to your camera for video conferencing and media capture.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Websites you visit in Lotus may request access to your location for maps, navigation, and local search.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites you visit in Lotus may request access to your microphone for audio calls, speech recognition, and recording.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -322,6 +325,9 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Lotus uses Bluetooth to verify sign-in requests and passkeys across nearby devices.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites you visit in Lotus may request access to your camera for video conferencing and media capture.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Websites you visit in Lotus may request access to your location for maps, navigation, and local search.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites you visit in Lotus may request access to your microphone for audio calls, speech recognition, and recording.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

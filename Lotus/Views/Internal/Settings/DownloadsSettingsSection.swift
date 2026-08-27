@@ -13,12 +13,17 @@ struct DownloadsSettingsSection: View {
     @AppStorage("lotus.browser.tidyDownloadsEnabled") private var tidyDownloadsEnabled: Bool = true
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.downloads.rawValue, systemImage: SettingsCategory.downloads.systemImage) {
-            OpenDownloadsSettingsRow(browserState: browserState, tabId: tabId)
-            SettingsDivider()
-            DownloadLocationSettingsRow(browserState: browserState)
-            SettingsDivider()
-            TidyDownloadsSettingsRow(tidyDownloadsEnabled: $tidyDownloadsEnabled)
+        VStack(spacing: 16) {
+            SettingsSectionCard(
+                title: "Download Location & Tidy",
+                footer: "Tidy downloads automatically sanitizes messy hashes, timestamps, and tracking tags from downloaded file names."
+            ) {
+                DownloadLocationSettingsRow(browserState: browserState)
+                SettingsDivider()
+                TidyDownloadsSettingsRow(tidyDownloadsEnabled: $tidyDownloadsEnabled)
+                SettingsDivider()
+                OpenDownloadsSettingsRow(browserState: browserState, tabId: tabId)
+            }
         }
     }
 }
@@ -61,6 +66,8 @@ private struct OpenDownloadsSettingsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .frame(width: 150, height: 28, alignment: .trailing)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .frame(height: 48)
@@ -97,6 +104,8 @@ private struct DownloadLocationSettingsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .frame(width: 150, height: 28, alignment: .trailing)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .frame(height: 46)

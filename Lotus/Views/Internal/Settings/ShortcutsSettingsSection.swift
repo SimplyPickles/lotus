@@ -12,8 +12,13 @@ struct ShortcutsSettingsSection: View {
     var tabId: UUID? = nil
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.shortcuts.rawValue, systemImage: SettingsCategory.shortcuts.systemImage) {
-            KeyboardShortcutsSettingsRow(browserState: browserState, tabId: tabId)
+        VStack(spacing: 16) {
+            SettingsSectionCard(
+                title: "Keyboard Shortcuts",
+                footer: "Quickly navigate tabs, split panes, and browser tools using customizable hotkeys."
+            ) {
+                KeyboardShortcutsSettingsRow(browserState: browserState, tabId: tabId)
+            }
         }
     }
 }
@@ -52,8 +57,10 @@ private struct KeyboardShortcutsSettingsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .frame(width: 160, height: 28, alignment: .trailing)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
-        .frame(height: 50)
+        .frame(height: 48)
     }
 }

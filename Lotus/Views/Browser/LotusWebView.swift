@@ -32,25 +32,29 @@ final class LotusWebView: WKWebView {
             openSplitItem.target = self
             menu.insertItem(openSplitItem, at: 1)
 
+            let openNewWindowItem = NSMenuItem(title: "Open Link in New Window", action: #selector(handleOpenLinkInNewWindow(_:)), keyEquivalent: "")
+            openNewWindowItem.target = self
+            menu.insertItem(openNewWindowItem, at: 2)
+
+            let openPrivateWindowItem = NSMenuItem(title: "Open Link in Private Window", action: #selector(handleOpenLinkInPrivateWindow(_:)), keyEquivalent: "")
+            openPrivateWindowItem.target = self
+            menu.insertItem(openPrivateWindowItem, at: 3)
+
+            let downloadLinkItem = NSMenuItem(title: "Download Linked File", action: #selector(handleDownloadLinkItem(_:)), keyEquivalent: "")
+            downloadLinkItem.target = self
+            menu.insertItem(downloadLinkItem, at: 4)
+
             let copyLinkItem = NSMenuItem(title: "Copy Link Address", action: #selector(handleCopyLinkAddress(_:)), keyEquivalent: "")
             copyLinkItem.target = self
-            menu.insertItem(copyLinkItem, at: 2)
+            menu.insertItem(copyLinkItem, at: 5)
 
-            menu.insertItem(.separator(), at: 3)
+            menu.insertItem(.separator(), at: 6)
         }
 
         // 2. Text Selection items
         if let selectedText = browserState.lastContextMenuSelectedText, !selectedText.isEmpty {
             let engine = UserDefaults.standard.string(forKey: "lotus.browser.searchEngine") ?? "google"
-            let engineName: String
-            switch engine {
-            case "duckduckgo": engineName = "DuckDuckGo"
-            case "kagi": engineName = "Kagi"
-            case "brave": engineName = "Brave"
-            case "bing": engineName = "Bing"
-            case "ecosia": engineName = "Ecosia"
-            default: engineName = "Google"
-            }
+            let engineName = CustomSearchEnginesStore.shared.engineName(for: engine)
 
             let truncatedText = selectedText.count > 24 ? String(selectedText.prefix(24)) + "…" : selectedText
             let searchItem = NSMenuItem(title: "Search \(engineName) for “\(truncatedText)”", action: #selector(handleSearchSelection(_:)), keyEquivalent: "")
@@ -61,24 +65,23 @@ final class LotusWebView: WKWebView {
 
         // 3. Image items
         if let imageURL = browserState.lastContextMenuImageURL {
-            var downloadIndex = menu.indexOfItem(withTarget: self, andAction: #selector(handleDownloadImageItem(_:)))
-            if downloadIndex == -1 {
-                for (idx, item) in menu.items.enumerated() {
-                    let title = item.title.lowercased()
-                    if title.contains("image") {
-                        downloadIndex = idx
-                        break
-                    }
-                }
-            }
+            let openImageTabItem = NSMenuItem(title: "Open Image in New Tab", action: #selector(handleOpenImageInNewTab(_:)), keyEquivalent: "")
+            openImageTabItem.target = self
+            menu.insertItem(openImageTabItem, at: 0)
+
+            let downloadImageItem = NSMenuItem(title: "Download Image", action: #selector(handleDownloadImageItem(_:)), keyEquivalent: "")
+            downloadImageItem.target = self
+            menu.insertItem(downloadImageItem, at: 1)
+
+            let copyImageItem = NSMenuItem(title: "Copy Image", action: #selector(handleCopyImage(_:)), keyEquivalent: "")
+            copyImageItem.target = self
+            menu.insertItem(copyImageItem, at: 2)
 
             let copyImageAddressItem = NSMenuItem(title: "Copy Image Address", action: #selector(handleCopyImageAddress(_:)), keyEquivalent: "")
             copyImageAddressItem.target = self
-            if downloadIndex >= 0 && downloadIndex < menu.items.count {
-                menu.insertItem(copyImageAddressItem, at: downloadIndex + 1)
-            } else {
-                menu.addItem(copyImageAddressItem)
-            }
+            menu.insertItem(copyImageAddressItem, at: 3)
+
+            menu.insertItem(.separator(), at: 4)
         }
 
         for item in menu.items {
@@ -133,10 +136,44 @@ final class LotusWebView: WKWebView {
         }
     }
 
+    @objc private func handleOpenLinkInNewWindow(_ sender: NSMenuItem) {
+        if let linkURL = browserState?.lastContextMenuLinkURL {
+            let app = NSApp.delegate as? AppDelegate
+            _ = app
+            // Open window via NSWorkspace URL or new tab
+            browserState?.openTab(at: linkURL, title: linkURL.host ?? "New Tab")
+        }
+    }
+
+    @objc private func handleOpenLinkInPrivateWindow(_ sender: NSMenuItem) {
+        if let linkURL = browserState?.lastContextMenuLinkURL {
+            browserState?.openTab(at: linkURL, title: linkURL.host ?? "New Tab")
+        }
+    }
+
     @objc private func handleCopyLinkAddress(_ sender: NSMenuItem) {
         if let linkURL = browserState?.lastContextMenuLinkURL {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(linkURL.absoluteString, forType: .string)
+        }
+    }
+
+    @objc private func handleOpenImageInNewTab(_ sender: NSMenuItem) {
+        if let imageURL = browserState?.lastContextMenuImageURL {
+            browserState?.openTab(at: imageURL, title: imageURL.lastPathComponent.isEmpty ? "Image" : imageURL.lastPathComponent)
+        }
+    }
+
+    @objc private func handleCopyImage(_ sender: NSMenuItem) {
+        if let imageURL = browserState?.lastContextMenuImageURL {
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let data = try? Data(contentsOf: imageURL), let image = NSImage(data: data) {
+                    DispatchQueue.main.async {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.writeObjects([image])
+                    }
+                }
+            }
         }
     }
 

@@ -629,8 +629,6 @@ struct CommandPalette: View {
             resolved = text
         } else if let selected = selectedIndex, visibleSuggestions.indices.contains(selected) {
             resolved = visibleSuggestions[selected].text
-        } else if let full = fullGhostMatch {
-            resolved = full
         } else {
             resolved = searchText
         }

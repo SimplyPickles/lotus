@@ -181,8 +181,12 @@ extension BrowserState {
         }
     }
 
+    func canDeleteProfile(_ profile: Profile) -> Bool {
+        profiles.count > 1 && !profile.isDefault && profile.id != defaultProfileId
+    }
+
     func requestDeleteProfile(_ profile: Profile) {
-        guard profiles.count > 1, !profile.isDefault else { return }
+        guard canDeleteProfile(profile) else { return }
         withAnimation(.spring(response: 0.20, dampingFraction: 0.84)) {
             profileToDeleteConfirmation = profile
         }
@@ -206,7 +210,7 @@ extension BrowserState {
         guard profiles.count > 1 else { return }
         guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
         let deletingProfile = profiles[index]
-        guard !deletingProfile.isDefault else { return }
+        guard !deletingProfile.isDefault, deletingProfile.id != defaultProfileId else { return }
 
         // 1. Remove all tabs associated with this profile
         let tabsToRemove = tabs.filter { ($0.profileId ?? defaultProfileId) == id }.map(\.id)

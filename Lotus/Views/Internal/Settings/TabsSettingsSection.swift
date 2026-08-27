@@ -17,18 +17,25 @@ struct TabsSettingsSection: View {
     @AppStorage("lotus.browser.autoArchiveInterval") private var autoArchiveInterval: String = "never"
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.tabs.rawValue, systemImage: SettingsCategory.tabs.systemImage) {
-            NewTabPositionSettingsRow(newTabPosition: $newTabPosition)
-            SettingsDivider()
-            AutoGroupTabsSettingsRow(autoGroupTabs: $autoGroupTabs)
-            SettingsDivider()
-            AutoFolderNamesSettingsRow(autoFolderNames: $autoFolderNames)
-            SettingsDivider()
-            ReorderHapticFeedbackSettingsRow(reorderHapticFeedback: $reorderHapticFeedback)
-            SettingsDivider()
-            AutoCloseBlankTabsSettingsRow(autoCloseBlankTabs: $autoCloseBlankTabs)
-            SettingsDivider()
-            AutoArchiveSettingsRow(autoArchiveInterval: $autoArchiveInterval, browserState: browserState)
+        VStack(spacing: 16) {
+            SettingsSectionCard(title: "Tab Management") {
+                NewTabPositionSettingsRow(newTabPosition: $newTabPosition)
+                SettingsDivider()
+                AutoGroupTabsSettingsRow(autoGroupTabs: $autoGroupTabs)
+                SettingsDivider()
+                AutoFolderNamesSettingsRow(autoFolderNames: $autoFolderNames)
+                SettingsDivider()
+                AutoCloseBlankTabsSettingsRow(autoCloseBlankTabs: $autoCloseBlankTabs)
+            }
+
+            SettingsSectionCard(
+                title: "Tab Archiving",
+                footer: "Inactive tabs older than the selected interval will be automatically moved into your tab archive."
+            ) {
+                AutoArchiveSettingsRow(autoArchiveInterval: $autoArchiveInterval, browserState: browserState)
+                SettingsDivider()
+                ReorderHapticFeedbackSettingsRow(reorderHapticFeedback: $reorderHapticFeedback)
+            }
         }
     }
 }
@@ -123,12 +130,12 @@ private struct NewTabPositionSettingsRow: View {
             Spacer()
 
             Picker("New tab placement", selection: $newTabPosition) {
-                Text("Below active tab").tag("below")
-                Text("At the end of strip").tag("end")
+                Text("Below Active Tab").tag("below")
+                Text("At End of Strip").tag("end")
             }
             .labelsHidden()
             .untintedDropdown()
-            .frame(width: 170, alignment: .trailing)
+            .frame(width: 160, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .frame(height: 50)

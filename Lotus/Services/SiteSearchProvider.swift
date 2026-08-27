@@ -165,6 +165,25 @@ struct SiteSearchProvider: Identifiable, Equatable {
                 ))
             }
         }
+
+        for customEngine in CustomSearchEnginesStore.shared.customEngines {
+            if let shortcut = customEngine.shortcut, !shortcut.isEmpty {
+                let trigger = shortcut.trimmingCharacters(in: CharacterSet(charactersIn: "!")).lowercased()
+                if !trigger.isEmpty && !base.contains(where: { $0.triggers.contains(trigger) }) {
+                    base.append(SiteSearchProvider(
+                        id: customEngine.id.uuidString,
+                        name: customEngine.name,
+                        host: customEngine.host,
+                        iconName: customEngine.iconName,
+                        triggers: [trigger],
+                        searchEndpoint: customEngine.searchURLTemplate,
+                        queryParameter: "q",
+                        accentColor: Color.accentColor,
+                        customTemplate: customEngine.searchURLTemplate
+                    ))
+                }
+            }
+        }
         return base
     }
 

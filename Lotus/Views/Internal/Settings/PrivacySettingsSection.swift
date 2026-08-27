@@ -13,18 +13,25 @@ struct PrivacySettingsSection: View {
     @ObservedObject var contentBlocker: ContentBlockerService
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.privacy.rawValue, systemImage: SettingsCategory.privacy.systemImage) {
-            OpenHistorySettingsRow(browserState: browserState, tabId: tabId)
-            SettingsDivider()
-            ManageWebsiteDataSettingsRow(browserState: browserState, tabId: tabId)
-            SettingsDivider()
-            ShieldsDNTSettingsRow(contentBlocker: contentBlocker)
-            SettingsDivider()
-            ShieldsCopyCleanURLSettingsRow(contentBlocker: contentBlocker)
-            SettingsDivider()
-            ShieldsStrictHTTPSSettingsRow(contentBlocker: contentBlocker)
-            SettingsDivider()
-            ClearDataOnQuitSettingsRow(contentBlocker: contentBlocker)
+        VStack(spacing: 16) {
+            SettingsSectionCard(title: "Browsing History & Site Data") {
+                OpenHistorySettingsRow(browserState: browserState, tabId: tabId)
+                SettingsDivider()
+                ManageWebsiteDataSettingsRow(browserState: browserState, tabId: tabId)
+            }
+
+            SettingsSectionCard(
+                title: "Privacy & Security Options",
+                footer: "Lotus automatically upgrades HTTP connections to HTTPS and strips tracking telemetry from copied URLs."
+            ) {
+                ShieldsStrictHTTPSSettingsRow(contentBlocker: contentBlocker)
+                SettingsDivider()
+                ShieldsDNTSettingsRow(contentBlocker: contentBlocker)
+                SettingsDivider()
+                ShieldsCopyCleanURLSettingsRow(contentBlocker: contentBlocker)
+                SettingsDivider()
+                ClearDataOnQuitSettingsRow(contentBlocker: contentBlocker)
+            }
         }
     }
 }
@@ -67,6 +74,8 @@ private struct OpenHistorySettingsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .frame(width: 150, height: 28, alignment: .trailing)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .frame(height: 48)
@@ -105,6 +114,8 @@ private struct ManageWebsiteDataSettingsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .frame(width: 150, height: 28, alignment: .trailing)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .frame(height: 50)

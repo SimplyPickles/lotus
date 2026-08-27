@@ -30,9 +30,9 @@ struct BrowserChromeTheme {
             self.themeColor = nil
             self.isThemeLight = colorScheme == .light
         case "systemAccent":
-            self.themeColor = browserState.currentProfile.color.color
+            self.themeColor = browserState.currentProfile.color == .grey ? nil : browserState.currentProfile.color.color
             let accent = LotusAccentColor(rawValue: browserState.currentProfile.color.accentColorEquivalent.rawValue) ?? .white
-            self.isThemeLight = accent == .yellow
+            self.isThemeLight = browserState.currentProfile.color == .grey ? (colorScheme == .light) : (accent == .yellow)
         default: // "adaptive"
             if isInternal {
                 self.themeColor = nil

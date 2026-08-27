@@ -307,8 +307,9 @@ struct Tabstrip: View {
             .simultaneousGesture(spaceSwipeGesture)
 
             // Space Indicator Dock at the bottom
-            if !browserState.isPrivate {
+            if !browserState.isPrivate && browserState.profiles.count > 1 {
                 SpaceIndicatorBar(browserState: browserState)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .frame(width: isDragCollapsed ? 0 : browserState.sidebarWidth, alignment: .leading)
@@ -320,6 +321,7 @@ struct Tabstrip: View {
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(WindowDragArea())
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isDragCollapsed)
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: browserState.profiles.count > 1)
     }
 
     // MARK: - Space Content View per Profile

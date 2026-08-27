@@ -14,21 +14,113 @@ struct GeneralSettingsSection: View {
     @AppStorage("lotus.browser.bangsEnabled") private var bangsEnabled: Bool = true
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.general.rawValue, systemImage: SettingsCategory.general.systemImage) {
-            StartupBehaviorSettingsRow(startupBehavior: $startupBehavior)
-            SettingsDivider()
-            WarnOnQuitSettingsRow()
-            SettingsDivider()
-            SearchEngineSettingsRow(searchEngine: $searchEngine)
-            SettingsDivider()
-            SearchSuggestionsSettingsRow(searchSuggestionsEnabled: $searchSuggestionsEnabled)
-            SettingsDivider()
-            BangsSettingsRow(bangsEnabled: $bangsEnabled)
+        VStack(spacing: 16) {
+            SettingsSectionCard(title: "System & Startup") {
+                DefaultBrowserSettingsRow()
+                SettingsDivider()
+                StartupBehaviorSettingsRow(startupBehavior: $startupBehavior)
+                SettingsDivider()
+                WarnOnQuitSettingsRow()
+            }
+
+            SettingsSectionCard(
+                title: "Default Search Engine",
+                footer: "Search engine used when entering search queries into the address bar or command palette."
+            ) {
+                SearchEngineSettingsRow(searchEngine: $searchEngine)
+                SettingsDivider()
+                SearchSuggestionsSettingsRow(searchSuggestionsEnabled: $searchSuggestionsEnabled)
+            }
+
+            SettingsSectionCard(
+                title: "Site Search Shortcuts",
+                footer: "Type a prefix like !w, !gh, or !yt followed by your search query to search directly on that website."
+            ) {
+                BangsSettingsRow(bangsEnabled: $bangsEnabled)
+            }
         }
     }
 }
 
 // MARK: - Rows
+
+private struct DefaultBrowserSettingsRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isDefault: Bool = false
+
+    private func checkDefaultStatus() {
+        if let defaultAppURL = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://apple.com")!) {
+            let bundleId = Bundle.main.bundleIdentifier ?? "com.dylanfraser.Lotus"
+            let defaultBundleId = Bundle(url: defaultAppURL)?.bundleIdentifier
+            isDefault = (defaultBundleId == bundleId)
+        } else {
+            isDefault = false
+        }
+    }
+
+    private func setAsDefault() {
+        if #available(macOS 12.0, *) {
+            let appURL = Bundle.main.bundleURL
+            NSWorkspace.shared.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "http") { _ in
+                DispatchQueue.main.async { checkDefaultStatus() }
+            }
+            NSWorkspace.shared.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "https") { _ in
+                DispatchQueue.main.async { checkDefaultStatus() }
+            }
+        }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.general") {
+            NSWorkspace.shared.open(url)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            checkDefaultStatus()
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "globe")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Default web browser")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text(isDefault ? "Lotus is currently your default web browser" : "Set Lotus as your default browser for opening web links")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+
+            Spacer()
+
+            if isDefault {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Default")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+            } else {
+                Button("Set as Default…") {
+                    setAsDefault()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .frame(width: 140, height: 28, alignment: .trailing)
+                .focusable(false)
+                .focusEffectDisabled()
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+        .onAppear(perform: checkDefaultStatus)
+    }
+}
 
 private struct WarnOnQuitSettingsRow: View {
     @AppStorage("lotus.browser.warnOnQuit") private var warnOnQuit: Bool = true
@@ -36,7 +128,7 @@ private struct WarnOnQuitSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "questionmark.circle")
+            Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
@@ -46,7 +138,7 @@ private struct WarnOnQuitSettingsRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text("Prompt for confirmation when closing Lotus (⌘Q)")
+                Text("Show a confirmation prompt when pressing ⌘Q")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
@@ -85,20 +177,20 @@ private struct StartupBehaviorSettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Choose how Lotus opens when launched")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
             Spacer()
 
             Picker("On startup", selection: $startupBehavior) {
-                Text("Restore previous session").tag("restore")
-                Text("Open command palette").tag("empty")
-                Text("Open pinned tabs only").tag("pinnedOnly")
+                Text("Restore Session").tag("restore")
+                Text("Command Palette").tag("empty")
+                Text("Pinned Only").tag("pinnedOnly")
             }
             .labelsHidden()
             .untintedDropdown()
-            .frame(width: 190, alignment: .trailing)
+            .frame(width: 170, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .frame(height: 50)
@@ -108,31 +200,205 @@ private struct StartupBehaviorSettingsRow: View {
 private struct SearchEngineSettingsRow: View {
     @Binding var searchEngine: String
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isExpanded: Bool = false
+    @State private var isAddSheetPresented: Bool = false
+    @State private var newEngineName: String = ""
+    @State private var newEngineShortcut: String = ""
+    @State private var newEngineURLTemplate: String = ""
+    @ObservedObject private var engineStore = CustomSearchEnginesStore.shared
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                    .frame(width: 22)
 
-            Text("Search engine")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Search engine")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-            Spacer()
+                    Text("Default search engine for URL bar and command palette")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                }
 
-            Picker("Search engine", selection: $searchEngine) {
-                ForEach(URLInputResolver.SearchEngine.allCases, id: \.rawValue) { engine in
-                    Text(engine.displayName).tag(engine.rawValue)
+                Spacer()
+
+                Text(engineStore.engineName(for: searchEngine))
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 50)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
                 }
             }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 150, alignment: .trailing)
+
+            if isExpanded {
+                VStack(spacing: 8) {
+                    SettingsDivider(leadingInset: 14)
+
+                    HStack {
+                        Text("Configured Engines")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Button {
+                            newEngineName = ""
+                            newEngineShortcut = ""
+                            newEngineURLTemplate = ""
+                            isAddSheetPresented = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("Add Custom Engine")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(Color.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+
+                    VStack(spacing: 2) {
+                        ForEach(engineStore.allEngines) { engine in
+                            let isSelected = searchEngine.lowercased() == engine.id.lowercased()
+                            HStack(spacing: 10) {
+                                Image(systemName: engine.iconName)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.8) : .secondary)
+                                    .frame(width: 18)
+
+                                Text(engine.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.85) : .primary)
+
+                                if let shortcut = engine.shortcut, !shortcut.isEmpty {
+                                    Text("(\(shortcut))")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.40) : .secondary)
+                                }
+
+                                Spacer()
+
+                                Text(engine.displayURL)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.40) : .secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .padding(.trailing, 8)
+
+                                if engine.isCustom, let customId = engine.customId {
+                                    Button {
+                                        if searchEngine == engine.id {
+                                            searchEngine = "google"
+                                        }
+                                        engineStore.removeEngine(id: customId)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.red.opacity(0.7))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
+                                    .padding(.trailing, 4)
+                                    .help("Delete Custom Search Engine")
+                                }
+
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 11.5, weight: .semibold))
+                                        .foregroundColor(Color.accentColor)
+                                        .frame(width: 20, height: 20)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                searchEngine = engine.id
+                            }
+                        }
+                    }
+                    .padding(.bottom, 6)
+                }
+            }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 46)
+        .sheet(isPresented: $isAddSheetPresented) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Add Custom Search Engine")
+                    .font(.system(size: 16, weight: .semibold))
+
+                Text("Enter a search engine name, optional shortcut (for !bangs), and URL template with {searchTerms} (or %s).")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Name (e.g. Perplexity)", text: $newEngineName)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Shortcut (optional, e.g. px)", text: $newEngineShortcut)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Search URL (e.g. https://www.perplexity.ai/search?q={searchTerms})", text: $newEngineURLTemplate)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                HStack {
+                    Button("Cancel") {
+                        isAddSheetPresented = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Spacer()
+
+                    Button("Add Engine") {
+                        let cleanName = newEngineName.trimmingCharacters(in: .whitespaces)
+                        let cleanShortcut = newEngineShortcut.trimmingCharacters(in: CharacterSet(charactersIn: "!").union(.whitespaces))
+                        let cleanURL = newEngineURLTemplate.trimmingCharacters(in: .whitespaces)
+                        guard !cleanName.isEmpty, !cleanURL.isEmpty else { return }
+
+                        engineStore.addEngine(
+                            name: cleanName,
+                            searchURLTemplate: cleanURL,
+                            shortcut: cleanShortcut.isEmpty ? nil : cleanShortcut
+                        )
+                        isAddSheetPresented = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newEngineName.trimmingCharacters(in: .whitespaces).isEmpty || newEngineURLTemplate.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(20)
+            .frame(width: 420)
+        }
     }
 }
 
@@ -214,6 +480,8 @@ private struct BangsSettingsRow: View {
                         .padding(6)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .disabled(!bangsEnabled)
                 .opacity(bangsEnabled ? 1.0 : 0.45)
                 
@@ -226,9 +494,7 @@ private struct BangsSettingsRow: View {
 
             if isExpanded && bangsEnabled {
                 VStack(spacing: 8) {
-                    Divider()
-                        .overlay(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
-                        .padding(.horizontal, 14)
+                    SettingsDivider(leadingInset: 14)
 
                     HStack {
                         Text("Configured Engines")
@@ -249,9 +515,11 @@ private struct BangsSettingsRow: View {
                                 Text("Add Custom Bang")
                                     .font(.system(size: 11, weight: .medium))
                             }
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(Color.accentColor)
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
                     }
                     .padding(.horizontal, 14)
                     .padding(.top, 4)
@@ -263,7 +531,7 @@ private struct BangsSettingsRow: View {
                             HStack(spacing: 10) {
                                 Image(systemName: provider.iconName)
                                     .font(.system(size: 12))
-                                    .foregroundColor(provider.accentColor)
+                                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .secondary)
                                     .frame(width: 18)
 
                                 Text(provider.name)
@@ -288,6 +556,8 @@ private struct BangsSettingsRow: View {
                                             .foregroundColor(.red.opacity(0.7))
                                     }
                                     .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
                                     .padding(.trailing, 4)
                                     .help("Delete Custom Bang")
                                 }

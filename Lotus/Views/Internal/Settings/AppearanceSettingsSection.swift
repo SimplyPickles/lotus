@@ -25,14 +25,17 @@ struct AppearanceSettingsSection: View {
     @AppStorage("lotus.browser.toolbarLayout") private var toolbarLayoutRaw: String = ToolbarItemType.serializeLayout(ToolbarItemType.defaultOrder)
 
     var body: some View {
-        VStack(spacing: 20) {
-            SettingsSectionCard(title: "Theme & Accent", systemImage: "paintpalette") {
+        VStack(spacing: 16) {
+            SettingsSectionCard(title: "Theme & Accent") {
                 AccentColorPickerRow(selectedAccent: $accentColor, browserState: browserState)
                 SettingsDivider()
                 AppearanceSettingsRow(appearanceMode: $appearanceMode)
             }
 
-            SettingsSectionCard(title: "Chrome Tinting", systemImage: "sparkles") {
+            SettingsSectionCard(
+                title: "Chrome Tinting",
+                footer: "Tints top toolbar, sidebar tabs, and pinned tab cards with each website's dominant accent color."
+            ) {
                 TitlebarTintingSettingsRow(titlebarChromeTintingMode: $titlebarChromeTintingMode)
                 SettingsDivider()
                 SidebarTabTintingSettingsRow(sidebarTabTintingMode: $sidebarTabTintingMode)
@@ -40,7 +43,7 @@ struct AppearanceSettingsSection: View {
                 PinnedTabTintingSettingsRow(pinnedTabTintingMode: $pinnedTabTintingMode)
             }
 
-            SettingsSectionCard(title: "Window & Layout", systemImage: "macwindow") {
+            SettingsSectionCard(title: "Window & Layout") {
                 TopBarSettingsRow(topBarVisibility: $topBarVisibility)
                 SettingsDivider()
                 CenterURLPreviewSettingsRow(centerURLPreview: $centerURLPreview)
@@ -115,45 +118,28 @@ private struct AccentColorDot: View {
     let isSelected: Bool
     let action: () -> Void
 
-    @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                if isSelected {
-                    Circle()
-                        .strokeBorder(
-                            colorScheme == .dark ? Color.white : Color(nsColor: .labelColor),
-                            lineWidth: 1.5
-                        )
-                        .frame(width: 26, height: 26)
-                        .transition(.scale.combined(with: .opacity))
-                }
-
                 Circle()
                     .fill(accent.swatchColor)
-                    .frame(width: 19, height: 19)
-                    .overlay(
-                        Group {
-                            if accent == .white && colorScheme == .light {
-                                Circle()
-                                    .strokeBorder(Color.black.opacity(0.2), lineWidth: 1)
-                            }
-                        }
-                    )
+                    .frame(width: 20, height: 20)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(accent == .white ? (colorScheme == .dark ? .black : .white) : .white)
+                }
             }
-            .frame(width: 28, height: 28)
-            .scaleEffect(isHovered ? 1.08 : 1.0)
+            .frame(width: 24, height: 24)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
         .help(accent.displayName)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
     }
 }
 
@@ -180,11 +166,13 @@ private struct AppearanceSettingsRow: View {
                 Text("Dark").tag("dark")
             }
             .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 150, alignment: .trailing)
+            .pickerStyle(.segmented)
+            .frame(width: 210)
+            .focusable(false)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
-        .frame(height: 46)
+        .frame(height: 48)
     }
 }
 
@@ -205,7 +193,7 @@ private struct TitlebarTintingSettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Tints top toolbar and container with site's dominant accent")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
@@ -242,7 +230,7 @@ private struct SidebarTabTintingSettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Tints active tab selection with site's dominant accent")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
@@ -279,7 +267,7 @@ private struct PinnedTabTintingSettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Tints pinned tab cards with vibrant site gradients")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
@@ -316,7 +304,7 @@ private struct CenterURLPreviewSettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Centers text in inactive URL address bar")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
@@ -348,7 +336,7 @@ private struct CenterCommandPaletteSettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Centers the palette in the window instead of top-aligning")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
@@ -387,7 +375,7 @@ private struct TopBarSettingsRow: View {
             }
             .labelsHidden()
             .untintedDropdown()
-            .frame(width: 150, alignment: .trailing)
+            .frame(width: 130, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
@@ -545,7 +533,10 @@ private struct ToolbarArrangementSettingsCard: View {
     }
 
     var body: some View {
-        SettingsSectionCard(title: "Toolbar Layout", systemImage: "macwindow.badge.plus") {
+        SettingsSectionCard(
+            title: "Toolbar Layout",
+            footer: "Drag items to reorder them on the top toolbar or remove them from view."
+        ) {
             // Header summary and Reset action
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -575,6 +566,8 @@ private struct ToolbarArrangementSettingsCard: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .disabled(isDefaultOrder)
                 .opacity(isDefaultOrder ? 0.45 : 1.0)
             }
@@ -651,7 +644,7 @@ private struct AvailableItemsSectionView: View {
             HStack {
                 Text("Available Items")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(isTargeted ? Color.accentColor : (colorScheme == .dark ? .white.opacity(0.5) : .secondary))
+                    .foregroundColor(isTargeted ? (colorScheme == .dark ? .white : .primary) : (colorScheme == .dark ? .white.opacity(0.5) : .secondary))
                     .textCase(.uppercase)
 
                 Spacer()
@@ -670,7 +663,7 @@ private struct AvailableItemsSectionView: View {
                     VStack(spacing: 5) {
                         Image(systemName: "tray.and.arrow.down")
                             .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(isTargeted ? Color.accentColor : (colorScheme == .dark ? .white.opacity(0.4) : .secondary))
+                            .foregroundColor(isTargeted ? (colorScheme == .dark ? .white : .primary) : (colorScheme == .dark ? .white.opacity(0.4) : .secondary))
 
                         Text("All items are in your toolbar")
                             .font(.system(size: 12, weight: .medium))
@@ -684,21 +677,8 @@ private struct AvailableItemsSectionView: View {
                     Spacer()
                 }
                 .background(
-                    ZStack {
-                        if isTargeted {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.accentColor.opacity(0.08))
-                        }
-
-                        AnimatedDashedBorder(
-                            cornerRadius: 8,
-                            isTargeted: isTargeted,
-                            activeStrokeColor: .accentColor,
-                            inactiveStrokeColor: colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08),
-                            lineWidth: 1.5,
-                            dash: [8, 6]
-                        )
-                    }
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isTargeted ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)) : (colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03)))
                 )
                 .padding(.horizontal, 14)
                 .padding(.bottom, 8)
@@ -720,21 +700,7 @@ private struct AvailableItemsSectionView: View {
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isTargeted ? Color.accentColor.opacity(0.08) : Color.clear)
-                )
-                .overlay(
-                    Group {
-                        if isTargeted {
-                            AnimatedDashedBorder(
-                                cornerRadius: 8,
-                                isTargeted: true,
-                                activeStrokeColor: .accentColor,
-                                inactiveStrokeColor: .clear,
-                                lineWidth: 1.5,
-                                dash: [8, 6]
-                            )
-                        }
-                    }
+                        .fill(isTargeted ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)) : Color.clear)
                 )
                 .padding(.horizontal, 14)
                 .padding(.bottom, 6)
@@ -746,56 +712,6 @@ private struct AvailableItemsSectionView: View {
             isTargeted: $isTargeted,
             onRemove: onRemove
         ))
-    }
-}
-
-// MARK: - Animated Dashed Border
-
-private struct AnimatedDashedBorder: View {
-    let cornerRadius: CGFloat
-    let isTargeted: Bool
-    let activeStrokeColor: Color
-    let inactiveStrokeColor: Color
-    let lineWidth: CGFloat
-    let dash: [CGFloat]
-    let period: CGFloat
-
-    init(
-        cornerRadius: CGFloat = 8,
-        isTargeted: Bool,
-        activeStrokeColor: Color = .accentColor,
-        inactiveStrokeColor: Color,
-        lineWidth: CGFloat = 1.5,
-        dash: [CGFloat] = [8, 6],
-        period: CGFloat = 28.0
-    ) {
-        self.cornerRadius = cornerRadius
-        self.isTargeted = isTargeted
-        self.activeStrokeColor = activeStrokeColor
-        self.inactiveStrokeColor = inactiveStrokeColor
-        self.lineWidth = lineWidth
-        self.dash = dash
-        self.period = period
-    }
-
-    var body: some View {
-        TimelineView(.animation(paused: !isTargeted)) { timeline in
-            let phase: CGFloat = isTargeted
-                ? CGFloat(timeline.date.timeIntervalSinceReferenceDate * 32.0).truncatingRemainder(dividingBy: period)
-                : 0
-
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(
-                    isTargeted ? activeStrokeColor : inactiveStrokeColor,
-                    style: StrokeStyle(
-                        lineWidth: isTargeted ? (lineWidth + 0.5) : lineWidth,
-                        lineCap: .round,
-                        lineJoin: .round,
-                        dash: dash,
-                        dashPhase: -phase
-                    )
-                )
-        }
     }
 }
 
@@ -818,7 +734,6 @@ private struct ToolbarItemReorderRow: View {
     let onRemove: () -> Void
     let onDropReorder: (ToolbarItemType, DropPosition) -> Void
 
-    @State private var isHovered: Bool = false
     @State private var isTargeted: Bool = false
     @State private var dropPosition: DropPosition = .above
     @Environment(\.colorScheme) private var colorScheme
@@ -828,7 +743,7 @@ private struct ToolbarItemReorderRow: View {
             // Drag grip indicator
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 11, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(isHovered ? 0.5 : 0.2) : .secondary.opacity(isHovered ? 0.6 : 0.25))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.3) : .secondary.opacity(0.35))
                 .frame(width: 14)
 
             // Icon square badge
@@ -864,8 +779,10 @@ private struct ToolbarItemReorderRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .disabled(index == 0)
-                .opacity(index == 0 ? 0.25 : (isHovered ? 1.0 : 0.7))
+                .opacity(index == 0 ? 0.25 : 0.75)
                 .help("Move Up")
 
                 Button(action: onMoveDown) {
@@ -875,8 +792,10 @@ private struct ToolbarItemReorderRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .disabled(index == totalCount - 1)
-                .opacity(index == totalCount - 1 ? 0.25 : (isHovered ? 1.0 : 0.7))
+                .opacity(index == totalCount - 1 ? 0.25 : 0.75)
                 .help("Move Down")
             }
             .padding(2)
@@ -895,6 +814,7 @@ private struct ToolbarItemReorderRow: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .focusEffectDisabled()
             .help("Remove from Toolbar")
         }
         .padding(.horizontal, 14)
@@ -902,9 +822,7 @@ private struct ToolbarItemReorderRow: View {
         .background(
             (isTargeted && draggedItem != item)
                 ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                : (isHovered
-                    ? (colorScheme == .dark ? Color.white.opacity(0.03) : Color.black.opacity(0.02))
-                    : Color.clear)
+                : Color.clear
         )
         .overlay(
             Group {
@@ -927,10 +845,6 @@ private struct ToolbarItemReorderRow: View {
         )
         .opacity(draggedItem == item ? 0.35 : 1.0)
         .animation(.easeInOut(duration: 0.12), value: isTargeted)
-        .animation(.easeInOut(duration: 0.12), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-        }
         .onDrag {
             draggedItem = item
             return NSItemProvider(object: NSString(string: item.rawValue))
@@ -952,7 +866,6 @@ private struct ToolbarAvailableItemRow: View {
     @Binding var draggedItem: ToolbarItemType?
     let onAdd: () -> Void
 
-    @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -960,7 +873,7 @@ private struct ToolbarAvailableItemRow: View {
             // Drag grip indicator
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 11, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(isHovered ? 0.4 : 0.15) : .secondary.opacity(isHovered ? 0.5 : 0.2))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.25) : .secondary.opacity(0.3))
                 .frame(width: 14)
 
             // Icon square badge
@@ -1004,20 +917,13 @@ private struct ToolbarAvailableItemRow: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .focusEffectDisabled()
             .help("Add \(item.displayName) to Toolbar")
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
-        .background(
-            isHovered
-                ? (colorScheme == .dark ? Color.white.opacity(0.03) : Color.black.opacity(0.02))
-                : Color.clear
-        )
+        .background(Color.clear)
         .opacity(draggedItem == item ? 0.35 : 1.0)
-        .animation(.easeInOut(duration: 0.12), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-        }
         .onDrag {
             draggedItem = item
             return NSItemProvider(object: NSString(string: item.rawValue))

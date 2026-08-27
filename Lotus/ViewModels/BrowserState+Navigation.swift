@@ -37,12 +37,12 @@ extension BrowserState {
             return
         }
 
-        // External protocols (for example, mailto:) require an explicit user
-        // click and a confirmation before Lotus asks macOS to open a handler.
+        // External protocols (for example, mailto:, tel:, slack:, zoommtg:) require
+        // user confirmation before Lotus asks macOS to open the handler app.
         if let scheme, !allowedSchemes.contains(scheme) {
             decisionHandler(.cancel)
-            if navigationAction.navigationType == .linkActivated {
-                presentExternalURLConfirmation(for: url, from: webView)
+            DispatchQueue.main.async { [weak self] in
+                self?.presentExternalURLConfirmation(for: url, from: webView)
             }
             return
         }
@@ -94,16 +94,25 @@ extension BrowserState {
     }
 
     private func presentExternalURLConfirmation(for url: URL, from webView: WKWebView) {
-        guard let window = webView.window ?? NSApp.keyWindow else { return }
-
+        let appName = NSWorkspace.shared.urlForApplication(toOpen: url)?.deletingPathExtension().lastPathComponent
+        let targetDescription = appName != nil ? "“\(appName!)”" : "an external application"
+        
         let alert = NSAlert()
-        alert.messageText = "Open External Application?"
-        alert.informativeText = "This link wants to open \(url.absoluteString) outside Lotus."
+        alert.messageText = "Open in \(targetDescription)?"
+        alert.informativeText = "This page is requesting to open \(url.absoluteString) outside Lotus."
         alert.addButton(withTitle: "Open")
         alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { response in
-            guard response == .alertFirstButtonReturn else { return }
-            NSWorkspace.shared.open(url)
+
+        if let window = webView.window ?? NSApp.keyWindow {
+            alert.beginSheetModal(for: window) { response in
+                guard response == .alertFirstButtonReturn else { return }
+                NSWorkspace.shared.open(url)
+            }
+        } else {
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 
@@ -150,10 +159,6 @@ extension BrowserState {
         let newWebView = WebViewFactory.makeWebView(configuration: configuration, delegate: self)
         webViewStore[newTab.id] = newWebView
         setupObservers(for: newTab.id, webView: newWebView)
-
-        if let targetURL = targetURL, targetURL.absoluteString != "about:blank" && !targetURL.absoluteString.isEmpty {
-            newWebView.load(URLRequest(url: targetURL))
-        }
 
         return newWebView
     }
@@ -345,15 +350,39 @@ extension BrowserState {
         wv.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                let html = (result as? String) ?? ""
-                let encodedHTML = html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
-                let sourceURL = URL(string: "data:text/plain;charset=utf-8,\(encodedHTML)")
-                self.addTabBelow(
+                let rawHTML = (result as? String) ?? ""
+                let escapedHTML = rawHTML
+                    .replacingOccurrences(of: "&", with: "&amp;")
+                    .replacingOccurrences(of: "<", with: "&lt;")
+                    .replacingOccurrences(of: ">", with: "&gt;")
+
+                let styledDoc = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Source: \(currentURL.host ?? "Page")</title>
+                <style>
+                body { margin: 0; padding: 16px 20px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12.5px; line-height: 1.5; background: #18181A; color: #E4E4E7; tab-size: 4; }
+                @media (prefers-color-scheme: light) { body { background: #FFFFFF; color: #18181B; } }
+                pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+                </style>
+                </head>
+                <body>
+                <pre><code>\(escapedHTML)</code></pre>
+                </body>
+                </html>
+                """
+
+                let newTab = self.addTabBelow(
                     currentTabId: targetId,
                     title: "Source: \(currentURL.host ?? "Page")",
-                    url: sourceURL,
+                    url: URL(string: "about:blank"),
                     select: true
                 )
+                let newWV = self.getWebView(for: newTab.id)
+                newWV.loadHTMLString(styledDoc, baseURL: currentURL)
             }
         }
     }

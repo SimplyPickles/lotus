@@ -13,9 +13,6 @@ struct ProfilesSettingsSection: View {
 
     @State private var editingProfile: Profile? = nil
     @State private var isCreatingProfile: Bool = false
-    @State private var newProfileName: String = ""
-    @State private var newProfileIcon: String = "briefcase"
-    @State private var newProfileColor: FolderColor = .purple
     @Environment(\.colorScheme) private var colorScheme
 
     private var foregroundPrimary: Color {
@@ -27,12 +24,15 @@ struct ProfilesSettingsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            SettingsSectionCard(title: "Configured Profiles", systemImage: "person.2") {
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsSectionCard(
+                title: "Configured Profiles",
+                footer: "Each profile maintains separate cookies, logins, history, bookmarks, and open tabs."
+            ) {
                 VStack(spacing: 0) {
                     ForEach(Array(browserState.profiles.enumerated()), id: \.element.id) { index, profile in
                         if index > 0 {
-                            SettingsDivider()
+                            SettingsDivider(leadingInset: 54)
                         }
                         profileRow(for: profile)
                     }
@@ -40,41 +40,66 @@ struct ProfilesSettingsSection: View {
             }
 
             // Create New Profile Card
-            SettingsSectionCard(title: "Add New Profile", systemImage: "plus.circle") {
-                if isCreatingProfile {
-                    createProfileForm
-                        .padding(14)
-                } else {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Create a Profile")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(foregroundPrimary)
+            SettingsSectionCard(title: "Add Profile") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Create a New Profile")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(foregroundPrimary)
 
-                            Text("Separate cookies, logins, and tabs for work, personal, or projects")
-                                .font(.system(size: 11.5, weight: .regular))
-                                .foregroundColor(foregroundSecondary)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                                isCreatingProfile = true
-                            }
-                        } label: {
-                            Label("New Profile", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.regular)
+                        Text("Separate workspace for work, personal, or client projects")
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundColor(foregroundSecondary)
                     }
-                    .padding(.horizontal, 14)
-                    .frame(height: 52)
+
+                    Spacer()
+
+                    Button {
+                        isCreatingProfile = true
+                    } label: {
+                        Text("New Profile…")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .focusable(false)
+                    .focusEffectDisabled()
                 }
+                .padding(.horizontal, 14)
+                .frame(height: 50)
             }
         }
+        .sheet(isPresented: $isCreatingProfile) {
+            CreateProfileModalView(
+                onSave: { newName, newColor in
+                    let created = browserState.createProfile(
+                        name: newName,
+                        icon: "person.crop.circle",
+                        color: newColor
+                    )
+                    browserState.switchProfile(to: created.id)
+                    isCreatingProfile = false
+                },
+                onCancel: {
+                    isCreatingProfile = false
+                }
+            )
+        }
         .sheet(item: $editingProfile) { profile in
-            editProfileSheet(for: profile)
+            EditProfileModalView(
+                profile: profile,
+                canDelete: browserState.canDeleteProfile(profile),
+                onSave: { updated in
+                    browserState.updateProfile(updated)
+                    editingProfile = nil
+                },
+                onDelete: { toDelete in
+                    editingProfile = nil
+                    browserState.requestDeleteProfile(toDelete)
+                },
+                onCancel: {
+                    editingProfile = nil
+                }
+            )
         }
     }
 
@@ -86,40 +111,30 @@ struct ProfilesSettingsSection: View {
         let tabCount = browserState.tabs.filter { ($0.profileId ?? browserState.defaultProfileId) == profile.id }.count
 
         HStack(spacing: 12) {
-            // Icon
+            // Squircle icon badge matching macOS settings
             ZStack {
-                Circle()
-                    .fill(profile.color.color.opacity(0.18))
-                    .frame(width: 32, height: 32)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(profile.color.color.gradient)
+                    .frame(width: 26, height: 26)
 
                 Image(systemName: profile.icon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(profile.color.color)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(profile.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(foregroundPrimary)
 
                     if profile.isDefault {
                         Text("Default")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
+                            .foregroundColor(foregroundSecondary)
+                            .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Color.secondary.opacity(0.12))
-                            .clipShape(Capsule())
-                    }
-
-                    if isActive {
-                        Text("Active Window")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(profile.color.color)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(profile.color.color.opacity(0.15))
                             .clipShape(Capsule())
                     }
                 }
@@ -131,247 +146,439 @@ struct ProfilesSettingsSection: View {
 
             Spacer()
 
-            HStack(spacing: 6) {
-                if !isActive {
+            HStack(spacing: 8) {
+                if isActive {
+                    Text("Active Window")
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundColor(foregroundSecondary)
+                } else {
                     Button("Switch") {
                         browserState.switchProfile(to: profile.id)
                     }
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .focusable(false)
+                    .focusEffectDisabled()
                 }
 
-                Button("Edit") {
+                Button {
                     editingProfile = profile
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.55) : Color(nsColor: .secondaryLabelColor))
                 }
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
+                .help("Profile Details")
 
-                if !profile.isDefault && browserState.profiles.count > 1 {
-                    Button(role: .destructive) {
+                if browserState.canDeleteProfile(profile) {
+                    Button {
                         browserState.requestDeleteProfile(profile)
                     } label: {
                         Image(systemName: "trash")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundColor(.red.opacity(0.8))
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(colorScheme == .dark ? Color.red.opacity(0.85) : Color.red)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
+                    .focusable(false)
+                    .focusEffectDisabled()
+                    .help("Delete Profile")
                 }
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 56)
-    }
-
-    // MARK: - Create Profile Form
-
-    private var createProfileForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Profile Details")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button("Cancel") {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                        isCreatingProfile = false
-                        newProfileName = ""
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(foregroundSecondary)
-                .font(.system(size: 12))
-            }
-
-            TextField("Profile Name (e.g. Work, Client, Personal)", text: $newProfileName)
-                .textFieldStyle(.roundedBorder)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Icon")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(foregroundSecondary)
-
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
-                    ForEach(Profile.presetIcons, id: \.self) { icon in
-                        Button {
-                            newProfileIcon = icon
-                        } label: {
-                            Image(systemName: icon)
-                                .font(.system(size: 14, weight: .medium))
-                                .frame(width: 28, height: 28)
-                                .background(newProfileIcon == icon ? newProfileColor.color.opacity(0.2) : Color.clear)
-                                .foregroundColor(newProfileIcon == icon ? newProfileColor.color : foregroundPrimary)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .stroke(newProfileIcon == icon ? newProfileColor.color : Color.clear, lineWidth: 1.5)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
+        .frame(height: 50)
+        .contextMenu {
+            if !isActive {
+                Button("Switch to \(profile.name)") {
+                    browserState.switchProfile(to: profile.id)
                 }
             }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Theme Color")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(foregroundSecondary)
-
-                HStack(spacing: 8) {
-                    ForEach(FolderColor.allCases) { color in
-                        Button {
-                            newProfileColor = color
-                        } label: {
-                            Circle()
-                                .fill(color.color)
-                                .frame(width: 22, height: 22)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.white, lineWidth: newProfileColor == color ? 2.5 : 0)
-                                )
-                                .shadow(radius: newProfileColor == color ? 2 : 0)
-                        }
-                        .buttonStyle(.plain)
-                    }
+            Button("Edit Profile…") {
+                editingProfile = profile
+            }
+            if browserState.canDeleteProfile(profile) {
+                Divider()
+                Button("Delete Profile…", role: .destructive) {
+                    browserState.requestDeleteProfile(profile)
                 }
             }
-
-            HStack {
-                Spacer()
-
-                Button("Create Profile") {
-                    let created = browserState.createProfile(
-                        name: newProfileName,
-                        icon: newProfileIcon,
-                        color: newProfileColor
-                    )
-                    browserState.switchProfile(to: created.id)
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                        isCreatingProfile = false
-                        newProfileName = ""
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding(.top, 4)
         }
-    }
-
-    // MARK: - Edit Profile Sheet
-
-    @ViewBuilder
-    private func editProfileSheet(for profile: Profile) -> some View {
-        EditProfileModalView(
-            profile: profile,
-            onSave: { updated in
-                browserState.updateProfile(updated)
-                editingProfile = nil
-            },
-            onCancel: {
-                editingProfile = nil
-            }
-        )
     }
 }
 
-private struct EditProfileModalView: View {
-    let profile: Profile
-    let onSave: (Profile) -> Void
+// MARK: - Create Profile Modal View
+
+struct CreateProfileModalView: View {
+    let onSave: (String, FolderColor) -> Void
     let onCancel: () -> Void
 
     @State private var name: String = ""
-    @State private var icon: String = "person.crop.circle"
-    @State private var color: FolderColor = .blue
+    @State private var selectedColor: FolderColor = .blue
+    @FocusState private var isNameFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
-    init(profile: Profile, onSave: @escaping (Profile) -> Void, onCancel: @escaping () -> Void) {
+    private let profileColors: [FolderColor] = [.grey, .green, .blue, .purple, .yellow, .pink, .red, .orange]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // Header
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Create Profile")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.primary)
+
+                Text("Profiles separate your logins, cookies, passwords, extensions, credit cards, history and chat data.")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Name
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Name")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.9) : Color.primary)
+
+                TextField("Profile Name", text: $name)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(isNameFocused ? Color.blue : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)), lineWidth: isNameFocused ? 1.5 : 1)
+                    )
+                    .focused($isNameFocused)
+            }
+
+            // Color
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Color")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.9) : Color.primary)
+
+                HStack(spacing: 7) {
+                    ForEach(profileColors) { color in
+                        let isSelected = selectedColor == color
+                        let dotColor: Color = (color == .grey ? (colorScheme == .dark ? .white : .black) : color.color)
+
+                        Button {
+                            selectedColor = color
+                        } label: {
+                            ZStack {
+                                if isSelected {
+                                    Circle()
+                                        .stroke(dotColor, lineWidth: 2)
+                                        .frame(width: 32, height: 32)
+                                }
+
+                                Circle()
+                                    .fill(dotColor)
+                                    .frame(width: 24, height: 24)
+                            }
+                            .frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                }
+            }
+
+            // Action Buttons
+            HStack(spacing: 12) {
+                Button(action: onCancel) {
+                    HStack(spacing: 6) {
+                        Text("Cancel")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.92) : Color.primary)
+
+                        Text("ESC")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.6) : Color.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+                            )
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                    )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .focusable(false)
+                .focusEffectDisabled()
+
+                Spacer()
+
+                Button {
+                    let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !finalName.isEmpty else { return }
+                    onSave(finalName, selectedColor)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Create Profile")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(colorScheme == .dark ? Color.black : Color.white)
+
+                        Image(systemName: "return")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(colorScheme == .dark ? Color.black.opacity(0.65) : Color.white.opacity(0.85))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(colorScheme == .dark ? Color(white: 0.92) : Color.black)
+                    )
+                    .opacity(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1.0)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .focusable(false)
+                .focusEffectDisabled()
+            }
+            .padding(.top, 4)
+        }
+        .padding(24)
+        .frame(width: 380)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 0.13, green: 0.13, blue: 0.14) : Color(nsColor: .windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+        )
+        .focusEffectDisabled()
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isNameFocused = true
+            }
+        }
+    }
+}
+
+// MARK: - Edit Profile Modal View
+
+struct EditProfileModalView: View {
+    let profile: Profile
+    let canDelete: Bool
+    let onSave: (Profile) -> Void
+    let onDelete: (Profile) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String = ""
+    @State private var selectedColor: FolderColor = .blue
+    @FocusState private var isNameFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let profileColors: [FolderColor] = [.grey, .green, .blue, .purple, .yellow, .pink, .red, .orange]
+
+    init(profile: Profile, canDelete: Bool, onSave: @escaping (Profile) -> Void, onDelete: @escaping (Profile) -> Void, onCancel: @escaping () -> Void) {
         self.profile = profile
+        self.canDelete = canDelete
         self.onSave = onSave
+        self.onDelete = onDelete
         self.onCancel = onCancel
         _name = State(initialValue: profile.name)
-        _icon = State(initialValue: profile.icon)
-        _color = State(initialValue: profile.color)
+        _selectedColor = State(initialValue: profile.color)
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Edit Profile")
-                    .font(.system(size: 15, weight: .semibold))
+        VStack(alignment: .leading, spacing: 20) {
+            // Header
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Edit Profile")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.primary)
+
+                    Text("Customize profile name and theme color.")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
+                }
+
                 Spacer()
-            }
 
-            TextField("Profile Name", text: $name)
-                .textFieldStyle(.roundedBorder)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Icon")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
-
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
-                    ForEach(Profile.presetIcons, id: \.self) { item in
-                        Button {
-                            icon = item
-                        } label: {
-                            Image(systemName: item)
-                                .font(.system(size: 14, weight: .medium))
-                                .frame(width: 28, height: 28)
-                                .background(icon == item ? color.color.opacity(0.2) : Color.clear)
-                                .foregroundColor(icon == item ? color.color : .primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .stroke(icon == item ? color.color : Color.clear, lineWidth: 1.5)
-                                )
+                if canDelete {
+                    Button(role: .destructive) {
+                        onCancel()
+                        onDelete(profile)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                            Text("Delete")
+                                .font(.system(size: 12, weight: .medium))
                         }
-                        .buttonStyle(.plain)
+                        .foregroundColor(Color.red.opacity(0.9))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.red.opacity(0.12))
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
+                    .help("Delete Profile")
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Theme Color")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
+            // Name
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Name")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.9) : Color.primary)
 
-                HStack(spacing: 8) {
-                    ForEach(FolderColor.allCases) { item in
+                TextField("Profile Name", text: $name)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(isNameFocused ? Color.blue : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)), lineWidth: isNameFocused ? 1.5 : 1)
+                    )
+                    .focused($isNameFocused)
+            }
+
+            // Color
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Color")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.9) : Color.primary)
+
+                HStack(spacing: 7) {
+                    ForEach(profileColors) { color in
+                        let isSelected = selectedColor == color
+                        let dotColor: Color = (color == .grey ? (colorScheme == .dark ? .white : .black) : color.color)
+
                         Button {
-                            color = item
+                            selectedColor = color
                         } label: {
-                            Circle()
-                                .fill(item.color)
-                                .frame(width: 20, height: 20)
-                                .overlay(
+                            ZStack {
+                                if isSelected {
                                     Circle()
-                                        .stroke(Color.white, lineWidth: color == item ? 2 : 0)
-                                )
-                                .shadow(radius: color == item ? 2 : 0)
+                                        .stroke(dotColor, lineWidth: 2)
+                                        .frame(width: 32, height: 32)
+                                }
+
+                                Circle()
+                                    .fill(dotColor)
+                                    .frame(width: 24, height: 24)
+                            }
+                            .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
                     }
                 }
             }
 
-            HStack {
-                Button("Cancel") {
-                    onCancel()
+            // Action Buttons
+            HStack(spacing: 12) {
+                Button(action: onCancel) {
+                    HStack(spacing: 6) {
+                        Text("Cancel")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.92) : Color.primary)
+
+                        Text("ESC")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.6) : Color.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+                            )
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                    )
                 }
+                .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
+                .focusable(false)
+                .focusEffectDisabled()
 
                 Spacer()
 
-                Button("Save Changes") {
+                Button {
                     var updated = profile
-                    updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? profile.name : name
-                    updated.icon = icon
-                    updated.color = color
+                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.name = trimmed.isEmpty ? profile.name : trimmed
+                    updated.color = selectedColor
                     onSave(updated)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Save Changes")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(colorScheme == .dark ? Color.black : Color.white)
+
+                        Image(systemName: "return")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(colorScheme == .dark ? Color.black.opacity(0.65) : Color.white.opacity(0.85))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(colorScheme == .dark ? Color(white: 0.92) : Color.black)
+                    )
+                    .opacity(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1.0)
                 }
+                .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .focusable(false)
+                .focusEffectDisabled()
             }
-            .padding(.top, 8)
+            .padding(.top, 4)
         }
-        .padding(20)
+        .padding(24)
         .frame(width: 380)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 0.13, green: 0.13, blue: 0.14) : Color(nsColor: .windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+        )
+        .focusEffectDisabled()
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isNameFocused = true
+            }
+        }
     }
 }

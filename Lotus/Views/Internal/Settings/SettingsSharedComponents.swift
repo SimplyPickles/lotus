@@ -7,32 +7,96 @@
 
 import SwiftUI
 
+enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
+    case general = "General"
+    case security = "Privacy & Security"
+    case tools = "Tools & Advanced"
+
+    var id: String { rawValue }
+}
+
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "General & Search"
     case appearance = "Appearance"
-    case profiles = "Profiles"
     case tabs = "Tabs & Sidebar"
-    case media = "Media & Performance"
+    case profiles = "Profiles"
     case shields = "Shields & Blocking"
     case privacy = "Privacy & Data"
     case downloads = "Downloads"
+    case media = "Media & Performance"
     case shortcuts = "Shortcuts"
     case about = "About"
 
     var id: String { rawValue }
 
+    var group: SettingsCategoryGroup {
+        switch self {
+        case .general, .appearance, .tabs, .profiles:
+            return .general
+        case .shields, .privacy:
+            return .security
+        case .downloads, .media, .shortcuts, .about:
+            return .tools
+        }
+    }
+
     var systemImage: String {
         switch self {
-        case .general: return "gearshape"
-        case .appearance: return "paintpalette"
-        case .profiles: return "person.crop.circle.badge.plus"
+        case .general: return "gearshape.fill"
+        case .appearance: return "paintpalette.fill"
+        case .profiles: return "person.crop.circle.fill"
         case .tabs: return "sidebar.left"
-        case .media: return "bolt"
+        case .media: return "bolt.fill"
         case .shields: return "shield.fill"
-        case .privacy: return "lock.shield"
-        case .downloads: return "arrow.down.circle"
-        case .shortcuts: return "keyboard"
-        case .about: return "info.circle"
+        case .privacy: return "lock.shield.fill"
+        case .downloads: return "arrow.down.circle.fill"
+        case .shortcuts: return "keyboard.fill"
+        case .about: return "info.circle.fill"
+        }
+    }
+
+    var iconBackground: Color {
+        switch self {
+        case .general: return Color(nsColor: .systemGray)
+        case .appearance: return Color(nsColor: .systemPurple)
+        case .profiles: return Color(nsColor: .systemOrange)
+        case .tabs: return Color(nsColor: .systemBlue)
+        case .shields: return Color(nsColor: .systemRed)
+        case .privacy: return Color(nsColor: .systemIndigo)
+        case .downloads: return Color(nsColor: .systemTeal)
+        case .media: return Color(nsColor: .systemGreen)
+        case .shortcuts: return Color(nsColor: .systemPink)
+        case .about: return Color(nsColor: .systemGray)
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .general: return "General & Search"
+        case .appearance: return "Appearance"
+        case .tabs: return "Tabs & Sidebar"
+        case .profiles: return "Profiles"
+        case .shields: return "Shields & Blocking"
+        case .privacy: return "Privacy & Data"
+        case .downloads: return "Downloads"
+        case .media: return "Media & Performance"
+        case .shortcuts: return "Keyboard Shortcuts"
+        case .about: return "About Lotus"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: return "Default browser, startup behavior, and search engine preferences"
+        case .appearance: return "Theme, window framing, accent colors, and toolbar layout"
+        case .tabs: return "Tab strip behavior, automatic grouping, and inactive tab archiving"
+        case .profiles: return "Independent profile spaces with separate cookies, tabs, and logins"
+        case .shields: return "Tracker blocking, cosmetic filtering, and custom element zapper"
+        case .privacy: return "Browsing history, cookie management, and connection security"
+        case .downloads: return "File download directory, tidy filenames, and download logs"
+        case .media: return "Autoplay restrictions, Picture-in-Picture, and memory saver"
+        case .shortcuts: return "Key bindings, hotkeys, and quick navigation actions"
+        case .about: return "Browser version details, user agent configuration, and diagnostics"
         }
     }
 }
@@ -53,7 +117,7 @@ enum LotusAccentColor: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .white: return "Default (System)"
+        case .white: return "Monochrome"
         case .blue: return "Blue"
         case .purple: return "Purple"
         case .pink: return "Pink"
@@ -87,7 +151,7 @@ enum LotusAccentColor: String, CaseIterable, Identifiable {
     var color: Color {
         switch self {
         case .white:
-            return LotusAccentColor.systemAccentColor
+            return Color(nsColor: .controlAccentColor)
         case .blue:
             return FolderColor.blue.color
         case .purple:
@@ -108,7 +172,7 @@ enum LotusAccentColor: String, CaseIterable, Identifiable {
     var swatchColor: Color {
         switch self {
         case .white:
-            return Color.white
+            return Color.primary
         default:
             return color
         }
@@ -179,154 +243,168 @@ extension FolderColor {
     }
 }
 
-// MARK: - Category Pill
+// MARK: - Sidebar Item (macOS & Arc/Dia Style)
 
-struct SettingsCategoryPill: View {
+struct SettingsSidebarItem: View {
     let category: SettingsCategory
     let isSelected: Bool
-    let action: () -> Void
+    var accentColor: Color? = nil
+    let onSelect: () -> Void
 
-    @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
 
-    private var activeFill: Color {
-        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
-        return accent.color
+    private var activeAccent: Color {
+        accentColor ?? Color(nsColor: .controlAccentColor)
     }
 
-    private var activeTextColor: Color {
-        let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white
-        if accent == .yellow {
-            return Color.black
+    private var isAccentLight: Bool {
+        if let accent = accentColor {
+            return accent == FolderColor.yellow.color
         }
-        return Color.white
+        return false
     }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: category.systemImage)
-                    .font(.system(size: 10.5, weight: .medium))
+        Button(action: onSelect) {
+            HStack(spacing: 9) {
+                // Vibrant macOS-style squircle badge icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5.5, style: .continuous)
+                        .fill(category.iconBackground.gradient)
+                        .frame(width: 20, height: 20)
+
+                    Image(systemName: category.systemImage)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(.white)
+                }
 
                 Text(category.rawValue)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(
+                        isSelected
+                            ? (isAccentLight ? Color.black : Color.white)
+                            : (colorScheme == .dark ? Color.white.opacity(0.92) : Color(nsColor: .labelColor))
+                    )
+                    .lineLimit(1)
+
+                Spacer()
             }
-            .foregroundColor(isSelected
-                ? activeTextColor
-                : (isHovered
-                    ? (colorScheme == .dark ? .white : Color(nsColor: .labelColor))
-                    : (colorScheme == .dark ? .white.opacity(0.60) : Color(nsColor: .secondaryLabelColor))))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isSelected
-                        ? activeFill
-                        : (isHovered
-                            ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                            : Color.clear))
+                RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                    .fill(isSelected ? activeAccent : Color.clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
+        .focusable(false)
+        .focusEffectDisabled()
     }
 }
 
-// MARK: - Settings Section Card
+// MARK: - Settings Section Card (macOS Inset Grouped Card with Zero Outlines)
 
 struct SettingsSectionCard<Content: View>: View {
-    let title: String
-    let systemImage: String
+    let title: String?
+    let footer: String?
+    let systemImage: String?
     @ViewBuilder let content: () -> Content
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var foregroundSecondary: Color {
-        colorScheme == .dark ? .white.opacity(0.45) : Color(nsColor: .secondaryLabelColor)
+    init(title: String? = nil, footer: String? = nil, systemImage: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.footer = footer
+        self.systemImage = systemImage
+        self.content = content
     }
 
     private var cardFill: Color {
-        colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03)
-    }
-
-    private var cardStroke: Color {
-        colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)
+        colorScheme == .dark
+            ? Color.white.opacity(0.08)
+            : Color.white
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundColor(foregroundSecondary)
-
+        VStack(alignment: .leading, spacing: 6) {
+            if let title = title, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(foregroundSecondary)
+                    .font(.system(size: 13.5, weight: .bold))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : Color(nsColor: .labelColor))
+                    .padding(.leading, 4)
+                    .padding(.bottom, 1)
             }
-            .padding(.leading, 14)
 
             VStack(spacing: 0, content: content)
-                .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(cardFill)
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(cardStroke, lineWidth: 1)
-                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .focusEffectDisabled()
+
+            if let footer = footer, !footer.isEmpty {
+                Text(footer)
+                    .font(.system(size: 11.5, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.48) : Color(nsColor: .secondaryLabelColor))
+                    .lineSpacing(2.5)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// MARK: - Settings Divider
+// MARK: - Settings Divider (Inset Separator)
 
 struct SettingsDivider: View {
     @Environment(\.colorScheme) private var colorScheme
-
-    private var separatorColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.05)
-    }
+    var leadingInset: CGFloat = 14
 
     var body: some View {
         Rectangle()
-            .fill(separatorColor)
-            .frame(height: 1)
-            .padding(.leading, 48)
+            .fill(colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.06))
+            .frame(height: 0.5)
+            .padding(.leading, leadingInset)
     }
 }
 
 // MARK: - Generic Settings Row
 
 struct SettingsRow: View {
-    let systemImage: String
+    let systemImage: String?
     let title: String
     let detail: String
 
     @Environment(\.colorScheme) private var colorScheme
 
+    init(systemImage: String? = nil, title: String, detail: String) {
+        self.systemImage = systemImage
+        self.title = title
+        self.detail = detail
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
+            if let systemImage = systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                    .frame(width: 22)
+            }
 
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : Color(nsColor: .labelColor))
 
             Spacer()
 
             Text(detail)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                .font(.system(size: 12.5, weight: .regular))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : Color(nsColor: .secondaryLabelColor))
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
@@ -339,7 +417,10 @@ extension View {
     func untintedDropdown() -> some View {
         self
             .pickerStyle(.menu)
-            .tint(Color.primary)
-            .accentColor(Color.primary)
+            .tint(Color(nsColor: .controlTextColor))
+            .accentColor(Color(nsColor: .controlTextColor))
+            .foregroundColor(Color(nsColor: .controlTextColor))
+            .focusable(false)
+            .focusEffectDisabled()
     }
 }

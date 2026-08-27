@@ -16,10 +16,18 @@ extension BrowserState {
         guard url(for: id)?.isLotusPage != true,
               let webView = webViewStore[id] else { return }
 
-        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+        let printInfo = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
         printInfo.horizontalPagination = .fit
         printInfo.verticalPagination = .automatic
 
-        webView.printOperation(with: printInfo).run()
+        let printOp = webView.printOperation(with: printInfo)
+        printOp.showsPrintPanel = true
+        printOp.showsProgressPanel = true
+
+        if let window = webView.window ?? NSApp.keyWindow {
+            printOp.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            printOp.run()
+        }
     }
 }

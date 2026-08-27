@@ -29,12 +29,22 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
             case .orange: return "Orange"
             case .yellow: return "Yellow"
             case .green: return "Green"
-            case .grey: return "Grey"
+            case .grey: return "Monochrome"
         }
     }
 
     var color: Color {
-        Color(nsColor: nsColor)
+        if self == .grey {
+            return Color(nsColor: .controlAccentColor)
+        }
+        return Color(nsColor: nsColor)
+    }
+
+    var swatchColor: Color {
+        if self == .grey {
+            return Color.primary
+        }
+        return color
     }
 
     var nsColor: NSColor {
@@ -54,7 +64,7 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
             case .green:
                 return NSColor(srgbRed: 0.13, green: 0.69, blue: 0.30, alpha: 1.0)
             case .grey:
-                return NSColor(srgbRed: 0.60, green: 0.62, blue: 0.65, alpha: 1.0)
+                return NSColor.controlAccentColor
         }
     }
 
@@ -63,13 +73,13 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
         let image = NSImage(size: NSSize(width: dimension, height: dimension), flipped: false) { rect in
             let circleRect = rect.insetBy(dx: 1, dy: 1)
             let path = NSBezierPath(ovalIn: circleRect)
-            self.nsColor.setFill()
+            (self == .grey ? NSColor.textColor : self.nsColor).setFill()
             path.fill()
 
             if isSelected {
                 let dotRect = rect.insetBy(dx: 4.5, dy: 4.5)
                 let dot = NSBezierPath(ovalIn: dotRect)
-                NSColor.white.setFill()
+                (self == .grey ? NSColor.windowBackgroundColor : NSColor.white).setFill()
                 dot.fill()
             }
             return true

@@ -199,6 +199,7 @@ struct LotusBookmarksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
+        .focusEffectDisabled()
         .transaction { $0.animation = nil }
         .sheet(isPresented: $isAddSheetPresented) {
             AddBookmarkSheet(browserState: browserState, profileId: activeProfileId)

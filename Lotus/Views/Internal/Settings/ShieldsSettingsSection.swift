@@ -11,18 +11,28 @@ struct ShieldsSettingsSection: View {
     @ObservedObject var contentBlocker: ContentBlockerService
 
     var body: some View {
-        VStack(spacing: 20) {
-            SettingsSectionCard(title: SettingsCategory.shields.rawValue, systemImage: SettingsCategory.shields.systemImage) {
+        VStack(spacing: 16) {
+            SettingsSectionCard(
+                title: "Content & Tracker Blocking",
+                footer: "Lotus blocks cross-site trackers, behavioral fingerprinting scripts, and advertising network analytics."
+            ) {
                 ShieldsMasterSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()
                 ShieldsTrackingSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()
+                ShieldsCosmeticSettingsRow(contentBlocker: contentBlocker)
+            }
+
+            SettingsSectionCard(
+                title: "Fingerprint & Canvas Defense",
+                footer: "Canvas randomization injects micro-noise into image readouts to prevent hardware fingerprinting."
+            ) {
                 ShieldsFingerprintSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()
                 ShieldsStrictCanvasBlockSettingsRow(contentBlocker: contentBlocker)
-                SettingsDivider()
-                ShieldsCosmeticSettingsRow(contentBlocker: contentBlocker)
-                SettingsDivider()
+            }
+
+            SettingsSectionCard(title: "Exceptions & Site Rules") {
                 ShieldsStrictPopupBlockedSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()
                 ShieldsAllowlistSettingsRow(contentBlocker: contentBlocker)
@@ -41,7 +51,7 @@ private struct ShieldsMasterSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "shield.fill")
+            Image(systemName: "shield.checkered")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
@@ -51,8 +61,8 @@ private struct ShieldsMasterSettingsRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text("Automatically blocks ads, analytics, and telemetry")
-                    .font(.system(size: 11, weight: .regular))
+                Text("Blocks known trackers, tracking pixels, telemetry, and banner ads")
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
@@ -73,25 +83,31 @@ private struct ShieldsTrackingSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "hand.raised")
+            Image(systemName: "cross.case")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
 
-            Text("Block third-party tracking scripts")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Block tracking scripts")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Blocks analytics telemetry scripts and third-party event trackers")
+                    .font(.system(size: 11.5, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
 
             Spacer()
 
-            Toggle("Block third-party tracking scripts", isOn: $contentBlocker.blockTrackersEnabled)
+            Toggle("Block tracking scripts", isOn: $contentBlocker.blockTrackersEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .disabled(!contentBlocker.isAdBlockingEnabled)
+                .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
         }
         .padding(.horizontal, 14)
-        .frame(height: 46)
-        .disabled(!contentBlocker.isAdBlockingEnabled)
-        .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
+        .frame(height: 50)
     }
 }
 
@@ -106,20 +122,26 @@ private struct ShieldsCosmeticSettingsRow: View {
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
 
-            Text("Hide cosmetic ad placeholders")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hide cosmetic placeholders")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                Text("Collapses and cleans empty whitespace left behind by blocked banner slots")
+                    .font(.system(size: 11.5, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
 
             Spacer()
 
-            Toggle("Hide cosmetic ad placeholders", isOn: $contentBlocker.blockCosmeticElementsEnabled)
+            Toggle("Hide cosmetic placeholders", isOn: $contentBlocker.blockCosmeticElementsEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .disabled(!contentBlocker.isAdBlockingEnabled)
+                .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
         }
         .padding(.horizontal, 14)
-        .frame(height: 46)
-        .disabled(!contentBlocker.isAdBlockingEnabled)
-        .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
+        .frame(height: 50)
     }
 }
 
@@ -135,25 +157,25 @@ private struct ShieldsFingerprintSettingsRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Advanced fingerprint protection")
+                Text("Fingerprint protection")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text("Masks device metrics, Canvas, WebGL, and WebAudio")
-                    .font(.system(size: 11, weight: .regular))
+                Text("Spoofs Canvas, WebGL, and AudioContext to block hardware profiling")
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
             Spacer()
 
-            Toggle("Advanced fingerprint protection", isOn: $contentBlocker.fingerprintProtectionEnabled)
+            Toggle("Fingerprint protection", isOn: $contentBlocker.fingerprintProtectionEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .disabled(!contentBlocker.isAdBlockingEnabled)
+                .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
         }
         .padding(.horizontal, 14)
         .frame(height: 50)
-        .disabled(!contentBlocker.isAdBlockingEnabled)
-        .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
     }
 }
 
@@ -169,24 +191,24 @@ private struct ShieldsStrictCanvasBlockSettingsRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Canvas extraction defense mode")
+                Text("Canvas defense mode")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
-                Text(contentBlocker.strictCanvasBlockEnabled ? "Strictly blocks HTMLCanvasElement.toDataURL() readout" : "Injects random noise jitter into Canvas extraction (Recommended)")
-                    .font(.system(size: 11, weight: .regular))
+                Text(contentBlocker.strictCanvasBlockEnabled ? "Strictly blocks canvas pixel readouts" : "Injects random noise jitter into canvas extraction")
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
             Spacer()
 
-            Picker("Canvas extraction defense mode", selection: $contentBlocker.strictCanvasBlockEnabled) {
-                Text("Random Noise Jitter").tag(false)
-                Text("Strict Complete Block").tag(true)
+            Picker("Canvas defense mode", selection: $contentBlocker.strictCanvasBlockEnabled) {
+                Text("Noise Jitter (Recommended)").tag(false)
+                Text("Strict Block").tag(true)
             }
             .labelsHidden()
             .untintedDropdown()
-            .frame(width: 180, alignment: .trailing)
+            .frame(width: 200, alignment: .trailing)
             .disabled(!contentBlocker.fingerprintProtectionEnabled || !contentBlocker.isAdBlockingEnabled)
             .opacity((contentBlocker.fingerprintProtectionEnabled && contentBlocker.isAdBlockingEnabled) ? 1.0 : 0.45)
         }
@@ -236,15 +258,15 @@ private struct ShieldsStrictPopupBlockedSettingsRow: View {
                         .padding(6)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
             }
             .padding(.horizontal, 14)
             .frame(height: 46)
 
             if isExpanded {
                 VStack(spacing: 8) {
-                    Divider()
-                        .overlay(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
-                        .padding(.horizontal, 14)
+                    SettingsDivider(leadingInset: 14)
 
                     // Add new domain input
                     HStack(spacing: 8) {
@@ -259,6 +281,8 @@ private struct ShieldsStrictPopupBlockedSettingsRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .focusable(false)
+                        .focusEffectDisabled()
                         .disabled(newDomainInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     .padding(.horizontal, 14)
@@ -290,6 +314,8 @@ private struct ShieldsStrictPopupBlockedSettingsRow: View {
                                             .foregroundColor(Color.red.opacity(0.8))
                                     }
                                     .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
                                     .help("Remove strict popup block")
                                 }
                                 .padding(.horizontal, 14)
@@ -352,15 +378,15 @@ private struct ShieldsAllowlistSettingsRow: View {
                         .padding(6)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
             }
             .padding(.horizontal, 14)
             .frame(height: 46)
 
             if isExpanded {
                 VStack(spacing: 8) {
-                    Divider()
-                        .overlay(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
-                        .padding(.horizontal, 14)
+                    SettingsDivider(leadingInset: 14)
 
                     // Add new domain input
                     HStack(spacing: 8) {
@@ -375,6 +401,8 @@ private struct ShieldsAllowlistSettingsRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .focusable(false)
+                        .focusEffectDisabled()
                         .disabled(newDomainInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     .padding(.horizontal, 14)
@@ -406,6 +434,8 @@ private struct ShieldsAllowlistSettingsRow: View {
                                             .foregroundColor(Color.red.opacity(0.8))
                                     }
                                     .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
                                     .help("Remove from whitelist")
                                 }
                                 .padding(.horizontal, 14)
@@ -462,6 +492,8 @@ private struct ShieldsZappedElementsSettingsCard: View {
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(Color.red.opacity(0.85))
                         .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
                     }
                 }
                 .padding(.horizontal, 14)
@@ -484,7 +516,7 @@ private struct ShieldsZappedElementsSettingsCard: View {
                                 HStack {
                                     Text(domain)
                                         .font(.system(size: 12.5, weight: .semibold))
-                                        .foregroundColor(Color.accentColor)
+                                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : Color(nsColor: .labelColor))
 
                                     Text("(\(elements.count))")
                                         .font(.system(size: 11, weight: .regular))
@@ -500,6 +532,8 @@ private struct ShieldsZappedElementsSettingsCard: View {
                                             .foregroundColor(Color.red.opacity(0.8))
                                     }
                                     .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
                                 }
 
                                 VStack(spacing: 4) {
@@ -528,6 +562,8 @@ private struct ShieldsZappedElementsSettingsCard: View {
                                                     .padding(3)
                                             }
                                             .buttonStyle(.plain)
+                                            .focusable(false)
+                                            .focusEffectDisabled()
                                             .help("Restore element")
                                         }
                                         .padding(6)

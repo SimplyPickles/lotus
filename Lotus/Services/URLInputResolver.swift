@@ -19,6 +19,8 @@ enum URLInputResolver {
         case bing
         case brave
         case startpage
+        case kagi
+        case ecosia
 
         var displayName: String {
             switch self {
@@ -27,40 +29,26 @@ enum URLInputResolver {
             case .bing: return "Bing"
             case .brave: return "Brave"
             case .startpage: return "Startpage"
+            case .kagi: return "Kagi"
+            case .ecosia: return "Ecosia"
             }
         }
 
         func searchURL(for query: String) -> URL? {
-            let endpoint: String
-            let parameter: String
-
-            switch self {
-            case .google:
-                endpoint = "https://www.google.com/search"
-                parameter = "q"
-            case .duckDuckGo:
-                endpoint = "https://duckduckgo.com/"
-                parameter = "q"
-            case .bing:
-                endpoint = "https://www.bing.com/search"
-                parameter = "q"
-            case .brave:
-                endpoint = "https://search.brave.com/search"
-                parameter = "q"
-            case .startpage:
-                endpoint = "https://www.startpage.com/sp/search"
-                parameter = "query"
-            }
-
-            var components = URLComponents(string: endpoint)
-            components?.queryItems = [URLQueryItem(name: parameter, value: query)]
-            return components?.url
+            CustomSearchEnginesStore.shared.searchURL(for: rawValue, query: query)
         }
     }
 
     static var selectedSearchEngine: SearchEngine {
-        let storedValue = UserDefaults.standard.string(forKey: "lotus.browser.searchEngine")
-        return storedValue.flatMap(SearchEngine.init(rawValue:)) ?? .google
+        let storedValue = UserDefaults.standard.string(forKey: "lotus.browser.searchEngine") ?? "google"
+        return SearchEngine(rawValue: storedValue)
+            ?? SearchEngine.allCases.first(where: { $0.rawValue.lowercased() == storedValue.lowercased() })
+            ?? .google
+    }
+
+    static func searchURL(for query: String) -> URL? {
+        let storedValue = UserDefaults.standard.string(forKey: "lotus.browser.searchEngine") ?? "google"
+        return CustomSearchEnginesStore.shared.searchURL(for: storedValue, query: query)
     }
 
     /// Resolution order: internal page aliases → explicit schemes →
@@ -88,13 +76,43 @@ enum URLInputResolver {
         if lower.hasPrefix("lotus://") {
             return URL(string: trimmed)
         }
+        if lower == "about:blank" || lower.hasPrefix("about:") {
+            return URL(string: trimmed)
+        }
+        if lower.hasPrefix("file://") {
+            return URL(string: trimmed)
+        }
+        if trimmed.hasPrefix("/") && FileManager.default.fileExists(atPath: trimmed) {
+            return URL(fileURLWithPath: trimmed)
+        }
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
             return URL(string: trimmed)
         }
+
+        // Local development servers: localhost, 127.0.0.1, 0.0.0.0 (with or without port)
+        if !trimmed.contains(" ") {
+            if lower == "localhost" || lower.hasPrefix("localhost:") {
+                return URL(string: "http://\(trimmed)")
+            }
+            if lower.hasPrefix("127.0.0.1") || lower.hasPrefix("0.0.0.0") || lower.hasPrefix("[::1]") {
+                return URL(string: "http://\(trimmed)")
+            }
+            if lower.hasSuffix(".local") || lower.contains(".local:") {
+                return URL(string: "http://\(trimmed)")
+            }
+            if trimmed.contains(":") && !trimmed.contains("/") {
+                // Host with port, e.g. "dev-server:8080"
+                let parts = trimmed.split(separator: ":")
+                if parts.count == 2, Int(parts[1]) != nil {
+                    return URL(string: "http://\(trimmed)")
+                }
+            }
+        }
+
         if trimmed.contains(".") && !trimmed.contains(" ") {
             return URL(string: "https://\(trimmed)")
         }
-        return selectedSearchEngine.searchURL(for: trimmed)
+        return searchURL(for: trimmed)
     }
 
     /// A display title for a freshly created tab pointing at `url`.

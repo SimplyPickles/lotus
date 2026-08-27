@@ -15,14 +15,21 @@ struct MediaSettingsSection: View {
     @AppStorage("lotus.browser.tabSnoozeInterval") private var tabSnoozeInterval: String = "never"
 
     var body: some View {
-        SettingsSectionCard(title: SettingsCategory.media.rawValue, systemImage: SettingsCategory.media.systemImage) {
-            AutoplayPolicySettingsRow(autoplayPolicy: $autoplayPolicy)
-            SettingsDivider()
-            AutoPiPSettingsRow(autoPiPEnabled: $autoPiPEnabled)
-            SettingsDivider()
-            LowPowerPerformanceSettingsRow(lowPowerModeShimmerDisabled: $lowPowerModeShimmerDisabled)
-            SettingsDivider()
-            TabSnoozeSettingsRow(tabSnoozeInterval: $tabSnoozeInterval, browserState: browserState)
+        VStack(spacing: 16) {
+            SettingsSectionCard(title: "Media Playback") {
+                AutoplayPolicySettingsRow(autoplayPolicy: $autoplayPolicy)
+                SettingsDivider()
+                AutoPiPSettingsRow(autoPiPEnabled: $autoPiPEnabled)
+            }
+
+            SettingsSectionCard(
+                title: "Performance & Memory",
+                footer: "Low Power Mode reduces background rendering and animations to prolong battery life."
+            ) {
+                TabSnoozeSettingsRow(tabSnoozeInterval: $tabSnoozeInterval, browserState: browserState)
+                SettingsDivider()
+                LowPowerPerformanceSettingsRow(lowPowerModeShimmerDisabled: $lowPowerModeShimmerDisabled)
+            }
         }
     }
 }
@@ -46,14 +53,14 @@ private struct AutoplayPolicySettingsRow: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
                 Text("Control automatic playback of videos and audio")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
             }
 
             Spacer()
 
             Picker("Autoplay policy", selection: $autoplayPolicy) {
-                Text("Block Audio Media").tag("audio")
+                Text("Block Audio").tag("audio")
                 Text("Block All Autoplay").tag("blockAll")
                 Text("Allow All").tag("allowAll")
             }
