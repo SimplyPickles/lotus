@@ -33,9 +33,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general, .appearance, .tabs, .profiles:
             return .general
-        case .shields, .privacy:
+        case .shields, .privacy, .downloads:
             return .security
-        case .downloads, .media, .shortcuts, .about:
+        case .media, .shortcuts, .about:
             return .tools
         }
     }
@@ -327,6 +327,7 @@ struct SettingsSectionCard<Content: View>: View {
     }
 
     var body: some View {
+        Spacer()
         VStack(alignment: .leading, spacing: 6) {
             if let title = title, !title.isEmpty {
                 Text(title)

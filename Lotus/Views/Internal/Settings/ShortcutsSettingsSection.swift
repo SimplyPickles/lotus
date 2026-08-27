@@ -6,61 +6,133 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct ShortcutsSettingsSection: View {
     @ObservedObject var browserState: BrowserState
     var tabId: UUID? = nil
 
+    @ObservedObject private var shortcutManager = ShortcutManager.shared
+    @State private var searchText: String = ""
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var totalShortcutsCount: Int {
+        ShortcutManager.categories.reduce(0) { $0 + $1.items.count }
+    }
+
+    private var filteredCategories: [ShortcutCategory] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return ShortcutManager.categories
+        }
+        let q = trimmed.lowercased()
+        return ShortcutManager.categories.compactMap { cat in
+            let matchingItems = cat.items.filter {
+                $0.title.localizedCaseInsensitiveContains(q) ||
+                $0.defaultDisplay.localizedCaseInsensitiveContains(q) ||
+                (shortcutManager.customShortcut(for: $0.id)?.displayString.localizedCaseInsensitiveContains(q) ?? false)
+            }
+            guard !matchingItems.isEmpty else { return nil }
+            return ShortcutCategory(id: cat.id, title: cat.title, items: matchingItems)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 16) {
-            SettingsSectionCard(
-                title: "Keyboard Shortcuts",
-                footer: "Quickly navigate tabs, split panes, and browser tools using customizable hotkeys."
-            ) {
-                KeyboardShortcutsSettingsRow(browserState: browserState, tabId: tabId)
+            // Search and Toolbar Actions
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+
+                    TextField("Search shortcuts…", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white)
+                )
+
+                if !shortcutManager.overrides.isEmpty {
+                    Button("Reset All") {
+                        shortcutManager.resetAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                }
+            }
+
+            if filteredCategories.isEmpty {
+                SettingsSectionCard {
+                    VStack(spacing: 8) {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 28, weight: .light))
+                            .foregroundColor(.secondary)
+                        Text("No shortcuts found")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                }
+            } else {
+                ForEach(filteredCategories) { category in
+                    SettingsSectionCard(title: category.title) {
+                        ForEach(Array(category.items.enumerated()), id: \.element.id) { index, item in
+                            SettingsShortcutRow(
+                                item: item,
+                                shortcutManager: shortcutManager
+                            )
+
+                            if index < category.items.count - 1 {
+                                SettingsDivider()
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-// MARK: - Rows
+// MARK: - Settings Shortcut Row
 
-private struct KeyboardShortcutsSettingsRow: View {
-    @ObservedObject var browserState: BrowserState
-    var tabId: UUID?
+private struct SettingsShortcutRow: View {
+    let item: ShortcutMetadata
+    @ObservedObject var shortcutManager: ShortcutManager
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "keyboard")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Keyboard shortcuts")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Customize shortcuts and key bindings")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
+            Text(item.title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+                .lineLimit(1)
 
             Spacer()
 
-            Button("Customize Shortcuts") {
-                if let url = URL(string: "lotus://shortcuts") {
-                    browserState.loadURL(url, in: tabId)
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .frame(width: 160, height: 28, alignment: .trailing)
-            .focusable(false)
-            .focusEffectDisabled()
+            ShortcutRecorderPill(
+                actionId: item.id,
+                defaultDisplay: item.defaultDisplay,
+                shortcutManager: shortcutManager
+            )
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(height: 44)
     }
 }

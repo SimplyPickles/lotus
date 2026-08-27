@@ -26,15 +26,15 @@ struct TabsSettingsSection: View {
                 AutoFolderNamesSettingsRow(autoFolderNames: $autoFolderNames)
                 SettingsDivider()
                 AutoCloseBlankTabsSettingsRow(autoCloseBlankTabs: $autoCloseBlankTabs)
+                SettingsDivider()
+                ReorderHapticFeedbackSettingsRow(reorderHapticFeedback: $reorderHapticFeedback)
             }
 
             SettingsSectionCard(
                 title: "Tab Archiving",
-                footer: "Inactive tabs older than the selected interval will be automatically moved into your tab archive."
+//                footer: "Inactive tabs older than the selected interval will be automatically moved into your tab archive."
             ) {
                 AutoArchiveSettingsRow(autoArchiveInterval: $autoArchiveInterval, browserState: browserState)
-                SettingsDivider()
-                ReorderHapticFeedbackSettingsRow(reorderHapticFeedback: $reorderHapticFeedback)
             }
         }
     }
@@ -153,13 +153,19 @@ private struct AutoFolderNamesSettingsRow: View {
                 .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                 .frame(width: 22)
 
-            Text("Auto folder names")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Automatically rename folders")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+                
+                Text("Automatically rename folders when modified")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+            }
+            
             Spacer()
 
-            Toggle("Auto folder names", isOn: $autoFolderNames)
+            Toggle("Automatically rename folders", isOn: $autoFolderNames)
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -180,7 +186,7 @@ private struct AutoCloseBlankTabsSettingsRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Auto-close blank tabs")
+                Text("Automatically close blank tabs")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 

@@ -16,7 +16,7 @@ struct DownloadsSettingsSection: View {
         VStack(spacing: 16) {
             SettingsSectionCard(
                 title: "Download Location & Tidy",
-                footer: "Tidy downloads automatically sanitizes messy hashes, timestamps, and tracking tags from downloaded file names."
+//                footer: "Tidy downloads automatically sanitizes messy hashes, timestamps, and tracking tags from downloaded file names."
             ) {
                 DownloadLocationSettingsRow(browserState: browserState)
                 SettingsDivider()

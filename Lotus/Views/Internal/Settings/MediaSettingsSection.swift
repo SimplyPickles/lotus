@@ -21,10 +21,10 @@ struct MediaSettingsSection: View {
                 SettingsDivider()
                 AutoPiPSettingsRow(autoPiPEnabled: $autoPiPEnabled)
             }
-
+            
             SettingsSectionCard(
                 title: "Performance & Memory",
-                footer: "Low Power Mode reduces background rendering and animations to prolong battery life."
+//                footer: "Low Power Mode reduces background rendering and animations to prolong battery life."
             ) {
                 TabSnoozeSettingsRow(tabSnoozeInterval: $tabSnoozeInterval, browserState: browserState)
                 SettingsDivider()

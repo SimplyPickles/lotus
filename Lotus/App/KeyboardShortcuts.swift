@@ -211,11 +211,11 @@ enum LotusShortcuts {
             $0.selectPreviousTab()
         }),
 
-        // MARK: Spaces
-        LotusShortcut("nextSpace", key: .rightArrow, modifiers: [.control, .option], usesEventMonitor: true) {
+        // MARK: Profiles
+        LotusShortcut("nextProfile", key: .rightArrow, modifiers: [.control, .option], usesEventMonitor: true) {
             $0.switchToNextProfile()
         },
-        LotusShortcut("previousSpace", key: .leftArrow, modifiers: [.control, .option], usesEventMonitor: true) {
+        LotusShortcut("previousProfile", key: .leftArrow, modifiers: [.control, .option], usesEventMonitor: true) {
             $0.switchToPreviousProfile()
         },
     ] + (1...9).map { index in

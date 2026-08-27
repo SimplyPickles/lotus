@@ -1,5 +1,5 @@
 //
-//  SpaceIndicatorBar.swift
+//  ProfileIndicatorBar.swift
 //  Lotus
 //
 //  Created by Dylan Fraser on 8/25/26.
@@ -8,7 +8,7 @@
 import SwiftUI
 import AppKit
 
-struct SpaceIndicatorBar: View {
+struct ProfileIndicatorBar: View {
     @ObservedObject var browserState: BrowserState
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredProfileId: UUID? = nil

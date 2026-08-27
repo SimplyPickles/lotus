@@ -34,7 +34,7 @@ struct AppearanceSettingsSection: View {
 
             SettingsSectionCard(
                 title: "Chrome Tinting",
-                footer: "Tints top toolbar, sidebar tabs, and pinned tab cards with each website's dominant accent color."
+//                footer: "Tints top toolbar, sidebar tabs, and pinned tab cards with each website's dominant accent color."
             ) {
                 TitlebarTintingSettingsRow(titlebarChromeTintingMode: $titlebarChromeTintingMode)
                 SettingsDivider()
@@ -188,7 +188,7 @@ private struct TitlebarTintingSettingsRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Titlebar chrome tinting")
+                Text("Toolbar chrome tinting")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
 
@@ -199,7 +199,7 @@ private struct TitlebarTintingSettingsRow: View {
 
             Spacer()
 
-            Picker("Titlebar chrome tinting", selection: $titlebarChromeTintingMode) {
+            Picker("Toolbar chrome tinting", selection: $titlebarChromeTintingMode) {
                 Text("Adaptive").tag("adaptive")
                 Text("Neutral").tag("neutral")
                 Text("Accent").tag("systemAccent")
@@ -535,7 +535,7 @@ private struct ToolbarArrangementSettingsCard: View {
     var body: some View {
         SettingsSectionCard(
             title: "Toolbar Layout",
-            footer: "Drag items to reorder them on the top toolbar or remove them from view."
+//            footer: "Drag items to reorder them on the top toolbar or remove them from view."
         ) {
             // Header summary and Reset action
             HStack(alignment: .center, spacing: 12) {

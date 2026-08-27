@@ -34,7 +34,7 @@ struct GeneralSettingsSection: View {
 
             SettingsSectionCard(
                 title: "Site Search Shortcuts",
-                footer: "Type a prefix like !w, !gh, or !yt followed by your search query to search directly on that website."
+//                footer: "Type a prefix like !w, !gh, or !yt followed by your search query to search directly on that website."
             ) {
                 BangsSettingsRow(bangsEnabled: $bangsEnabled)
             }

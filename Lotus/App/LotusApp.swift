@@ -321,12 +321,12 @@ private struct LotusMenuCommands: Commands {
 
                 Divider()
 
-                Button("Next Space") {
+                Button("Next Profile") {
                     state.switchToNextProfile()
                 }
                 .keyboardShortcut(.rightArrow, modifiers: [.control, .option])
 
-                Button("Previous Space") {
+                Button("Previous Profile") {
                     state.switchToPreviousProfile()
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.control, .option])

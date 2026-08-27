@@ -10,10 +10,18 @@ import SwiftUI
 struct LotusSettingsView: View {
     @ObservedObject var browserState: BrowserState
     var tabId: UUID? = nil
+    var initialCategory: SettingsCategory = .general
     @ObservedObject private var contentBlocker = ContentBlockerService.shared
     @Environment(\.colorScheme) private var colorScheme
-    @State private var selectedCategory: SettingsCategory = .general
+    @State private var selectedCategory: SettingsCategory
     @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
+
+    init(browserState: BrowserState, tabId: UUID? = nil, initialCategory: SettingsCategory = .general) {
+        self.browserState = browserState
+        self.tabId = tabId
+        self.initialCategory = initialCategory
+        _selectedCategory = State(initialValue: initialCategory)
+    }
 
     private var activeAccentColor: Color {
         if !browserState.isPrivate {
@@ -75,8 +83,8 @@ struct LotusSettingsView: View {
             .frame(width: 215)
             .background(
                 colorScheme == .dark
-                    ? Color(nsColor: .windowBackgroundColor).opacity(0.4)
-                    : Color(nsColor: .windowBackgroundColor).opacity(0.6)
+                    ? Color.black.opacity(0.20)
+                    : Color.black.opacity(0.04)
             )
 
             // Vertical Divider
@@ -133,9 +141,7 @@ struct LotusSettingsView: View {
         }
         .tint(activeAccentColor)
         .accentColor(activeAccentColor)
-        .background(
-            Color(nsColor: .windowBackgroundColor)
-        )
+        .background(Color.clear)
         .focusEffectDisabled()
         .transaction { $0.animation = nil }
     }

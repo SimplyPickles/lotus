@@ -22,7 +22,7 @@ struct PrivacySettingsSection: View {
 
             SettingsSectionCard(
                 title: "Privacy & Security Options",
-                footer: "Lotus automatically upgrades HTTP connections to HTTPS and strips tracking telemetry from copied URLs."
+//                footer: "Lotus automatically upgrades HTTP connections to HTTPS and strips tracking telemetry from copied URLs."
             ) {
                 ShieldsStrictHTTPSSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()

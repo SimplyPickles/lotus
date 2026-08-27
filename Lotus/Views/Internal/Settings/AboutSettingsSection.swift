@@ -15,43 +15,9 @@ struct AboutSettingsSection: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // App Information Hero Card
-            SettingsSectionCard(
-                footer: "Lotus is built natively for macOS using Swift, SwiftUI, and WebKit."
-            ) {
-                HStack(spacing: 16) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "safari.fill")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : Color(nsColor: .labelColor))
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Lotus Browser")
-                            .font(.system(size: 15, weight: .bold))
-
-                        Text("Version 1.0 (macOS)")
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundColor(.secondary)
-
-                        Text("WebKit Engine • Sandboxed App")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundColor(.secondary.opacity(0.75))
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-
             SettingsSectionCard(
                 title: "Identity & Networking",
-                footer: "Configuring a custom User-Agent affects how web servers identify Lotus."
+//                footer: "Configuring a custom User-Agent affects how web servers identify Lotus."
             ) {
                 UserAgentSettingsRow(userAgentMode: $userAgentMode, customUserAgentString: $customUserAgentString)
             }

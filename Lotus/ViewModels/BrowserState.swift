@@ -106,8 +106,8 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var folderToCloseConfirmation: UUID? = nil
     @Published var pendingPopupRequest: PopupConfirmationRequest? = nil
     @Published var profileToDeleteConfirmation: Profile? = nil
-    @Published var spaceTransitionDirection: SpaceTransitionDirection = .forward
-    @Published var spaceSwipeOffset: CGFloat = 0
+    @Published var profileTransitionDirection: ProfileTransitionDirection = .forward
+    @Published var profileSwipeOffset: CGFloat = 0
     @Published var lastSelectedTabPerProfile: [UUID: UUID] = [:]
     @Published var lastCurrentTabsPerProfile: [UUID: [UUID]] = [:]
     @Published var isClearAllDataConfirmationPresented: Bool = false
@@ -573,13 +573,13 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
 
-    // MARK: - Scroll / Trackpad Space Gesture Monitor
+    // MARK: - Scroll / Trackpad Profile Gesture Monitor
 
     private var scrollMonitor: Any? = nil
     private var horizontalScrollAccumulator: CGFloat = 0
-    private var isTrackpadSwipingSpaces: Bool = false
+    private var isTrackpadSwipingProfiles: Bool = false
     private var hasSwitchedInCurrentGesture: Bool = false
-    private var lastSpaceSwipeTime: Date = Date.distantPast
+    private var lastProfileSwipeTime: Date = Date.distantPast
 
     private func setupScrollMonitor() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
@@ -589,17 +589,9 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             guard let window = event.window ?? NSApp.keyWindow else { return event }
             let mouseLoc = event.locationInWindow
             let sidebarWidth = self.sidebarWidth
-            guard mouseLoc.x >= 0 && mouseLoc.x <= (sidebarWidth + 12) && mouseLoc.y >= 0 && mouseLoc.y <= window.frame.height else {
-                if self.isTrackpadSwipingSpaces {
-                    self.isTrackpadSwipingSpaces = false
-                    self.horizontalScrollAccumulator = 0
-                    self.hasSwitchedInCurrentGesture = false
-                    DispatchQueue.main.async {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                            self.spaceSwipeOffset = 0
-                        }
-                    }
-                }
+            let isInsideSidebar = mouseLoc.x >= 0 && mouseLoc.x <= (sidebarWidth + 12) && mouseLoc.y >= 0 && mouseLoc.y <= window.frame.height
+
+            if !self.isTrackpadSwipingProfiles && !isInsideSidebar {
                 return event
             }
 
@@ -610,7 +602,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             if !event.phase.isEmpty {
                 if event.phase.contains(.began) {
                     self.horizontalScrollAccumulator = 0
-                    self.isTrackpadSwipingSpaces = false
+                    self.isTrackpadSwipingProfiles = false
                     self.hasSwitchedInCurrentGesture = false
                 }
 
@@ -619,11 +611,11 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                         return nil
                     }
 
-                    if !self.isTrackpadSwipingSpaces && abs(deltaX) > abs(deltaY) * 1.15 && abs(deltaX) > 0.8 {
-                        self.isTrackpadSwipingSpaces = true
+                    if !self.isTrackpadSwipingProfiles && abs(deltaX) > abs(deltaY) * 1.15 && abs(deltaX) > 0.8 {
+                        self.isTrackpadSwipingProfiles = true
                     }
 
-                    if self.isTrackpadSwipingSpaces {
+                    if self.isTrackpadSwipingProfiles {
                         self.horizontalScrollAccumulator += deltaX
 
                         let profiles = self.profiles
@@ -637,49 +629,54 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
                         // Strictly clamp between -sidebarWidth and +sidebarWidth (1 space distance max)
                         let clampedOffset = max(-sidebarWidth, min(sidebarWidth, rawOffset))
-
-                        DispatchQueue.main.async {
-                            self.spaceSwipeOffset = clampedOffset
-                        }
+                        self.profileSwipeOffset = clampedOffset
                         return nil
                     }
                 }
 
                 if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
-                    if self.isTrackpadSwipingSpaces && !self.hasSwitchedInCurrentGesture {
+                    if self.isTrackpadSwipingProfiles && !self.hasSwitchedInCurrentGesture {
                         let finalAccum = self.horizontalScrollAccumulator
                         self.horizontalScrollAccumulator = 0
-                        self.isTrackpadSwipingSpaces = false
+                        self.isTrackpadSwipingProfiles = false
                         self.hasSwitchedInCurrentGesture = true
 
                         let threshold: CGFloat = 45.0
                         let profiles = self.profiles
                         let currIdx = profiles.firstIndex(where: { $0.id == self.currentProfileId }) ?? 0
 
-                        DispatchQueue.main.async {
-                            if finalAccum < -threshold && currIdx + 1 < profiles.count {
-                                self.switchToNextProfile()
-                            } else if finalAccum > threshold && currIdx > 0 {
-                                self.switchToPreviousProfile()
-                            } else {
-                                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
-                                    self.spaceSwipeOffset = 0
-                                }
+                        if finalAccum < -threshold && currIdx + 1 < profiles.count {
+                            let currentOffset = self.profileSwipeOffset
+                            self.profileSwipeOffset = currentOffset + sidebarWidth
+                            self.switchProfile(to: profiles[currIdx + 1].id, animated: false)
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                self.profileSwipeOffset = 0
+                            }
+                        } else if finalAccum > threshold && currIdx > 0 {
+                            let currentOffset = self.profileSwipeOffset
+                            self.profileSwipeOffset = currentOffset - sidebarWidth
+                            self.switchProfile(to: profiles[currIdx - 1].id, animated: false)
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                self.profileSwipeOffset = 0
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                self.profileSwipeOffset = 0
                             }
                         }
                         return nil
                     }
                     self.horizontalScrollAccumulator = 0
-                    self.isTrackpadSwipingSpaces = false
+                    self.isTrackpadSwipingProfiles = false
                     self.hasSwitchedInCurrentGesture = false
                 }
             } else if !event.momentumPhase.isEmpty {
                 // 2. Trackpad Momentum Phase (user lifted fingers, trackpad coasting)
                 // Swallow momentum events so they do not skip past spaces or trigger duplicate transitions
-                if self.isTrackpadSwipingSpaces || self.hasSwitchedInCurrentGesture {
+                if self.isTrackpadSwipingProfiles || self.hasSwitchedInCurrentGesture {
                     if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
                         self.hasSwitchedInCurrentGesture = false
-                        self.isTrackpadSwipingSpaces = false
+                        self.isTrackpadSwipingProfiles = false
                     }
                     return nil
                 }
@@ -687,17 +684,17 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 // 3. Discrete Mouse Wheel (notched physical wheel, no gesture phases)
                 if !event.hasPreciseScrollingDeltas && abs(deltaX) > abs(deltaY) * 1.5 && abs(deltaX) > 4.0 {
                     let now = Date()
-                    if now.timeIntervalSince(self.lastSpaceSwipeTime) > 0.45 {
+                    if now.timeIntervalSince(self.lastProfileSwipeTime) > 0.45 {
                         let profiles = self.profiles
                         let currIdx = profiles.firstIndex(where: { $0.id == self.currentProfileId }) ?? 0
                         if deltaX < -8 && currIdx + 1 < profiles.count {
-                            self.lastSpaceSwipeTime = now
+                            self.lastProfileSwipeTime = now
                             DispatchQueue.main.async {
                                 self.switchToNextProfile()
                             }
                             return nil
                         } else if deltaX > 8 && currIdx > 0 {
-                            self.lastSpaceSwipeTime = now
+                            self.lastProfileSwipeTime = now
                             DispatchQueue.main.async {
                                 self.switchToPreviousProfile()
                             }

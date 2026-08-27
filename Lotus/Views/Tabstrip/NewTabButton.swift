@@ -52,6 +52,5 @@ struct NewTabButton: View {
             }
         }
         .focusable(false)
-        .padding(.bottom, -2)
     }
 }

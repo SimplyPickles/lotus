@@ -136,7 +136,7 @@ struct BrowserContainer: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else if browserState.url(for: activeTabId)?.host == "shortcuts" ||
                                   browserState.url(for: activeTabId)?.host == "keyboardshortcuts" {
-                            LotusShortcutsView(browserState: browserState, tabId: activeTabId)
+                            LotusSettingsView(browserState: browserState, tabId: activeTabId, initialCategory: .shortcuts)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else if browserState.url(for: activeTabId)?.host == "data" ||
                                   browserState.url(for: activeTabId)?.host == "sitedata" ||

@@ -14,7 +14,7 @@ struct ShieldsSettingsSection: View {
         VStack(spacing: 16) {
             SettingsSectionCard(
                 title: "Content & Tracker Blocking",
-                footer: "Lotus blocks cross-site trackers, behavioral fingerprinting scripts, and advertising network analytics."
+//                footer: "Lotus blocks cross-site trackers, behavioral fingerprinting scripts, and advertising network analytics."
             ) {
                 ShieldsMasterSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()
@@ -25,7 +25,7 @@ struct ShieldsSettingsSection: View {
 
             SettingsSectionCard(
                 title: "Fingerprint & Canvas Defense",
-                footer: "Canvas randomization injects micro-noise into image readouts to prevent hardware fingerprinting."
+//                footer: "Canvas randomization injects micro-noise into image readouts to prevent hardware fingerprinting."
             ) {
                 ShieldsFingerprintSettingsRow(contentBlocker: contentBlocker)
                 SettingsDivider()

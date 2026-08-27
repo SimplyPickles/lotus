@@ -27,7 +27,7 @@ struct ProfilesSettingsSection: View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSectionCard(
                 title: "Configured Profiles",
-                footer: "Each profile maintains separate cookies, logins, history, bookmarks, and open tabs."
+//                footer: "Each profile maintains separate cookies, logins, history, bookmarks, and open tabs."
             ) {
                 VStack(spacing: 0) {
                     ForEach(Array(browserState.profiles.enumerated()), id: \.element.id) { index, profile in
@@ -220,7 +220,7 @@ struct CreateProfileModalView: View {
     @FocusState private var isNameFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    private let profileColors: [FolderColor] = [.grey, .green, .blue, .purple, .yellow, .pink, .red, .orange]
+    private let profileColors: [FolderColor] = [.grey, .blue, .purple, .pink, .red, .orange, .yellow, .green]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -389,7 +389,7 @@ struct EditProfileModalView: View {
     @FocusState private var isNameFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    private let profileColors: [FolderColor] = [.grey, .green, .blue, .purple, .yellow, .pink, .red, .orange]
+    private let profileColors: [FolderColor] = [.grey, .blue, .purple, .pink, .red, .orange, .yellow, .green]
 
     init(profile: Profile, canDelete: Bool, onSave: @escaping (Profile) -> Void, onDelete: @escaping (Profile) -> Void, onCancel: @escaping () -> Void) {
         self.profile = profile
@@ -413,33 +413,6 @@ struct EditProfileModalView: View {
                     Text("Customize profile name and theme color.")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
-                }
-
-                Spacer()
-
-                if canDelete {
-                    Button(role: .destructive) {
-                        onCancel()
-                        onDelete(profile)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 11))
-                            Text("Delete")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(Color.red.opacity(0.9))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.red.opacity(0.12))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .focusEffectDisabled()
-                    .help("Delete Profile")
                 }
             }
 

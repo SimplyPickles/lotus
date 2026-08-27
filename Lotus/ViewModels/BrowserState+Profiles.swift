@@ -8,7 +8,7 @@
 import SwiftUI
 import WebKit
 
-enum SpaceTransitionDirection {
+enum ProfileTransitionDirection {
     case forward
     case backward
 }
@@ -57,7 +57,7 @@ extension BrowserState {
         historyEntries.filter { ($0.profileId ?? defaultProfileId) == profileId }
     }
 
-    // MARK: - Space Cycling & Directional Switching
+    // MARK: - Profile Cycling & Directional Switching
 
     func switchToNextProfile() {
         guard profiles.count > 1 else { return }
@@ -78,69 +78,75 @@ extension BrowserState {
         let targetId = profiles[index].id
         guard targetId != currentProfileId else { return }
         let currentIndex = profiles.firstIndex(where: { $0.id == currentProfileId }) ?? 0
-        let direction: SpaceTransitionDirection = index > currentIndex ? .forward : .backward
+        let direction: ProfileTransitionDirection = index > currentIndex ? .forward : .backward
         switchProfile(to: targetId, direction: direction)
     }
 
-    func switchProfile(to profileId: UUID, direction: SpaceTransitionDirection? = nil) {
+    func switchProfile(to profileId: UUID, direction: ProfileTransitionDirection? = nil, animated: Bool = true) {
         guard currentProfileId != profileId else { return }
         guard let targetProfile = profiles.first(where: { $0.id == profileId }) else { return }
 
-        if let dir = direction {
-            self.spaceTransitionDirection = dir
-        } else if let currIndex = profiles.firstIndex(where: { $0.id == currentProfileId }),
-                  let targetIndex = profiles.firstIndex(where: { $0.id == profileId }) {
-            self.spaceTransitionDirection = targetIndex > currIndex ? .forward : .backward
+        let currIndex = profiles.firstIndex(where: { $0.id == currentProfileId }) ?? 0
+        let targetIndex = profiles.firstIndex(where: { $0.id == profileId }) ?? 0
+        let dir: ProfileTransitionDirection = direction ?? (targetIndex > currIndex ? .forward : .backward)
+        self.profileTransitionDirection = dir
+
+        // Save outgoing space's active tab state
+        if let currentTab = tab(for: selectedTabId) {
+            let outProfId = currentTab.profileId ?? defaultProfileId
+            lastSelectedTabPerProfile[outProfId] = selectedTabId
+            lastCurrentTabsPerProfile[outProfId] = currentTabIds
         }
 
-        withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
-            // Save outgoing space's active tab state
-            if let currentTab = tab(for: selectedTabId) {
-                let outProfId = currentTab.profileId ?? defaultProfileId
-                lastSelectedTabPerProfile[outProfId] = selectedTabId
-                lastCurrentTabsPerProfile[outProfId] = currentTabIds
-            }
+        // If direct switch with animation and not in an existing swipe, set up offset
+        if animated && profileSwipeOffset == 0 {
+            profileSwipeOffset = dir == .forward ? sidebarWidth : -sidebarWidth
+        }
 
-            currentProfileId = profileId
-            spaceSwipeOffset = 0
-            UserDefaults.standard.set(targetProfile.color.accentColorEquivalent.rawValue, forKey: "lotus.browser.accentColor")
-            clearSidebarSelection()
+        currentProfileId = profileId
+        UserDefaults.standard.set(targetProfile.color.accentColorEquivalent.rawValue, forKey: "lotus.browser.accentColor")
+        clearSidebarSelection()
 
-            let profileTabs = activeProfileTabs
+        let profileTabs = activeProfileTabs
 
-            // Check if there is a remembered active tab for this profile
-            if let savedSelectedId = lastSelectedTabPerProfile[profileId],
-               let savedTab = profileTabs.first(where: { $0.id == savedSelectedId }) {
-                if let savedCurrents = lastCurrentTabsPerProfile[profileId],
-                   !savedCurrents.isEmpty,
-                   savedCurrents.allSatisfy({ id in profileTabs.contains(where: { $0.id == id }) }) {
-                    currentTabIds = savedCurrents
-                    selectedTabId = savedTab.id
-                } else if let group = splitGroup(containing: savedTab.id) {
-                    currentTabIds = group
-                    selectedTabId = savedTab.id
-                } else {
-                    currentTabIds = [savedTab.id]
-                    selectedTabId = savedTab.id
-                }
-                isCommandPaletteOpen = false
-            } else if let first = profileTabs.first {
-                if let group = splitGroup(containing: first.id) {
-                    currentTabIds = group
-                    selectedTabId = first.id
-                } else {
-                    currentTabIds = [first.id]
-                    selectedTabId = first.id
-                }
-                isCommandPaletteOpen = false
+        // Check if there is a remembered active tab for this profile
+        if let savedSelectedId = lastSelectedTabPerProfile[profileId],
+           let savedTab = profileTabs.first(where: { $0.id == savedSelectedId }) {
+            if let savedCurrents = lastCurrentTabsPerProfile[profileId],
+               !savedCurrents.isEmpty,
+               savedCurrents.allSatisfy({ id in profileTabs.contains(where: { $0.id == id }) }) {
+                currentTabIds = savedCurrents
+                selectedTabId = savedTab.id
+            } else if let group = splitGroup(containing: savedTab.id) {
+                currentTabIds = group
+                selectedTabId = savedTab.id
             } else {
-                currentTabIds = []
-                selectedTabId = UUID()
-                isCommandPaletteOpen = true
+                currentTabIds = [savedTab.id]
+                selectedTabId = savedTab.id
             }
+            isCommandPaletteOpen = false
+        } else if let first = profileTabs.first {
+            if let group = splitGroup(containing: first.id) {
+                currentTabIds = group
+                selectedTabId = first.id
+            } else {
+                currentTabIds = [first.id]
+                selectedTabId = first.id
+            }
+            isCommandPaletteOpen = false
+        } else {
+            currentTabIds = []
+            selectedTabId = UUID()
+            isCommandPaletteOpen = true
+        }
 
-            updateNavigationState()
-            saveSession()
+        updateNavigationState()
+        saveSession()
+
+        if animated {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                profileSwipeOffset = 0
+            }
         }
     }
 
