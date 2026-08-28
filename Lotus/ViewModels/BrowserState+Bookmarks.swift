@@ -104,9 +104,20 @@ extension BrowserState {
         <DL><p>
         """
         for item in items {
-            html += "    <DT><A HREF=\"\(item.url.absoluteString)\">\(item.title)</A>\n"
+            let safeURL = escapeHTML(item.url.absoluteString)
+            let safeTitle = escapeHTML(item.title)
+            html += "    <DT><A HREF=\"\(safeURL)\">\(safeTitle)</A>\n"
         }
         html += "</DL><p>\n"
         return html
+    }
+
+    private func escapeHTML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 }

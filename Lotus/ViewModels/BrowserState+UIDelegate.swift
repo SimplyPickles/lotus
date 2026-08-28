@@ -206,7 +206,16 @@ extension BrowserState {
             let savedState = SitePermissionStore.shared.state(for: host, type: .notifications)
 
             func resolveWith(status: String) {
-                let js = "if (window._lotusNotifCallbacks && window._lotusNotifCallbacks['\(callbackId)']) { window._lotusNotifCallbacks['\(callbackId)']('\(status)'); delete window._lotusNotifCallbacks['\(callbackId)']; }"
+                let safeCallbackId = callbackId.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+                guard !safeCallbackId.isEmpty else { return }
+                let safeStatus = (status == "granted" || status == "denied") ? status : "default"
+                guard let jsonIdData = try? JSONEncoder().encode(safeCallbackId),
+                      let jsonId = String(data: jsonIdData, encoding: .utf8),
+                      let jsonStatusData = try? JSONEncoder().encode(safeStatus),
+                      let jsonStatus = String(data: jsonStatusData, encoding: .utf8) else {
+                    return
+                }
+                let js = "if (window._lotusNotifCallbacks && window._lotusNotifCallbacks[\(jsonId)]) { window._lotusNotifCallbacks[\(jsonId)](\(jsonStatus)); delete window._lotusNotifCallbacks[\(jsonId)]; }"
                 DispatchQueue.main.async {
                     webView?.evaluateJavaScript(js, completionHandler: nil)
                 }
