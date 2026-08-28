@@ -74,48 +74,56 @@ extension BrowserState {
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
         let host = origin.host.lowercased()
-        let permType: SitePermissionType
+        let permTypes: [SitePermissionType]
         let typeName: String
         switch type {
         case .camera:
-            permType = .camera
+            permTypes = [.camera]
             typeName = "Camera"
         case .microphone:
-            permType = .microphone
+            permTypes = [.microphone]
             typeName = "Microphone"
         case .cameraAndMicrophone:
-            permType = .camera
+            permTypes = [.camera, .microphone]
             typeName = "Camera and Microphone"
         @unknown default:
-            permType = .camera
+            permTypes = [.camera]
             typeName = "Camera"
         }
 
-        let savedState = SitePermissionStore.shared.state(for: host, type: permType)
-        switch savedState {
-        case .allow:
+        func saveAndDecide(granted: Bool) {
+            let state: SitePermissionState = granted ? .allow : .deny
+            for pt in permTypes {
+                SitePermissionStore.shared.set(state: state, for: host, type: pt)
+            }
+            decisionHandler(granted ? .grant : .deny)
+        }
+
+        let states = permTypes.map { SitePermissionStore.shared.state(for: host, type: $0) }
+        if states.allSatisfy({ $0 == .allow }) {
             decisionHandler(.grant)
-        case .deny:
+            return
+        }
+        if states.contains(.deny) {
             decisionHandler(.deny)
-        case .prompt:
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "“\(host)” Would Like to Access Your \(typeName)"
-                alert.informativeText = "You can manage site permissions anytime from the security lock in the address bar."
-                alert.addButton(withTitle: "Allow")
-                alert.addButton(withTitle: "Don’t Allow")
-                if let window = webView.window ?? NSApp.keyWindow {
-                    alert.beginSheetModal(for: window) { response in
-                        let granted = response == .alertFirstButtonReturn
-                        SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: permType)
-                        decisionHandler(granted ? .grant : .deny)
-                    }
-                } else {
-                    let response = alert.runModal()
+            return
+        }
+
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "“\(host)” Would Like to Access Your \(typeName)"
+            alert.informativeText = "You can manage site permissions anytime from the security lock in the address bar."
+            alert.addButton(withTitle: "Allow")
+            alert.addButton(withTitle: "Don’t Allow")
+            if let window = webView.window ?? NSApp.keyWindow {
+                alert.beginSheetModal(for: window) { response in
                     let granted = response == .alertFirstButtonReturn
-                    SitePermissionStore.shared.set(state: granted ? .allow : .deny, for: host, type: permType)
-                    decisionHandler(granted ? .grant : .deny)
+                    saveAndDecide(granted: granted)
                 }
+            } else {
+                let response = alert.runModal()
+                let granted = response == .alertFirstButtonReturn
+                saveAndDecide(granted: granted)
             }
         }
     }
