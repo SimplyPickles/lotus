@@ -32,11 +32,18 @@ struct Tabstrip: View {
     @State var unpinnedScrollOffset: CGFloat = 0
 
     @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
+    @State private var enableMatchedGeometry: Bool = false
+    @State private var previousSelectedTabId: UUID? = nil
 
     private var tabSelectionAnimation: Animation? {
         smoothTabSwitchAnimation
             ? Animation.spring(response: 0.20, dampingFraction: 0.86, blendDuration: 0.02)
             : nil
+    }
+
+    private func isUnpinnedTabInCurrentProfile(_ tabId: UUID?) -> Bool {
+        guard let id = tabId, let tab = browserState.tab(for: id) else { return false }
+        return !tab.isPinned && (tab.profileId ?? browserState.defaultProfileId) == browserState.currentProfileId
     }
 
     private var highlightedTabId: UUID {
@@ -322,9 +329,10 @@ struct Tabstrip: View {
 
             HStack(spacing: 0) {
                 ForEach(profiles, id: \.id) { profile in
+                    let isColumnCurrent = (profile.id == browserState.currentProfileId)
                     ProfileSpaceColumnView(
                         profile: profile,
-                        isCurrent: profile.id == browserState.currentProfileId,
+                        isCurrent: isColumnCurrent,
                         pinned: pinnedTabs(for: profile.id),
                         gridHeight: pinnedGridHeight(for: profile.id),
                         gridCols: pinnedGridColumns(for: profile.id),
@@ -338,24 +346,42 @@ struct Tabstrip: View {
                         activeDrag: activeDrag,
                         renamingFolderId: renamingFolderId,
                         renamingTabId: renamingTabId,
-                        smoothTabSwitchAnimation: smoothTabSwitchAnimation,
-                        tabAnimationNamespace: tabAnimationNamespace,
+                        smoothTabSwitchAnimation: smoothTabSwitchAnimation && enableMatchedGeometry,
+                        tabAnimationNamespace: (smoothTabSwitchAnimation && enableMatchedGeometry && isColumnCurrent) ? tabAnimationNamespace : nil,
                         tabSelectionAnimation: tabSelectionAnimation,
                         tabMediaStates: browserState.tabMediaStates,
                         isTabThemeLight: { isTabThemeLight(for: $0) },
                         pinnedShiftOffset: { pinnedShiftOffset(for: $0) },
                         unpinnedShiftOffset: { unpinnedShiftOffset(forRowIndex: $0, in: $1) },
                         onSelectTab: { tabId in
-                            if profile.id != browserState.currentProfileId {
+                            let isProfileSwitch = (profile.id != browserState.currentProfileId)
+                            if isProfileSwitch {
                                 browserState.switchProfile(to: profile.id)
                             }
-                            if let anim = tabSelectionAnimation {
+
+                            let prevIsUnpinned = isUnpinnedTabInCurrentProfile(browserState.selectedTabId)
+                            let nextIsUnpinned = isUnpinnedTabInCurrentProfile(tabId)
+                            let isSmoothSwitch = !isProfileSwitch && prevIsUnpinned && nextIsUnpinned
+
+                            if isSmoothSwitch, let anim = tabSelectionAnimation {
+                                enableMatchedGeometry = true
                                 withAnimation(anim) {
                                     browserState.selectSidebarTab(tabId, extendingRange: NSEvent.modifierFlags.contains(.shift))
                                 }
                             } else {
-                                browserState.selectSidebarTab(tabId, extendingRange: NSEvent.modifierFlags.contains(.shift))
+                                enableMatchedGeometry = false
+                                var tx = Transaction()
+                                tx.disablesAnimations = true
+                                withTransaction(tx) {
+                                    browserState.selectSidebarTab(tabId, extendingRange: NSEvent.modifierFlags.contains(.shift))
+                                }
+                                if nextIsUnpinned {
+                                    DispatchQueue.main.async {
+                                        enableMatchedGeometry = true
+                                    }
+                                }
                             }
+                            previousSelectedTabId = tabId
                         },
                         onRemoveTab: { browserState.removeTab(id: $0) },
                         onToggleMuteTab: { browserState.toggleMuteTab(id: $0) },
@@ -421,6 +447,33 @@ struct Tabstrip: View {
         .background(WindowDragArea())
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isDragCollapsed)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: browserState.profiles.count > 1)
+        .onAppear {
+            previousSelectedTabId = browserState.selectedTabId
+            enableMatchedGeometry = isUnpinnedTabInCurrentProfile(browserState.selectedTabId)
+        }
+        .onChange(of: browserState.selectedTabId) { oldId, newId in
+            let prevIsUnpinned = isUnpinnedTabInCurrentProfile(oldId)
+            let nextIsUnpinned = isUnpinnedTabInCurrentProfile(newId)
+            if prevIsUnpinned && nextIsUnpinned {
+                enableMatchedGeometry = true
+            } else {
+                enableMatchedGeometry = false
+                if nextIsUnpinned {
+                    DispatchQueue.main.async {
+                        enableMatchedGeometry = true
+                    }
+                }
+            }
+            previousSelectedTabId = newId
+        }
+        .onChange(of: browserState.currentProfileId) { _, _ in
+            enableMatchedGeometry = false
+            if isUnpinnedTabInCurrentProfile(browserState.selectedTabId) {
+                DispatchQueue.main.async {
+                    enableMatchedGeometry = true
+                }
+            }
+        }
     }
 
     // MARK: - Profile Space Column View (Equatable for 120fps Gesture Performance)

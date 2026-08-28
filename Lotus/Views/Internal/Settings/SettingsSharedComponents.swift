@@ -20,6 +20,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance = "Appearance"
     case tabs = "Tabs & Sidebar"
     case profiles = "Profiles"
+    case bangs = "Search Bangs"
     case shields = "Shields & Blocking"
     case privacy = "Privacy & Data"
     case downloads = "Downloads"
@@ -31,7 +32,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var group: SettingsCategoryGroup {
         switch self {
-        case .general, .appearance, .tabs, .profiles:
+        case .general, .appearance, .tabs, .profiles, .bangs:
             return .general
         case .shields, .privacy, .downloads:
             return .security
@@ -46,7 +47,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette.fill"
         case .profiles: return "person.crop.circle.fill"
         case .tabs: return "sidebar.left"
-        case .media: return "bolt.fill"
+        case .bangs: return "bolt.fill"
+        case .media: return "play.tv.fill"
         case .shields: return "shield.fill"
         case .privacy: return "lock.shield.fill"
         case .downloads: return "arrow.down.circle.fill"
@@ -61,6 +63,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return Color(nsColor: .systemPurple)
         case .profiles: return Color(nsColor: .systemOrange)
         case .tabs: return Color(nsColor: .systemBlue)
+        case .bangs: return Color(nsColor: .systemYellow)
         case .shields: return Color(nsColor: .systemRed)
         case .privacy: return Color(nsColor: .systemIndigo)
         case .downloads: return Color(nsColor: .systemTeal)
@@ -76,6 +79,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .tabs: return "Tabs & Sidebar"
         case .profiles: return "Profiles"
+        case .bangs: return "Search Bangs"
         case .shields: return "Shields & Blocking"
         case .privacy: return "Privacy & Data"
         case .downloads: return "Downloads"
@@ -91,6 +95,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "Theme, window framing, accent colors, and toolbar layout"
         case .tabs: return "Tab strip behavior, automatic grouping, and inactive tab archiving"
         case .profiles: return "Independent profile spaces with separate cookies, tabs, and logins"
+        case .bangs: return "Direct site search shortcuts using prefixes like !yt, !gh, !w, !r or custom search engines"
         case .shields: return "Tracker blocking, cosmetic filtering, and custom element zapper"
         case .privacy: return "Browsing history, cookie management, and connection security"
         case .downloads: return "File download directory, tidy filenames, and download logs"

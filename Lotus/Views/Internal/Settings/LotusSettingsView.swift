@@ -116,6 +116,8 @@ struct LotusSettingsView: View {
                         AppearanceSettingsSection(browserState: browserState)
                     case .profiles:
                         ProfilesSettingsSection(browserState: browserState, tabId: tabId)
+                    case .bangs:
+                        BangsSettingsSection()
                     case .tabs:
                         TabsSettingsSection(browserState: browserState)
                     case .media:
