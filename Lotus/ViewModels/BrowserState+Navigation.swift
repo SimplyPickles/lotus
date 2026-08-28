@@ -243,6 +243,9 @@ extension BrowserState {
                 let isHTTPSFailure = ContentBlockerService.shared.httpsOnlyModeEnabled && failingURL?.scheme == "https"
                 let pageError = PageLoadError(url: failingURL, error: error, isHTTPSEnforcedFailure: isHTTPSFailure)
                 self.pageLoadErrors[tabId] = pageError
+                if let index = self.tabs.firstIndex(where: { $0.id == tabId }) {
+                    self.tabs[index].title = pageError.title
+                }
             }
         }
     }
@@ -264,6 +267,9 @@ extension BrowserState {
                 let isHTTPSFailure = ContentBlockerService.shared.httpsOnlyModeEnabled && failingURL?.scheme == "https"
                 let pageError = PageLoadError(url: failingURL, error: error, isHTTPSEnforcedFailure: isHTTPSFailure)
                 self.pageLoadErrors[tabId] = pageError
+                if let index = self.tabs.firstIndex(where: { $0.id == tabId }) {
+                    self.tabs[index].title = pageError.title
+                }
             }
         }
     }
@@ -307,6 +313,9 @@ extension BrowserState {
     func reload(for tabId: UUID? = nil) {
         let targetId = tabId ?? selectedTabId
         pageLoadErrors[targetId] = nil
+        if let index = tabs.firstIndex(where: { $0.id == targetId }), let url = tabs[index].url {
+            tabs[index].title = URLInputResolver.initialTitle(for: url, input: url.absoluteString)
+        }
         let wv = getWebView(for: targetId)
         if wv.url != nil {
             wv.reload()
@@ -322,6 +331,9 @@ extension BrowserState {
     func reloadFromOrigin(for tabId: UUID? = nil) {
         let targetId = tabId ?? selectedTabId
         pageLoadErrors[targetId] = nil
+        if let index = tabs.firstIndex(where: { $0.id == targetId }), let url = tabs[index].url {
+            tabs[index].title = URLInputResolver.initialTitle(for: url, input: url.absoluteString)
+        }
         let wv = getWebView(for: targetId)
         if wv.url != nil {
             wv.reloadFromOrigin()

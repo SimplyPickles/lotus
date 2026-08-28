@@ -39,11 +39,12 @@ struct PageLoadError: Identifiable, Equatable {
 
     private static func deriveErrorInfo(for error: NSError, url: URL?, isHTTPSFailure: Bool) -> (String, String, String) {
         let host = url?.host ?? "This page"
+        let displayURL = url?.absoluteString ?? host
 
         if isHTTPSFailure {
             return (
-                "HTTPS Connection Unavailable",
-                "Lotus attempted to connect to \(host) securely over HTTPS, but the server does not support a secure connection.",
+                "HTTPS Unavailable",
+                "Lotus attempted to connect to “\(host)” securely over HTTPS, but the server does not support a secure connection.",
                 "lock.slash"
             )
         }
@@ -52,41 +53,60 @@ struct PageLoadError: Identifiable, Equatable {
             switch error.code {
             case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
                 return (
-                    "Server Not Found",
-                    "Lotus cannot find the server at \(host). Check the address for typing errors or verify your DNS settings.",
+                    "Server Unreachable",
+                    "Lotus can’t open the page “\(displayURL)” because Lotus cannot find the server “\(host)”. Check the address for typing errors or verify your network connection.",
                     "globe.badge.chevron.backward"
                 )
             case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
                 return (
-                    "You Are Offline",
-                    "Lotus is unable to connect to the internet. Please check your network connection and try again.",
+                    "No Connection",
+                    "Lotus can’t open the page “\(displayURL)” because you are not connected to the internet. Please check your network connection and try again.",
                     "wifi.slash"
                 )
             case NSURLErrorTimedOut:
                 return (
-                    "Connection Timed Out",
-                    "The server at \(host) took too long to respond. The site may be experiencing high traffic or network issues.",
+                    "Timed Out",
+                    "Lotus can’t open the page “\(displayURL)” because the server where this page is located isn’t responding. The site may be experiencing high traffic or network issues.",
                     "clock.badge.exclamationmark"
                 )
             case NSURLErrorCannotConnectToHost, NSURLErrorBadServerResponse:
                 return (
-                    "Cannot Connect to Server",
-                    "Lotus established a connection, but the server at \(host) refused it or returned an invalid response.",
+                    "Connection Failed",
+                    "Lotus can’t connect to the server “\(host)”. The server may be busy or experiencing network difficulties.",
                     "server.rack"
                 )
             case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateHasBadDate,
                  NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasUnknownRoot,
                  NSURLErrorServerCertificateNotYetValid, NSURLErrorClientCertificateRejected:
                 return (
-                    "Secure Connection Failed",
-                    "Lotus cannot verify the identity of \(host) because its security certificate is invalid, expired, or untrusted.",
+                    "Security Error",
+                    "Lotus can’t verify the identity of the website “\(host)”. The certificate for this server is invalid, expired, or untrusted.",
                     "lock.trianglebadge.exclamationmark"
                 )
             case NSURLErrorHTTPTooManyRedirects, NSURLErrorRedirectToNonExistentLocation:
                 return (
-                    "Too Many Redirects",
-                    "The page at \(host) is redirecting in a way that will never complete. Clearing cookies for this site may help.",
-                    "arrow.triangle.2.circlepath.circle"
+                    "Redirect Loop",
+                    "Lotus can’t open the page “\(displayURL)” because too many redirects occurred attempting to open it. Clearing cookies for this site may solve the problem.",
+                    "arrow.triangle.2.circlepath"
+                )
+            default:
+                break
+            }
+        }
+
+        if error.domain == "WebKitErrorDomain" {
+            switch error.code {
+            case 101: // WebKitErrorCannotShowURL
+                return (
+                    "Invalid Address",
+                    "Lotus can’t open the page “\(displayURL)” because the address is invalid or cannot be displayed.",
+                    "safari"
+                )
+            case 102: // WebKitErrorCannotShowMIMEType
+                return (
+                    "Unsupported Format",
+                    "Lotus can’t display this content because the file format is not supported.",
+                    "doc.badge.arrow.up"
                 )
             default:
                 break
@@ -94,8 +114,8 @@ struct PageLoadError: Identifiable, Equatable {
         }
 
         return (
-            "Unable to Load Page",
-            error.localizedDescription.isEmpty ? "An unexpected network error occurred while attempting to load \(host)." : error.localizedDescription,
+            "Load Error",
+            error.localizedDescription.isEmpty ? "An unexpected network error occurred while attempting to load “\(displayURL)”." : "Lotus can’t open the page “\(displayURL)”. The error was: “\(error.localizedDescription)”",
             "exclamationmark.triangle"
         )
     }

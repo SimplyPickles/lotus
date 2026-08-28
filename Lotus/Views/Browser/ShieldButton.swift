@@ -32,19 +32,16 @@ struct ShieldButton: View {
         contentBlocker.isShieldActive(for: currentURL)
     }
 
-    private var activeShieldColor: Color {
-        Color(nsColor: browserState.detectedAccentNSColor(for: tabId))
-    }
-
     var body: some View {
         Button {
             isShieldPopoverPresented.toggle()
         } label: {
             ZStack {
-                let inactiveColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black.opacity(0.4) : Color.white.opacity(0.4)) : Color.secondary
+                let contrastColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : Color.primary
+                let inactiveColor = contrastColor.opacity(0.40)
                 Image(systemName: isShieldActive ? "shield.fill" : "shield.slash.fill")
                     .font(.system(size: 12.5, weight: .regular))
-                    .foregroundColor(isShieldActive ? activeShieldColor : inactiveColor)
+                    .foregroundColor(isShieldActive ? contrastColor : inactiveColor)
                     .opacity(isShieldActive ? 1.0 : 0.65)
                     .rotationEffect(.degrees(rotationAngle))
                     .scaleEffect(iconScale)

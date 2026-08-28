@@ -117,6 +117,9 @@ struct BrowserToolbar: View {
         .onChange(of: browserState.url(for: activeTabId)) {
             syncInputText()
         }
+        .onChange(of: browserState.pageLoadErrors[activeTabId]) {
+            syncInputText()
+        }
         .onChange(of: currentZoomLevel) { _, newZoomLevel in
             if newZoomLevel != 1.0 {
                 isZoomIndicatorVisible = true
@@ -316,8 +319,8 @@ struct BrowserToolbar: View {
                 if centerURLPreview && !isInputHovered {
                     // Centered prettified preview with lock icon
                     HStack(spacing: 4) {
-                        if shouldShowSecurityLock, let url = currentURL {
-                            securityLockButton(for: url)
+                        if shouldShowSecurityLock {
+                            securityLockButton(for: currentURL)
                         }
 
                         if let host = prettifiedHost {
@@ -349,8 +352,8 @@ struct BrowserToolbar: View {
                 } else {
                     // Left-aligned layout (when hovering to see real URL or center preview is off)
                     HStack(spacing: 0) {
-                        if shouldShowSecurityLock, let url = currentURL {
-                            securityLockButton(for: url)
+                        if shouldShowSecurityLock {
+                            securityLockButton(for: currentURL)
                                 .padding(.leading, 7)
                         }
 
@@ -435,12 +438,13 @@ struct BrowserToolbar: View {
                     let isCurrentBookmarked = browserState.isBookmarked(url: currentURL, profileId: activeTabProfileId)
                     let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
                     if shouldShowBookmark {
+                        let bookmarkColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : (isCurrentBookmarked ? Color.primary : theme.foregroundSecondary)
                         Button {
                             browserState.toggleBookmark(for: activeTabId)
                         } label: {
                             Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
                                 .font(.system(size: 11.5, weight: isCurrentBookmarked ? .semibold : .regular))
-                                .foregroundColor(hairlineAccentColor)
+                                .foregroundColor(bookmarkColor)
                                 .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                         }
@@ -462,6 +466,7 @@ struct BrowserToolbar: View {
                         : "rectangle.split.2x1"
 
                     if shouldShowSplit {
+                        let splitColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : (isSplitActive ? Color.primary : theme.foregroundSecondary)
                         Menu {
                             if isSplitActive {
                                 Button {
@@ -508,7 +513,7 @@ struct BrowserToolbar: View {
                         } label: {
                             Image(systemName: splitIconName)
                                 .font(.system(size: 11.5, weight: isSplitActive ? .semibold : .regular))
-                                .foregroundColor(isSplitActive ? hairlineAccentColor : theme.foregroundSecondary)
+                                .foregroundColor(splitColor)
                                 .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                         } primaryAction: {
@@ -584,8 +589,8 @@ struct BrowserToolbar: View {
             isDownloadsPopoverPresented.toggle()
         } label: {
             ZStack {
+                let activeColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : Color.primary
                 if browserState.hasActiveDownloads {
-                    let activeColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : hairlineAccentColor
                     ZStack {
                         Circle()
                             .stroke(activeColor.opacity(0.25), lineWidth: 2.0)
@@ -616,8 +621,9 @@ struct BrowserToolbar: View {
             .overlay(
                 Group {
                     if showDownloadSuccessRing {
+                        let activeColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : Color.primary
                         Circle()
-                            .stroke(hairlineAccentColor.opacity(0.90), lineWidth: 1.5)
+                            .stroke(activeColor.opacity(0.90), lineWidth: 1.5)
                             .scaleEffect(downloadRingScale)
                             .opacity(downloadRingOpacity)
                     }
@@ -661,12 +667,13 @@ struct BrowserToolbar: View {
     }
 
     private var mediaButton: some View {
-        Button {
+        let mediaColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : Color.primary
+        return Button {
             isMediaPopoverPresented.toggle()
         } label: {
             Image(systemName: browserState.hasActiveAudioPlaying ? "waveform" : "play.tv")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundColor(browserState.hasActiveAudioPlaying ? (theme.isThemeLight ? .black : .white) : theme.foregroundSecondary)
+                .foregroundColor(browserState.hasActiveAudioPlaying ? mediaColor : theme.foregroundSecondary)
         }
         .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
         .focusable(false)
@@ -755,6 +762,7 @@ struct BrowserToolbar: View {
         let splitIconName: String = isSplitActive
             ? (isLeftPane ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
             : "rectangle.split.2x1"
+        let splitColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : Color.primary
 
         return Menu {
             if isSplitActive {
@@ -802,7 +810,7 @@ struct BrowserToolbar: View {
         } label: {
             Image(systemName: splitIconName)
                 .font(.system(size: 12.5, weight: .regular))
-                .foregroundColor(isSplitActive ? (theme.themeColor != nil ? (theme.isThemeLight ? .black : .white) : Color.accentColor) : (theme.themeColor != nil ? (theme.isThemeLight ? .black.opacity(0.85) : .white.opacity(0.90)) : Color.primary))
+                .foregroundColor(splitColor)
         } primaryAction: {
             if isSplitActive {
                 browserState.closeSplit(id: activeTabId)
@@ -838,28 +846,50 @@ struct BrowserToolbar: View {
     }
 
     @ViewBuilder
-    private func securityLockButton(for url: URL) -> some View {
-        Button {
-            isSecurityPopoverPresented.toggle()
-        } label: {
-            Image(systemName: url.scheme?.lowercased() == "https" ? "lock.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundColor(url.scheme?.lowercased() == "https" ? theme.foregroundSecondary.opacity(0.65) : .orange)
-                .frame(width: 18, height: 18)
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .popover(isPresented: $isSecurityPopoverPresented, arrowEdge: .bottom) {
-            SecurityDetailsPopover(browserState: browserState, tabId: activeTabId)
+    private func securityLockButton(for url: URL?) -> some View {
+        if browserState.pageLoadErrors[activeTabId] != nil {
+            Button {
+                isSecurityPopoverPresented.toggle()
+            } label: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundColor(.orange)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .popover(isPresented: $isSecurityPopoverPresented, arrowEdge: .bottom) {
+                SecurityDetailsPopover(browserState: browserState, tabId: activeTabId)
+            }
+        } else if let url = url {
+            Button {
+                isSecurityPopoverPresented.toggle()
+            } label: {
+                Image(systemName: url.scheme?.lowercased() == "https" ? "lock.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundColor(url.scheme?.lowercased() == "https" ? theme.foregroundSecondary.opacity(0.65) : .orange)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .popover(isPresented: $isSecurityPopoverPresented, arrowEdge: .bottom) {
+                SecurityDetailsPopover(browserState: browserState, tabId: activeTabId)
+            }
         }
     }
 
     private var shouldShowSecurityLock: Bool {
+        if browserState.pageLoadErrors[activeTabId] != nil {
+            return true
+        }
         guard let url = currentURL else { return false }
         return !url.isLotusPage
     }
 
     private var prettifiedHost: String? {
+        if let error = browserState.pageLoadErrors[activeTabId] {
+            return error.title
+        }
         guard let url = currentURL else { return nil }
         if let lotusTitle = url.lotusPageTitle {
             return lotusTitle
@@ -869,6 +899,15 @@ struct BrowserToolbar: View {
     }
 
     private var prettifiedDetail: String? {
+        if let error = browserState.pageLoadErrors[activeTabId] {
+            if let host = error.url?.host, !host.isEmpty {
+                return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            }
+            if let abs = error.url?.absoluteString, !abs.isEmpty, abs != error.title {
+                return abs
+            }
+            return nil
+        }
         guard let url = currentURL, !url.isLotusPage else { return nil }
         if let title = currentTab?.title, !title.isEmpty, title != prettifiedHost, title != url.absoluteString {
             return title
@@ -884,7 +923,9 @@ struct BrowserToolbar: View {
     }
 
     private func syncInputText() {
-        if let url = currentURL, url.isLotusPage {
+        if let error = browserState.pageLoadErrors[activeTabId], let errorURL = error.url {
+            urlInputText = errorURL.absoluteString
+        } else if let url = currentURL, url.isLotusPage {
             // Show the URL for internal pages (e.g. lotus://history).
             urlInputText = url.absoluteString
         } else if let abs = currentURL?.absoluteString, !abs.isEmpty {

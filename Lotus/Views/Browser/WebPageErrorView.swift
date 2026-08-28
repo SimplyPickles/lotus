@@ -15,23 +15,14 @@ struct WebPageErrorView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isRetrying: Bool = false
-    @State private var isHoveringRetry: Bool = false
-    @State private var isHoveringFallback: Bool = false
+    @State private var showDetails: Bool = false
 
     private var foregroundPrimary: Color {
         colorScheme == .dark ? Color.white.opacity(0.92) : Color(nsColor: .labelColor)
     }
 
     private var foregroundSecondary: Color {
-        colorScheme == .dark ? Color.white.opacity(0.55) : Color(nsColor: .secondaryLabelColor)
-    }
-
-    private var cardBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03)
-    }
-
-    private var cardStroke: Color {
-        colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)
+        colorScheme == .dark ? Color.white.opacity(0.60) : Color(nsColor: .secondaryLabelColor)
     }
 
     private var accentColor: Color {
@@ -39,145 +30,112 @@ struct WebPageErrorView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Under-page background matching browser theme
-            theme.backgroundColor
+        ZStack(alignment: .top) {
+            // Clean native window background
+            Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                // Error Icon Badge
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    accentColor.opacity(colorScheme == .dark ? 0.22 : 0.14),
-                                    accentColor.opacity(colorScheme == .dark ? 0.06 : 0.03)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 72, height: 72)
-                        .overlay(
-                            Circle()
-                                .stroke(accentColor.opacity(colorScheme == .dark ? 0.35 : 0.22), lineWidth: 1)
-                        )
+            VStack(spacing: 0) {
+                // Fixed top offset anchoring the error message slightly above the center
+                Spacer()
+                    .frame(height: 96)
 
+                VStack(spacing: 20) {
+                    // Larger Native macOS Style Error Icon
                     Image(systemName: error.systemImage)
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundColor(accentColor)
-                }
+                        .font(.system(size: 58, weight: .light))
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
+                        .padding(.bottom, 2)
 
-                // Title & Description
-                VStack(spacing: 8) {
-                    Text(error.title)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(foregroundPrimary)
-                        .multilineTextAlignment(.center)
+                    // Title & Description
+                    VStack(spacing: 8) {
+                        Text(error.title)
+                            .font(.system(size: 19.5, weight: .semibold))
+                            .foregroundColor(foregroundPrimary)
+                            .multilineTextAlignment(.center)
 
-                    Text(error.message)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(foregroundSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                        .frame(maxWidth: 440)
-                }
-
-                // URL & Error Code Detail Pill
-                if let url = error.url {
-                    HStack(spacing: 8) {
-                        Text(url.absoluteString)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        Text(error.message)
+                            .font(.system(size: 13, weight: .regular))
                             .foregroundColor(foregroundSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        Text("•")
-                            .font(.system(size: 10, weight: .regular))
-                            .foregroundColor(foregroundSecondary.opacity(0.4))
-
-                        Text("Error \(error.code)")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundColor(foregroundSecondary.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(3)
+                            .frame(maxWidth: 460)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(cardBackground)
-                            .overlay(
-                                Capsule()
-                                    .stroke(cardStroke, lineWidth: 1)
-                            )
-                    )
-                    .frame(maxWidth: 480)
-                }
 
-                // Action Buttons
-                HStack(spacing: 12) {
-                    Button {
-                        isRetrying = true
-                        onRetry()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                            isRetrying = false
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .medium))
-                                .rotationEffect(.degrees(isRetrying ? 360 : 0))
-                                .animation(isRetrying ? .linear(duration: 0.6).repeatForever(autoreverses: false) : .default, value: isRetrying)
-
+                    // Action Buttons Row (Try Again + Show Details + Insecure Fallback)
+                    HStack(spacing: 10) {
+                        Button {
+                            isRetrying = true
+                            onRetry()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                                isRetrying = false
+                            }
+                        } label: {
                             Text("Try Again")
-                                .font(.system(size: 13, weight: .medium))
                         }
-                        .foregroundColor(colorScheme == .dark ? Color.white : Color.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                        .tint(accentColor)
+                        .keyboardShortcut(.defaultAction)
+
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showDetails.toggle()
+                            }
+                        } label: {
+                            Text(showDetails ? "Hide Details" : "Show Details")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+
+                        if error.isHTTPSEnforcedFailure, let fallback = onOpenHTTPFallback {
+                            Button {
+                                fallback()
+                            } label: {
+                                Text("Load Insecure HTTP")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
+                        }
+                    }
+                    .padding(.top, 4)
+
+                    // Expanded Details Well
+                    if showDetails {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let url = error.url {
+                                Text("URL: \(url.absoluteString)")
+                                    .lineLimit(2)
+                            }
+                            Text("Domain: \(error.domain)")
+                            Text("Code: \(error.code)")
+                            if !error.localizedDescription.isEmpty {
+                                Text("Description: \(error.localizedDescription)")
+                                    .lineLimit(3)
+                            }
+                        }
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(foregroundSecondary)
+                        .padding(10)
+                        .frame(maxWidth: 440, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(accentColor)
-                                .opacity(isHoveringRetry ? 0.90 : 1.0)
+                                .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
                         )
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .onHover { isHoveringRetry = $0 }
-
-                    if error.isHTTPSEnforcedFailure, let fallback = onOpenHTTPFallback {
-                        Button {
-                            fallback()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "lock.open")
-                                    .font(.system(size: 12, weight: .regular))
-
-                                Text("Load via Insecure HTTP")
-                                    .font(.system(size: 13, weight: .regular))
-                            }
-                            .foregroundColor(foregroundPrimary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(cardBackground)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .stroke(cardStroke, lineWidth: 1)
-                                    )
-                                    .opacity(isHoveringFallback ? 0.8 : 1.0)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .onHover { isHoveringFallback = $0 }
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .padding(.top, 4)
                     }
                 }
-                .padding(.top, 8)
+                .padding(.horizontal, 32)
+                .frame(maxWidth: 520)
+
+                Spacer(minLength: 20)
             }
-            .padding(32)
-            .frame(maxWidth: 520)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity.animation(.easeInOut(duration: 0.2)))
