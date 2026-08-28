@@ -1151,14 +1151,24 @@ enum UserScripts {
     static func zapRulesScript(for elements: [ZappedElement]) -> String {
         guard !elements.isEmpty else { return "" }
         let combinedSelectors = elements.map { $0.selector }.joined(separator: ", ")
-        let escapedCSS = combinedSelectors.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"")
+        let cssRule = "\(combinedSelectors) { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }"
+        guard let jsonSelectorData = try? JSONSerialization.data(withJSONObject: [combinedSelectors]),
+              let jsonSelectorArray = String(data: jsonSelectorData, encoding: .utf8),
+              jsonSelectorArray.hasPrefix("[") && jsonSelectorArray.hasSuffix("]"),
+              let jsonCSSData = try? JSONSerialization.data(withJSONObject: [cssRule]),
+              let jsonCSSArray = String(data: jsonCSSData, encoding: .utf8),
+              jsonCSSArray.hasPrefix("[") && jsonCSSArray.hasSuffix("]") else {
+            return ""
+        }
+        let jsonSelector = String(jsonSelectorArray.dropFirst().dropLast())
+        let jsonCSS = String(jsonCSSArray.dropFirst().dropLast())
 
         return """
         (function() {
             try {
                 var styleId = '__lotus_zap_styles__';
                 var existing = document.getElementById(styleId);
-                var css = "\(escapedCSS) { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }";
+                var css = \(jsonCSS);
                 if (existing) {
                     existing.textContent = css;
                 } else {
@@ -1169,7 +1179,7 @@ enum UserScripts {
                 }
 
                 // Immediate removal of existing nodes
-                var selector = "\(escapedCSS)";
+                var selector = \(jsonSelector);
                 function pruneNodes() {
                     try {
                         var nodes = document.querySelectorAll(selector);
@@ -1416,11 +1426,17 @@ enum UserScripts {
 
     /// Restores a zapped element in the live DOM.
     static func undoZapScript(selector: String) -> String {
-        let escaped = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        guard let jsonSelectorData = try? JSONSerialization.data(withJSONObject: [selector]),
+              let jsonSelectorArray = String(data: jsonSelectorData, encoding: .utf8),
+              jsonSelectorArray.hasPrefix("[") && jsonSelectorArray.hasSuffix("]") else {
+            return ""
+        }
+        let jsonSelector = String(jsonSelectorArray.dropFirst().dropLast())
+
         return """
         (function() {
             try {
-                var nodes = document.querySelectorAll("\(escaped)");
+                var nodes = document.querySelectorAll(\(jsonSelector));
                 for (var i = 0; i < nodes.length; i++) {
                     nodes[i].style.removeProperty('display');
                     nodes[i].style.removeProperty('visibility');
