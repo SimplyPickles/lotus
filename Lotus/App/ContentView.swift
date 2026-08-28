@@ -35,7 +35,7 @@ struct ContentView: View {
 
     private var shouldShowFloatingSidebar: Bool {
         !browserState.isSidebarVisible
-            && (isHoveringFloatingSidebar || isFloatingSidebarTemporarilyShown || browserState.activeTabDrag != nil || browserState.isResizingSidebar)
+            && (isHoveringFloatingSidebar || isFloatingSidebarTemporarilyShown || browserState.activeTabDrag != nil || browserState.isResizingSidebar || browserState.profileSwipeOffset != 0)
     }
 
     private var isStaticSidebarPresented: Bool {
@@ -100,20 +100,23 @@ struct ContentView: View {
                    browserState.canOpenInSplit(id: drag.tab.id),
                    drag.location.x >= browserState.sidebarWidth {
                     let (leftCardFrame, rightCardFrame) = browserState.splitTargetFrames(windowWidth: windowWidth, windowHeight: windowHeight)
+                    let spaceAccent = browserState.currentProfile.color.color
 
                     ZStack {
                         SplitDropZoneCard(
                             side: .left,
                             isHovered: drag.splitDropTarget == .left,
                             mouseLocation: drag.location,
-                            cardFrame: leftCardFrame
+                            cardFrame: leftCardFrame,
+                            accentColor: spaceAccent
                         )
 
                         SplitDropZoneCard(
                             side: .right,
                             isHovered: drag.splitDropTarget == .right,
                             mouseLocation: drag.location,
-                            cardFrame: rightCardFrame
+                            cardFrame: rightCardFrame,
+                            accentColor: spaceAccent
                         )
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -244,6 +247,21 @@ struct ContentView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: task)
             }
         }
+        .onChange(of: browserState.currentProfileId) { _, _ in
+            if !browserState.isSidebarVisible {
+                temporaryFloatingDismissTask?.cancel()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    isFloatingSidebarTemporarilyShown = true
+                }
+                let task = DispatchWorkItem {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                        isFloatingSidebarTemporarilyShown = false
+                    }
+                }
+                temporaryFloatingDismissTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: task)
+            }
+        }
         .onAppear {
             AppDelegate.sharedBrowserState = browserState
         }
@@ -273,7 +291,7 @@ struct ContentView: View {
             .padding(3)
             .contentShape(Rectangle())
             .onHover { hovering in
-                if !browserState.isResizingSidebar && browserState.activeTabDrag == nil {
+                if !browserState.isResizingSidebar && browserState.activeTabDrag == nil && browserState.profileSwipeOffset == 0 {
                     if hovering {
                         temporaryFloatingDismissTask?.cancel()
                         temporaryFloatingDismissTask = nil
@@ -308,7 +326,6 @@ struct ContentView: View {
             splitBrowserContainers(for: currentTabIds)
         } else if let tabId = currentTabIds.first {
             BrowserContainer(browserState: browserState, tabId: tabId)
-                .id(tabId)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .zIndex(browserState.selectedTabId == tabId ? 1 : 0)
                 .transition(.identity)
@@ -330,7 +347,6 @@ struct ContentView: View {
 
             HStack(spacing: 0) {
                 BrowserContainer(browserState: browserState, tabId: leftId)
-                    .id(leftId)
                     .frame(width: leftWidth)
                     .frame(maxHeight: .infinity)
                     .zIndex(browserState.selectedTabId == leftId ? 2 : 0)
@@ -347,7 +363,6 @@ struct ContentView: View {
                 .zIndex(50)
 
                 BrowserContainer(browserState: browserState, tabId: rightId)
-                    .id(rightId)
                     .frame(width: rightWidth)
                     .frame(maxHeight: .infinity)
                     .zIndex(browserState.selectedTabId == rightId ? 2 : 0)
@@ -397,6 +412,7 @@ private struct SplitDropZoneCard: View {
     let isHovered: Bool
     let mouseLocation: CGPoint
     let cardFrame: CGRect
+    var accentColor: Color = Color.accentColor
     @Environment(\.colorScheme) private var colorScheme
 
     private var magneticOffset: CGSize {
@@ -440,14 +456,14 @@ private struct SplitDropZoneCard: View {
 
     private var strokeColor: Color {
         if isHovered {
-            return Color(red: 0.35, green: 0.65, blue: 1.0).opacity(colorScheme == .dark ? 0.95 : 0.85)
+            return accentColor.opacity(colorScheme == .dark ? 0.95 : 0.85)
         }
         return colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.12)
     }
 
     private var foregroundColor: Color {
         if isHovered {
-            return Color(red: 0.40, green: 0.70, blue: 1.0)
+            return accentColor
         }
         return colorScheme == .dark ? Color.white.opacity(0.70) : Color.black.opacity(0.60)
     }
@@ -461,6 +477,9 @@ private struct SplitDropZoneCard: View {
                 VisualEffectView(material: .sidebar, blendingMode: .withinWindow, state: .active)
                     .overlay(
                         (colorScheme == .dark ? Color.black.opacity(0.35) : Color(nsColor: .windowBackgroundColor).opacity(0.75))
+                    )
+                    .overlay(
+                        isHovered ? accentColor.opacity(colorScheme == .dark ? 0.12 : 0.08) : Color.clear
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 

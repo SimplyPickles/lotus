@@ -112,6 +112,15 @@ private struct LotusMenuCommands: Commands {
             }
             .keyboardShortcut("w", modifiers: .command)
 
+            Button("Archive Tab") {
+                if let state = AppDelegate.sharedBrowserState {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        state.archiveTab(id: state.selectedTabId)
+                    }
+                }
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+
             Button("Close Window") {
                 NSApp.keyWindow?.performClose(nil)
             }

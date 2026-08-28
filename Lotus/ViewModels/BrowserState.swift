@@ -584,12 +584,12 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     private func setupScrollMonitor() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self = self else { return event }
-            guard self.isSidebarVisible && !self.isPrivate && self.profiles.count > 1 else { return event }
+            guard !self.isPrivate && self.profiles.count > 1 else { return event }
 
             guard let window = event.window ?? NSApp.keyWindow else { return event }
             let mouseLoc = event.locationInWindow
             let sidebarWidth = self.sidebarWidth
-            let isInsideSidebar = mouseLoc.x >= 0 && mouseLoc.x <= (sidebarWidth + 12) && mouseLoc.y >= 0 && mouseLoc.y <= window.frame.height
+            let isInsideSidebar = mouseLoc.x >= 0 && mouseLoc.x <= (sidebarWidth + 24) && mouseLoc.y >= 0 && mouseLoc.y <= window.frame.height
 
             if !self.isTrackpadSwipingProfiles && !isInsideSidebar {
                 return event

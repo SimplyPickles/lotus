@@ -51,9 +51,6 @@ final class WebTabHostNSView: NSView {
         super.init(frame: frameRect)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
-        self.layer?.cornerRadius = 0
-        self.layer?.maskedCorners = []
-        self.layer?.masksToBounds = false
         self.autoresizesSubviews = true
     }
 
@@ -66,11 +63,6 @@ final class WebTabHostNSView: NSView {
 
         if isTabSwitch {
             newWebView.wantsLayer = true
-            newWebView.layer?.cornerRadius = 0
-            newWebView.layer?.maskedCorners = []
-            newWebView.layer?.masksToBounds = false
-
-            clearCornerRadii(in: newWebView)
             newWebView.autoresizingMask = [.width, .height]
 
             if newWebView.superview != self {
@@ -81,7 +73,7 @@ final class WebTabHostNSView: NSView {
             }
 
             if bounds.width > 0 && bounds.height > 0 {
-                newWebView.frame = NSRect(x: 0, y: 0, width: ceil(bounds.width), height: ceil(bounds.height))
+                newWebView.frame = bounds
             }
             newWebView.isHidden = false
             currentWebView = newWebView
@@ -110,33 +102,6 @@ final class WebTabHostNSView: NSView {
         }
     }
 
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        applyBoundsToSubviews()
-    }
-
-    override func setFrameOrigin(_ newOrigin: NSPoint) {
-        super.setFrameOrigin(newOrigin)
-        applyBoundsToSubviews()
-    }
-
-    override var frame: NSRect {
-        didSet {
-            applyBoundsToSubviews()
-        }
-    }
-
-    override var bounds: NSRect {
-        didSet {
-            applyBoundsToSubviews()
-        }
-    }
-
-    override func resizeSubviews(withOldSize oldSize: NSSize) {
-        super.resizeSubviews(withOldSize: oldSize)
-        applyBoundsToSubviews()
-    }
-
     override func layout() {
         super.layout()
         applyBoundsToSubviews()
@@ -154,28 +119,12 @@ final class WebTabHostNSView: NSView {
         }
     }
 
-    override func viewWillDraw() {
-        super.viewWillDraw()
-        applyBoundsToSubviews()
-    }
-
     private func applyBoundsToSubviews() {
         guard bounds.width > 0, bounds.height > 0 else { return }
-        let targetFrame = NSRect(x: 0, y: 0, width: ceil(bounds.width), height: ceil(bounds.height))
         for subview in subviews {
-            if subview.frame != targetFrame {
-                subview.frame = targetFrame
-                subview.needsLayout = true
+            if subview.frame != bounds {
+                subview.frame = bounds
             }
-        }
-    }
-
-    private func clearCornerRadii(in view: NSView) {
-        view.layer?.cornerRadius = 0
-        view.layer?.maskedCorners = []
-
-        for subview in view.subviews {
-            clearCornerRadii(in: subview)
         }
     }
 }

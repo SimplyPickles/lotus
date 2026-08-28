@@ -78,7 +78,9 @@ extension BrowserState {
                       let lastMember = remaining.lastIndex(where: { $0.folderId == folderId }) {
                 insertionIndex = lastMember + 1
             } else {
-                insertionIndex = remaining.count
+                let targetProfileId = moved.first?.profileId ?? currentProfileId
+                let lastProfileTab = remaining.lastIndex(where: { ($0.profileId ?? defaultProfileId) == targetProfileId })
+                insertionIndex = lastProfileTab.map { $0 + 1 } ?? remaining.count
             }
             remaining.insert(contentsOf: moved, at: insertionIndex)
         }

@@ -23,11 +23,19 @@ struct SplitResizeHandle: View {
     @State private var isSnappedToCenter: Bool = false
 
     var body: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(width: max(12, spacing))
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
+        ZStack {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: max(12, spacing))
+
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(browserState.currentProfile.color.color.opacity(isHovered || dragStartRatio != nil ? 0.85 : 0))
+                .frame(width: 3, height: 44)
+                .animation(.easeInOut(duration: 0.15), value: isHovered)
+                .animation(.easeInOut(duration: 0.15), value: dragStartRatio != nil)
+        }
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {
                     if !isHovered {

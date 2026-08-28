@@ -453,7 +453,8 @@ struct BrowserToolbar: View {
                     let isSplitActive = browserState.isSplit(id: activeTabId)
                     let shouldShowSplit = isInputHovered
                     let group = browserState.splitGroup(containing: activeTabId)
-                    let otherTabs = browserState.tabs.filter { (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
+                    let activeProfileId = browserState.tab(for: activeTabId)?.profileId ?? browserState.currentProfileId
+                    let otherTabs = browserState.tabs.filter { ($0.profileId ?? browserState.defaultProfileId) == activeProfileId && (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
 
                     let isLeftPane = group?.first == activeTabId
                     let splitIconName: String = isSplitActive
@@ -748,7 +749,8 @@ struct BrowserToolbar: View {
     private var splitViewButton: some View {
         let isSplitActive = browserState.isSplit(id: activeTabId)
         let group = browserState.splitGroup(containing: activeTabId)
-        let otherTabs = browserState.tabs.filter { (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
+        let activeProfileId = browserState.tab(for: activeTabId)?.profileId ?? browserState.currentProfileId
+        let otherTabs = browserState.tabs.filter { ($0.profileId ?? browserState.defaultProfileId) == activeProfileId && (group == nil ? $0.id != activeTabId : !group!.contains($0.id)) && !$0.isPinned }
         let isLeftPane = group?.first == activeTabId
         let splitIconName: String = isSplitActive
             ? (isLeftPane ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")

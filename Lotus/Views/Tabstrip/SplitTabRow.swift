@@ -54,6 +54,9 @@ struct SplitTabRow: View {
                 isThemeLight: isThemeLight,
                 isPlayingAudio: isPlayingAudio1,
                 isMuted: isMuted1,
+                activeTabBackgroundColor: activeTabBackgroundColor,
+                namespace: namespace,
+                smoothTabSwitchAnimation: smoothTabSwitchAnimation,
                 onToggleMute: { onToggleMute(tab1) },
                 onSelect: { onSelect(tab1) },
                 onClose: { onClose(tab1) }
@@ -76,6 +79,9 @@ struct SplitTabRow: View {
                 isThemeLight: isThemeLight,
                 isPlayingAudio: isPlayingAudio2,
                 isMuted: isMuted2,
+                activeTabBackgroundColor: activeTabBackgroundColor,
+                namespace: namespace,
+                smoothTabSwitchAnimation: smoothTabSwitchAnimation,
                 onToggleMute: { onToggleMute(tab2) },
                 onSelect: { onSelect(tab2) },
                 onClose: { onClose(tab2) }
@@ -99,29 +105,6 @@ struct SplitTabRow: View {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.black.opacity(0.04))
                     .opacity(isMultiSelected ? 1 : 0)
-
-                if isSplitActive && (isLeftFocused || isRightFocused) {
-                    HStack(spacing: 0) {
-                        if isRightFocused {
-                            Spacer(minLength: 0)
-                        }
-
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(activeTabBackgroundColor)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
-                            )
-                            .frame(width: halfWidth, height: 34)
-
-                        if isLeftFocused {
-                            Spacer(minLength: 0)
-                        }
-                    }
-                    .frame(width: totalWidth, height: 34)
-                    .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: selectedTabId)
-                    .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: activeTabBackgroundColor)
-                }
             }
         )
         .overlay(
@@ -141,6 +124,9 @@ private struct SplitTabHalf: View {
     let isThemeLight: Bool
     var isPlayingAudio: Bool = false
     var isMuted: Bool = false
+    let activeTabBackgroundColor: Color
+    var namespace: Namespace.ID? = nil
+    var smoothTabSwitchAnimation: Bool = true
     var onToggleMute: () -> Void = {}
     let onSelect: () -> Void
     let onClose: () -> Void
@@ -241,11 +227,36 @@ private struct SplitTabHalf: View {
         .padding(.horizontal, 6)
         .frame(maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
-                .opacity(!isSplitActive && effectiveHovered ? 1 : 0)
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                    .opacity(!isSplitActive && effectiveHovered ? 1 : 0)
+
+                if isFocused {
+                    if let namespace = namespace, smoothTabSwitchAnimation {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(activeTabBackgroundColor)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
+                            )
+                            .matchedGeometryEffect(id: "activeTabHighlight", in: namespace, properties: .frame)
+                            .zIndex(10)
+                    } else {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(activeTabBackgroundColor)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
+                            )
+                            .zIndex(10)
+                            .animation(nil, value: activeTabBackgroundColor)
+                            .animation(nil, value: isFocused)
+                    }
+                }
+            }
         )
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onTapGesture {
             onSelect()
         }

@@ -104,6 +104,9 @@ enum LotusShortcuts {
         LotusShortcut("closeTab", key: "w", modifiers: .command, action: animated {
             $0.removeTab(id: $0.selectedTabId)
         }),
+        LotusShortcut("archiveTab", key: "e", modifiers: [.command, .shift], action: animated {
+            $0.archiveTab(id: $0.selectedTabId)
+        }),
         LotusShortcut("reopenClosedTab", key: "t", modifiers: [.command, .shift]) {
             $0.reopenLastClosedTab()
         },

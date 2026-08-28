@@ -306,8 +306,10 @@ extension Tabstrip {
                             let blockRows = Array(reduced[block.start..<block.start + block.rowCount])
                             reduced.removeSubrange(block.start..<block.start + block.rowCount)
                             reduced.insert(contentsOf: blockRows, at: min(target, reduced.count))
-                            browserState.tabs = browserState.tabs.filter { $0.isPinned }
-                                + flattenUnpinnedRows(reduced, movedRowIndex: nil)
+                            let currentProfId = browserState.currentProfileId
+                            let otherProfileTabs = browserState.tabs.filter { ($0.profileId ?? browserState.defaultProfileId) != currentProfId }
+                            let currentPinnedTabs = browserState.tabs.filter { ($0.profileId ?? browserState.defaultProfileId) == currentProfId && $0.isPinned }
+                            browserState.tabs = currentPinnedTabs + flattenUnpinnedRows(reduced, movedRowIndex: nil) + otherProfileTabs
                         }
                     }
                 }

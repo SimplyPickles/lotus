@@ -37,8 +37,9 @@ extension BrowserState {
 
     /// Retrieves or lazily creates the persistent Archive folder at the bottom of the tab list.
     @discardableResult
-    func getOrCreateArchiveFolder() -> TabFolder {
-        if let existing = folders.first(where: { $0.isArchive && ($0.profileId ?? defaultProfileId) == currentProfileId }) {
+    func getOrCreateArchiveFolder(for profileId: UUID? = nil) -> TabFolder {
+        let profId = profileId ?? currentProfileId
+        if let existing = folders.first(where: { $0.isArchive && ($0.profileId ?? defaultProfileId) == profId }) {
             return existing
         }
         let archiveFolder = TabFolder(
@@ -47,10 +48,34 @@ extension BrowserState {
             color: .grey,
             nameOrigin: .manual,
             isArchive: true,
-            profileId: currentProfileId
+            profileId: profId
         )
         folders.append(archiveFolder)
         return archiveFolder
+    }
+
+    /// Moves a single tab into the persistent Archive folder for its profile.
+    func archiveTab(id: UUID) {
+        guard let targetTab = tab(for: id), !targetTab.isPinned else { return }
+        let targetProfileId = targetTab.profileId ?? defaultProfileId
+        let archive = getOrCreateArchiveFolder(for: targetProfileId)
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            moveTabs([id], toFolder: archive.id)
+        }
+    }
+
+    /// Moves multiple tabs into the persistent Archive folder for their respective profile(s).
+    func archiveTabs(_ ids: [UUID]) {
+        let unpinnedIds = ids.filter { tab(for: $0)?.isPinned == false }
+        guard !unpinnedIds.isEmpty else { return }
+
+        let groups = Dictionary(grouping: unpinnedIds) { tab(for: $0)?.profileId ?? defaultProfileId }
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            for (profId, tabIds) in groups {
+                let archive = getOrCreateArchiveFolder(for: profId)
+                moveTabs(tabIds, toFolder: archive.id)
+            }
+        }
     }
 
     /// Evaluates unpinned, unarchived tabs and moves inactive tabs into the Archive folder.

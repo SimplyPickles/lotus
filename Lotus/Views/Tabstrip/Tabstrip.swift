@@ -30,8 +30,6 @@ struct Tabstrip: View {
     @State private var renamingFolderId: UUID? = nil
     @State private var renamingTabId: UUID? = nil
     @State var unpinnedScrollOffset: CGFloat = 0
-    @State private var swipeOffset: CGFloat = 0
-    @State private var isSwipingSpaces: Bool = false
 
     @AppStorage("lotus.browser.smoothTabSwitchAnimation") private var smoothTabSwitchAnimation: Bool = true
 
@@ -320,7 +318,7 @@ struct Tabstrip: View {
             let sidebarWidth = browserState.sidebarWidth
             let profiles = browserState.profiles
             let currIdx = profiles.firstIndex(where: { $0.id == browserState.currentProfileId }) ?? 0
-            let totalOffset = browserState.profileSwipeOffset + swipeOffset
+            let totalOffset = browserState.profileSwipeOffset
 
             HStack(spacing: 0) {
                 ForEach(profiles, id: \.id) { profile in
@@ -406,7 +404,6 @@ struct Tabstrip: View {
             .offset(x: -(CGFloat(currIdx) * sidebarWidth) + totalOffset)
             .frame(width: sidebarWidth, alignment: .leading)
             .clipped()
-            .simultaneousGesture(profileSwipeGesture)
 
             // Profile Indicator Dock at the bottom
             if !browserState.isPrivate && browserState.profiles.count > 1 {
@@ -502,28 +499,25 @@ struct Tabstrip: View {
                             ForEach(pinned, id: \.id) { tab in
                                 let isBeingDragged = isCurrent && (activeDrag?.draggedTabIds.contains(tab.id) == true)
 
-                                ZStack {
-                                    PinnedTabButton(
-                                        tab: tab,
-                                        isSelected: (profSelectedTabId == tab.id),
-                                        isMultiSelected: isCurrent && hasMultipleSelectedTabs && selectedSidebarTabIds.contains(tab.id),
-                                        isInSplit: profCurrentTabIds.contains(tab.id),
-                                        isDraggingAnyTab: isCurrent && (activeDrag != nil),
-                                        namespace: nil,
-                                        isRenaming: isCurrent && (renamingTabId == tab.id),
-                                        isPlayingAudio: tabMediaStates[tab.id]?.isPlayingAudio ?? false,
-                                        isMuted: tabMediaStates[tab.id]?.isMuted ?? false,
-                                        onToggleMute: { onToggleMuteTab(tab.id) },
-                                        onCommitRename: { title in onRenameTab(tab.id, title) },
-                                        onCancelRename: { onCancelRenameTab() },
-                                        profileAccentColor: profile.color.color,
-                                        onSelect: { onSelectTab(tab.id) }
-                                    )
-                                    .opacity(isBeingDragged ? 0.0 : 1.0)
-                                    .offset(isCurrent ? pinnedShiftOffset(tab.id) : .zero)
-                                    .zIndex(profSelectedTabId == tab.id ? 10 : 0)
-                                    .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: pinnedShiftOffset(tab.id))
-                                }
+                                PinnedTabButton(
+                                    tab: tab,
+                                    isSelected: (profSelectedTabId == tab.id),
+                                    isMultiSelected: isCurrent && hasMultipleSelectedTabs && selectedSidebarTabIds.contains(tab.id),
+                                    isInSplit: profCurrentTabIds.contains(tab.id),
+                                    isDraggingAnyTab: isCurrent && (activeDrag != nil),
+                                    namespace: nil,
+                                    isRenaming: isCurrent && (renamingTabId == tab.id),
+                                    isPlayingAudio: tabMediaStates[tab.id]?.isPlayingAudio ?? false,
+                                    isMuted: tabMediaStates[tab.id]?.isMuted ?? false,
+                                    onToggleMute: { onToggleMuteTab(tab.id) },
+                                    onCommitRename: { title in onRenameTab(tab.id, title) },
+                                    onCancelRename: { onCancelRenameTab() },
+                                    profileAccentColor: profile.color.color,
+                                    onSelect: { onSelectTab(tab.id) }
+                                )
+                                .opacity(isBeingDragged ? 0.0 : 1.0)
+                                .offset(isCurrent ? pinnedShiftOffset(tab.id) : .zero)
+                                .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: pinnedShiftOffset(tab.id))
                                 .contextMenu {
                                     tabContextMenuBuilder(tab)
                                 }
@@ -626,7 +620,6 @@ struct Tabstrip: View {
                                 .frame(height: isDraggedFolderMember ? 0 : nil)
                                 .padding(.bottom, isDraggedFolderMember ? 0 : 3)
                                 .offset(y: isCurrent ? unpinnedShiftOffset(rowIndex, rows) : 0)
-                                .zIndex(profSelectedTabId == tab.id ? 10 : 0)
                                 .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDraggedFolderMember)
                                 .animation(activeDrag == nil ? nil : .spring(response: 0.24, dampingFraction: 0.82), value: unpinnedShiftOffset(rowIndex, rows))
                                 .contextMenu {
@@ -684,7 +677,6 @@ struct Tabstrip: View {
                                 .frame(height: isDraggedFolderMember ? 0 : nil)
                                 .padding(.bottom, isDraggedFolderMember ? 0 : 3)
                                 .offset(y: isCurrent ? unpinnedShiftOffset(rowIndex, rows) : 0)
-                                .zIndex(profCurrentTabIds.contains(tab1.id) || profCurrentTabIds.contains(tab2.id) ? 10 : 0)
                                 .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDraggedFolderMember)
                                 .animation(activeDrag == nil ? nil : .spring(response: 0.28, dampingFraction: 0.82), value: unpinnedShiftOffset(rowIndex, rows))
                             }
@@ -747,7 +739,7 @@ struct Tabstrip: View {
                         browserState.wakeTab(id: tab.id)
                     }
                 } else {
-                    Button("Snooze Tab (Free Memory)") {
+                    Button("Snooze Tab") {
                         browserState.snoozeTab(id: tab.id)
                     }
                 }
@@ -786,6 +778,17 @@ struct Tabstrip: View {
 
         if !tab.isPinned {
             Divider()
+
+            let currentTabProfileId = tab.profileId ?? browserState.defaultProfileId
+            let archiveId = browserState.folders.first(where: { $0.isArchive && ($0.profileId ?? browserState.defaultProfileId) == currentTabProfileId })?.id
+            let isAlreadyArchived = (tab.folderId == archiveId && archiveId != nil)
+
+            if !isAlreadyArchived {
+                let archiveTitle = isMulti && closeTargetIds.count > 1 ? "Archive \(closeTargetIds.count) Tabs" : "Archive Tab"
+                Button(archiveTitle) {
+                    browserState.archiveTabs(closeTargetIds)
+                }
+            }
 
             let count = folderTargetIds.count
             let moveTitle = count > 1 ? "Move \(count) Tabs to Folder" : "Move to Folder"
@@ -854,63 +857,6 @@ struct Tabstrip: View {
                 browserState.removeTab(id: id)
             }
         }
-    }
-
-    // MARK: - Profile Swipe Gesture
-
-    private var profileSwipeGesture: some Gesture {
-        let sidebarWidth = browserState.sidebarWidth
-        return DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onChanged { value in
-                guard activeDrag == nil else { return }
-                let dx = value.translation.width
-                let dy = value.translation.height
-                if abs(dx) > abs(dy) * 1.05 || isSwipingSpaces {
-                    isSwipingSpaces = true
-                    let profiles = browserState.profiles
-                    let currIdx = profiles.firstIndex(where: { $0.id == browserState.currentProfileId }) ?? 0
-                    let rawDx: CGFloat
-                    if (currIdx == 0 && dx > 0) || (currIdx == profiles.count - 1 && dx < 0) {
-                        rawDx = dx * 0.25
-                    } else {
-                        rawDx = dx
-                    }
-                    swipeOffset = max(-sidebarWidth, min(sidebarWidth, rawDx))
-                }
-            }
-            .onEnded { value in
-                guard isSwipingSpaces else {
-                    swipeOffset = 0
-                    return
-                }
-                let dx = value.translation.width
-                let velocity = value.predictedEndTranslation.width - dx
-                let profiles = browserState.profiles
-                let currIdx = profiles.firstIndex(where: { $0.id == browserState.currentProfileId }) ?? 0
-
-                if (dx < -45 || velocity < -100) && currIdx + 1 < profiles.count {
-                    let currentOffset = swipeOffset
-                    swipeOffset = currentOffset + sidebarWidth
-                    browserState.switchProfile(to: profiles[currIdx + 1].id, animated: false)
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        swipeOffset = 0
-                        isSwipingSpaces = false
-                    }
-                } else if (dx > 45 || velocity > 100) && currIdx > 0 {
-                    let currentOffset = swipeOffset
-                    swipeOffset = currentOffset - sidebarWidth
-                    browserState.switchProfile(to: profiles[currIdx - 1].id, animated: false)
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        swipeOffset = 0
-                        isSwipingSpaces = false
-                    }
-                } else {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        swipeOffset = 0
-                        isSwipingSpaces = false
-                    }
-                }
-            }
     }
 }
 

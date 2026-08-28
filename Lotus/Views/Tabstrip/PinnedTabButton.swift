@@ -238,12 +238,6 @@ struct PinnedTabButton: View {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(cardStrokeColor, lineWidth: cardStrokeWidth)
         )
-        .shadow(
-            color: cardShadowColor,
-            radius: cardShadowRadius,
-            x: 0,
-            y: cardShadowY
-        )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.black.opacity(0.035))
@@ -254,8 +248,6 @@ struct PinnedTabButton: View {
                 .opacity(isMultiSelected ? 1 : 0)
         )
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: isSelected)
-        .animation(smoothTabSwitchAnimation ? .spring(response: 0.20, dampingFraction: 0.86) : nil, value: primaryColor)
         .onTapGesture {
             if !isRenaming {
                 onSelect()

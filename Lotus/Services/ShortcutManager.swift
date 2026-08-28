@@ -70,6 +70,7 @@ final class ShortcutManager: ObservableObject {
             items: [
                 ShortcutMetadata(id: "newTab", title: "New Tab / Command Palette", defaultDisplay: "⌘T"),
                 ShortcutMetadata(id: "closeTab", title: "Close Tab", defaultDisplay: "⌘W"),
+                ShortcutMetadata(id: "archiveTab", title: "Archive Tab", defaultDisplay: "⇧⌘E"),
                 ShortcutMetadata(id: "reopenClosedTab", title: "Reopen Closed Tab", defaultDisplay: "⇧⌘T"),
                 ShortcutMetadata(id: "toggleSidebar", title: "Toggle Sidebar", defaultDisplay: "⌘S"),
                 ShortcutMetadata(id: "showHistory", title: "Show History", defaultDisplay: "⌘Y"),

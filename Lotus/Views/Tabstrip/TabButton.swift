@@ -158,16 +158,14 @@ struct TabButton: View {
 
                 if isSelected {
                     if let namespace = namespace, smoothTabSwitchAnimation {
-                        let geometryKey = tab.profileId?.uuidString ?? "defaultProfile"
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(activeTabBackgroundColor)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                                     .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
                             )
-                            .frame(width: targetWidth, height: 34)
+                            .matchedGeometryEffect(id: "activeTabHighlight", in: namespace, properties: .frame)
                             .zIndex(10)
-                            .matchedGeometryEffect(id: "activeTabHighlight_\(geometryKey)", in: namespace)
                     } else {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(activeTabBackgroundColor)
@@ -175,7 +173,6 @@ struct TabButton: View {
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                                     .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 1)
                             )
-                            .frame(width: targetWidth, height: 34)
                             .zIndex(10)
                             .animation(nil, value: activeTabBackgroundColor)
                             .animation(nil, value: isSelected)

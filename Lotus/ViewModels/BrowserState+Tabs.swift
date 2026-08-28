@@ -165,15 +165,15 @@ extension BrowserState {
 
     func activateTabContent(_ id: UUID) {
         if let group = splitGroup(containing: id) {
-            if currentTabIds == group {
-                selectedTabId = id
-            } else {
+            selectedTabId = id
+            if currentTabIds != group {
                 currentTabIds = group
-                selectedTabId = id
             }
         } else {
-            currentTabIds = [id]
             selectedTabId = id
+            if currentTabIds != [id] {
+                currentTabIds = [id]
+            }
         }
     }
 
@@ -223,12 +223,18 @@ extension BrowserState {
     }
 
     func canOpenInSplit(id: UUID) -> Bool {
-        guard tabs.count >= 2 else { return false }
-        guard currentTabIds.count < 2 else { return false }
-        guard !currentTabIds.contains(id) else { return false }
+        guard let targetTab = tab(for: id) else { return false }
+        let targetProfId = targetTab.profileId ?? defaultProfileId
+        let profTabs = tabs.filter { ($0.profileId ?? defaultProfileId) == targetProfId }
+        guard profTabs.count >= 2 else { return false }
         guard !isSplit(id: id) else { return false }
-        if let currentActive = currentTabIds.first, isSplit(id: currentActive) {
-            return false
+
+        if currentProfileId == targetProfId {
+            guard currentTabIds.count < 2 else { return false }
+            guard !currentTabIds.contains(id) else { return false }
+            if let currentActive = currentTabIds.first, isSplit(id: currentActive) {
+                return false
+            }
         }
         return true
     }
@@ -251,17 +257,28 @@ extension BrowserState {
     }
 
     func openInSplit(id: UUID, side: SplitSide = .right) {
-        guard tabs.contains(where: { $0.id == id }) else { return }
+        guard let targetTab = tab(for: id) else { return }
+        let targetProfileId = targetTab.profileId ?? defaultProfileId
+        let profTabs = tabs.filter { ($0.profileId ?? defaultProfileId) == targetProfileId }
 
         let leftId: UUID
         let rightId: UUID
 
-        let currentActive = selectedTabId
+        let currentActive = (currentProfileId == targetProfileId) ? selectedTabId : (lastSelectedTabPerProfile[targetProfileId] ?? profTabs.first?.id ?? id)
+        let partnerId: UUID
+        if currentActive != id && profTabs.contains(where: { $0.id == currentActive }) {
+            partnerId = currentActive
+        } else if let firstOther = profTabs.first(where: { $0.id != id }) {
+            partnerId = firstOther.id
+        } else {
+            partnerId = id
+        }
+
         if side == .left {
             leftId = id
-            rightId = (currentActive != id) ? currentActive : (tabs.first(where: { $0.id != id })?.id ?? id)
+            rightId = partnerId
         } else {
-            leftId = (currentActive != id) ? currentActive : (tabs.first(where: { $0.id != id })?.id ?? id)
+            leftId = partnerId
             rightId = id
         }
 
@@ -280,10 +297,14 @@ extension BrowserState {
         // A split pair must live in a single folder: unify on the anchor
         // (previously active) tab's folder. Skip when both are already loose
         // to preserve their positions.
-        let anchorFolderId = tab(for: currentActive)?.folderId
+        let anchorFolderId = tab(for: partnerId)?.folderId
         let pairFolderIds = Set([tab(for: leftId)?.folderId, tab(for: rightId)?.folderId])
         if pairFolderIds != [nil] {
             moveTab(id, toFolder: anchorFolderId)
+        }
+
+        if currentProfileId != targetProfileId {
+            switchProfile(to: targetProfileId, animated: false)
         }
 
         currentTabIds = newGroup
@@ -421,8 +442,9 @@ extension BrowserState {
 
     @discardableResult
     func addTabBelow(currentTabId: UUID? = nil, title: String = "New Tab", url: URL? = nil, select: Bool = true) -> TabItem {
-        var newTab = TabItem(title: title, url: url, profileId: currentProfileId)
         let targetId = currentTabId ?? selectedTabId
+        let profId = tab(for: targetId)?.profileId ?? currentProfileId
+        var newTab = TabItem(title: title, url: url, profileId: profId)
 
         withAnimation(Self.tabMutationAnimation) {
             // Tabs opened from a foldered tab (⌘-click, popups, history)
