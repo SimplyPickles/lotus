@@ -170,11 +170,6 @@ enum WebViewFactory {
         configuration.userContentController.add(
             weakMessageHandler,
             contentWorld: .defaultClient,
-            name: UserScripts.openSearchHandlerName
-        )
-        configuration.userContentController.add(
-            weakMessageHandler,
-            contentWorld: .defaultClient,
             name: UserScripts.zapHandlerName
         )
         configuration.userContentController.addUserScript(
@@ -234,14 +229,6 @@ enum WebViewFactory {
                 source: UserScripts.mediaPlaybackObserverScriptlet,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false,
-                in: .defaultClient
-            )
-        )
-        configuration.userContentController.addUserScript(
-            WKUserScript(
-                source: UserScripts.openSearchDiscoveryScriptlet,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true,
                 in: .defaultClient
             )
         )

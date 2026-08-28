@@ -270,17 +270,6 @@ extension BrowserState {
             return
         }
 
-        if message.name == UserScripts.openSearchHandlerName,
-           let body = message.body as? [String: Any],
-           let title = body["title"] as? String,
-           let href = body["href"] as? String,
-           let origin = body["origin"] as? String,
-           let host = body["host"] as? String,
-           let tabId = webViewStore.first(where: { $0.value === message.webView })?.key {
-            registerOpenSearchDescriptor(for: tabId, title: title, href: href, origin: origin, host: host)
-            return
-        }
-
         if message.name == UserScripts.zapHandlerName,
            let body = message.body as? [String: Any],
            let action = body["action"] as? String,

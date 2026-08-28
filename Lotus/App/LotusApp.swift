@@ -43,6 +43,11 @@ struct LotusApp: App {
     }
 }
 
+extension Notification.Name {
+    static let lotusOpenNewWindow = Notification.Name("lotus.browser.openNewWindow")
+    static let lotusOpenNewPrivateWindow = Notification.Name("lotus.browser.openNewPrivateWindow")
+}
+
 // MARK: - App Menu Commands
 
 private struct LotusMenuCommands: Commands {

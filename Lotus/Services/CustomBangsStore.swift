@@ -31,6 +31,55 @@ struct CustomBang: Identifiable, Codable, Equatable {
         return .accentColor
     }
 
+    static let presetIcons: [String] = [
+        "magnifyingglass",
+        "sparkles",
+        "globe",
+        "play.rectangle.fill",
+        "book.fill",
+        "bubble.left.and.bubble.right.fill",
+        "cart.fill",
+        "map.fill",
+        "shield.fill",
+        "chevron.left.forwardslash.chevron.right",
+        "terminal",
+        "briefcase",
+        "graduationcap",
+        "gamecontroller",
+        "star",
+        "heart"
+    ]
+
+    var color: FolderColor {
+        get {
+            guard let hex = accentColorHex?.uppercased() else { return .blue }
+            switch hex {
+            case "4285F4", "007AFF", "2B82F6": return .blue
+            case "9B51E0", "A855F7", "8A2BE2": return .purple
+            case "E84393", "EC4899", "FF2D55": return .pink
+            case "FF0000", "EF4444", "FF3B30": return .red
+            case "FF9900", "FF4500", "F97316", "FF9500": return .orange
+            case "FFCC00", "FFC107", "EAB308": return .yellow
+            case "34A853", "22C55E", "34C759", "008373": return .green
+            case "636466", "24292E", "8E8E93": return .grey
+            default:
+                return .blue
+            }
+        }
+        set {
+            switch newValue {
+            case .blue: accentColorHex = "4285F4"
+            case .purple: accentColorHex = "9B51E0"
+            case .pink: accentColorHex = "E84393"
+            case .red: accentColorHex = "FF0000"
+            case .orange: accentColorHex = "FF9900"
+            case .yellow: accentColorHex = "FFC107"
+            case .green: accentColorHex = "34A853"
+            case .grey: accentColorHex = "636466"
+            }
+        }
+    }
+
     func searchURL(for query: String) -> URL? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         let populated: String
@@ -94,15 +143,26 @@ final class CustomBangsStore: ObservableObject {
         }
     }
 
-    func addBang(trigger: String, name: String, searchURLTemplate: String, accentColorHex: String? = nil) {
+    func addBang(trigger: String, name: String, searchURLTemplate: String, accentColorHex: String? = nil, iconName: String = "magnifyingglass") {
         let bang = CustomBang(
             trigger: trigger.trimmingCharacters(in: CharacterSet(charactersIn: "!")),
             name: name.trimmingCharacters(in: .whitespaces),
             searchURLTemplate: searchURLTemplate.trimmingCharacters(in: .whitespaces),
-            accentColorHex: accentColorHex
+            accentColorHex: accentColorHex,
+            iconName: iconName
         )
-        customBangs.removeAll(where: { $0.cleanTrigger.lowercased() == bang.cleanTrigger.lowercased() })
+        customBangs.removeAll(where: { $0.cleanTrigger.lowercased() == bang.cleanTrigger.lowercased() || $0.id == bang.id })
         customBangs.append(bang)
+        save()
+    }
+
+    func updateBang(_ bang: CustomBang) {
+        if let idx = customBangs.firstIndex(where: { $0.id == bang.id }) {
+            customBangs[idx] = bang
+        } else {
+            customBangs.removeAll(where: { $0.cleanTrigger.lowercased() == bang.cleanTrigger.lowercased() })
+            customBangs.append(bang)
+        }
         save()
     }
 

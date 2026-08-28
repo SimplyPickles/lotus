@@ -138,16 +138,13 @@ final class LotusWebView: WKWebView {
 
     @objc private func handleOpenLinkInNewWindow(_ sender: NSMenuItem) {
         if let linkURL = browserState?.lastContextMenuLinkURL {
-            let app = NSApp.delegate as? AppDelegate
-            _ = app
-            // Open window via NSWorkspace URL or new tab
-            browserState?.openTab(at: linkURL, title: linkURL.host ?? "New Tab")
+            NotificationCenter.default.post(name: .lotusOpenNewWindow, object: linkURL)
         }
     }
 
     @objc private func handleOpenLinkInPrivateWindow(_ sender: NSMenuItem) {
         if let linkURL = browserState?.lastContextMenuLinkURL {
-            browserState?.openTab(at: linkURL, title: linkURL.host ?? "New Tab")
+            NotificationCenter.default.post(name: .lotusOpenNewPrivateWindow, object: linkURL)
         }
     }
 

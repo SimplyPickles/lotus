@@ -17,6 +17,7 @@ struct ContentView: View {
         _browserState = StateObject(wrappedValue: BrowserState(isPrivate: isPrivate))
     }
 
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("lotus.browser.accentColor") private var accentColorKey: String = "white"
     @AppStorage("lotus.browser.showsBrowserFrame") private var showsBrowserFrame: Bool = true
@@ -176,49 +177,8 @@ struct ContentView: View {
                 CommandPalette(browserState: browserState)
             }
         }
-        .overlay {
-            if browserState.isQuitConfirmationPresented {
-                QuitConfirmationView(browserState: browserState)
-            }
-        }
-        .overlay {
-            if browserState.folderToCloseConfirmation != nil {
-                FolderCloseConfirmationView(browserState: browserState)
-            }
-        }
-        .overlay {
-            if browserState.pendingPopupRequest != nil {
-                PopupConfirmationView(browserState: browserState)
-            }
-        }
-        .overlay {
-            if browserState.isClearAllDataConfirmationPresented {
-                ClearAllDataConfirmationView(browserState: browserState)
-            }
-        }
-        .overlay {
-            if let profile = browserState.profileToDeleteConfirmation {
-                DeleteProfileConfirmationView(browserState: browserState, profile: profile)
-            }
-        }
-        .overlay {
-            if let flyingPayload = browserState.activeFlyingDownload {
-                GeometryReader { overlayGeo in
-                    let targetX = overlayGeo.size.width - 80
-                    let targetY: CGFloat = 20
-                    FlyingDownloadView(
-                        payload: flyingPayload,
-                        targetPoint: CGPoint(x: targetX, y: targetY)
-                    ) {
-                        browserState.downloadCatchPulseTrigger += 1
-                        HapticFeedback.perform(.alignment, performanceTime: .now)
-                        browserState.activeFlyingDownload = nil
-                    }
-                }
-                .ignoresSafeArea()
-                .zIndex(99999)
-            }
-        }
+        .overlay { modalOverlays }
+        .overlay { flyingDownloadOverlay }
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.isQuitConfirmationPresented)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.folderToCloseConfirmation != nil)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.pendingPopupRequest != nil)
@@ -265,8 +225,69 @@ struct ContentView: View {
         .onAppear {
             AppDelegate.sharedBrowserState = browserState
         }
+        .onReceive(NotificationCenter.default.publisher(for: .lotusOpenNewWindow)) { notif in
+            handleOpenNewWindow(url: notif.object as? URL)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lotusOpenNewPrivateWindow)) { notif in
+            handleOpenNewPrivateWindow(url: notif.object as? URL)
+        }
         .tint(currentAccentColor)
         .accentColor(currentAccentColor)
+    }
+
+    private func handleOpenNewWindow(url: URL?) {
+        openWindow(id: "main")
+        guard let url = url else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+            AppDelegate.sharedBrowserState?.openTab(at: url, title: url.host ?? "New Tab")
+        }
+    }
+
+    private func handleOpenNewPrivateWindow(url: URL?) {
+        openWindow(id: "private")
+        guard let url = url else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+            AppDelegate.sharedBrowserState?.openTab(at: url, title: url.host ?? "New Tab")
+        }
+    }
+
+    @ViewBuilder
+    private var modalOverlays: some View {
+        if browserState.isQuitConfirmationPresented {
+            QuitConfirmationView(browserState: browserState)
+        }
+        if browserState.folderToCloseConfirmation != nil {
+            FolderCloseConfirmationView(browserState: browserState)
+        }
+        if browserState.pendingPopupRequest != nil {
+            PopupConfirmationView(browserState: browserState)
+        }
+        if browserState.isClearAllDataConfirmationPresented {
+            ClearAllDataConfirmationView(browserState: browserState)
+        }
+        if let profile = browserState.profileToDeleteConfirmation {
+            DeleteProfileConfirmationView(browserState: browserState, profile: profile)
+        }
+    }
+
+    @ViewBuilder
+    private var flyingDownloadOverlay: some View {
+        if let flyingPayload = browserState.activeFlyingDownload {
+            GeometryReader { overlayGeo in
+                let targetX = overlayGeo.size.width - 80
+                let targetY: CGFloat = 20
+                FlyingDownloadView(
+                    payload: flyingPayload,
+                    targetPoint: CGPoint(x: targetX, y: targetY)
+                ) {
+                    browserState.downloadCatchPulseTrigger += 1
+                    HapticFeedback.perform(.alignment, performanceTime: .now)
+                    browserState.activeFlyingDownload = nil
+                }
+            }
+            .ignoresSafeArea()
+            .zIndex(99999)
+        }
     }
 
     private var floatingSidebar: some View {

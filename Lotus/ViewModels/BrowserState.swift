@@ -132,7 +132,6 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var pageLoadErrors: [UUID: PageLoadError] = [:]
     @Published var httpAllowedDomains: Set<String> = []
     @Published var tabMediaStates: [UUID: TabMediaState] = [:]
-    @Published var detectedOpenSearch: [UUID: OpenSearchDescriptor] = [:]
     @Published var isZapModeActive: Bool = false
     @Published var lastZappedElement: ZappedElement? = nil
     @Published var wakingTabIds: Set<UUID> = []

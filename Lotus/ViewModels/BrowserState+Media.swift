@@ -48,14 +48,4 @@ extension BrowserState {
         let script = "if (window.__lotusTriggerPiP) { window.__lotusTriggerPiP(); }"
         webViewStore[tabId]?.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
     }
-
-    // MARK: - OpenSearch Handling
-
-    func registerOpenSearchDescriptor(for tabId: UUID, title: String, href: String, origin: String, host: String) {
-        let descriptor = OpenSearchDescriptor(title: title, href: href, origin: origin, host: host)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.detectedOpenSearch[tabId] = descriptor
-        }
-    }
 }

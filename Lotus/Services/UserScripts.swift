@@ -20,7 +20,6 @@ enum UserScripts {
     static let shieldDeflectHandlerName = "lotusShieldDeflectHandler"
     static let notificationHandlerName = "lotusNotificationHandler"
     static let mediaHandlerName = "lotusMediaHandler"
-    static let openSearchHandlerName = "lotusOpenSearchHandler"
     static let zapHandlerName = "lotusZapHandler"
 
     // MARK: - Injected at Document Start
@@ -616,13 +615,13 @@ enum UserScripts {
     /// Masks high-risk device APIs like battery status without breaking web standards,
     /// WebAuthn, BotGuard, or canvas verification.
     static func antiFingerprintingScript(disabledDomains: Set<String> = [], strictCanvasBlock: Bool = false) -> String {
-        let domainsArray = disabledDomains.map { "\"\($0.lowercased())\"" }.joined(separator: ", ")
+        let domainsArray = (try? String(data: JSONEncoder().encode(Array(disabledDomains.map { $0.lowercased() })), encoding: .utf8)) ?? "[]"
         return """
         (function() {
             'use strict';
             if (window.__lotusFPProtected) return;
 
-            var disabledDomains = [\(domainsArray)];
+            var disabledDomains = \(domainsArray);
             var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
             if (host.startsWith('www.')) host = host.slice(4);
 
@@ -1114,34 +1113,6 @@ enum UserScripts {
                 video.webkitSetPresentationMode(mode);
             }
         };
-    })();
-    """
-
-    /// Discovers OpenSearch search engines provided by websites in the HTML head.
-    static let openSearchDiscoveryScriptlet = """
-    (function() {
-        function detectOpenSearch() {
-            try {
-                var link = document.querySelector('link[rel="search"][type="application/opensearchdescription+xml"]');
-                if (link && link.href) {
-                    var title = link.getAttribute('title') || document.title || window.location.host;
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lotusOpenSearchHandler) {
-                        window.webkit.messageHandlers.lotusOpenSearchHandler.postMessage({
-                            title: title,
-                            href: link.href,
-                            origin: window.location.origin,
-                            host: window.location.host
-                        });
-                    }
-                }
-            } catch(e) {}
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', detectOpenSearch);
-        } else {
-            detectOpenSearch();
-        }
     })();
     """
 

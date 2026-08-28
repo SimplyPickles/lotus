@@ -34,12 +34,7 @@ struct ProfileSwitcherView: View {
                     Button {
                         browserState.switchProfile(to: p.id)
                     } label: {
-                        HStack {
-                            Text(p.name)
-                            if p.id == browserState.currentProfileId {
-                                Image(systemName: "checkmark")
-                            }
-                        }
+                        Label(p.name, systemImage: p.icon)
                     }
                 }
             }
@@ -67,7 +62,11 @@ struct ProfileSwitcherView: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: profile.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(foregroundPrimary)
+
                 Text(profile.name)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(foregroundPrimary)
@@ -100,10 +99,10 @@ struct ProfileSwitcherView: View {
         }
         .sheet(isPresented: $isCreateProfileSheetPresented) {
             CreateProfileModalView(
-                onSave: { newName, newColor in
+                onSave: { newName, newIcon, newColor in
                     let created = browserState.createProfile(
                         name: newName,
-                        icon: "person.crop.circle",
+                        icon: newIcon,
                         color: newColor
                     )
                     browserState.switchProfile(to: created.id)

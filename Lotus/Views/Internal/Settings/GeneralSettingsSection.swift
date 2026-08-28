@@ -439,9 +439,7 @@ private struct BangsSettingsRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded: Bool = false
     @State private var isAddSheetPresented: Bool = false
-    @State private var newBangName: String = ""
-    @State private var newBangTrigger: String = ""
-    @State private var newBangURLTemplate: String = ""
+    @State private var editingBang: CustomBang? = nil
     @State private var disabledList: [String] = (UserDefaults.standard.stringArray(forKey: "lotus.browser.disabledBangIDs") ?? [])
     @ObservedObject private var bangsStore = CustomBangsStore.shared
 
@@ -504,9 +502,6 @@ private struct BangsSettingsRow: View {
                         Spacer()
 
                         Button {
-                            newBangName = ""
-                            newBangTrigger = ""
-                            newBangURLTemplate = ""
                             isAddSheetPresented = true
                         } label: {
                             HStack(spacing: 4) {
@@ -527,11 +522,12 @@ private struct BangsSettingsRow: View {
                     VStack(spacing: 2) {
                         ForEach(allProviders) { provider in
                             let isProviderEnabled = !disabledList.contains(provider.id)
-                            let isCustom = bangsStore.customBangs.contains(where: { $0.id.uuidString == provider.id })
+                            let customBang = bangsStore.customBangs.first(where: { $0.id.uuidString == provider.id })
+                            let isCustom = customBang != nil
                             HStack(spacing: 10) {
                                 Image(systemName: provider.iconName)
                                     .font(.system(size: 12))
-                                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .secondary)
+                                    .foregroundColor(provider.accentColor)
                                     .frame(width: 18)
 
                                 Text(provider.name)
@@ -543,22 +539,41 @@ private struct BangsSettingsRow: View {
                                 Text(provider.triggers.map { "!\($0)" }.joined(separator: ", "))
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.40) : .secondary)
-                                    .padding(.trailing, 8)
+                                    .padding(.trailing, isCustom ? 4 : 8)
 
-                                if isCustom {
+                                if let custom = customBang {
                                     Button {
-                                        if let customBang = bangsStore.customBangs.first(where: { $0.id.uuidString == provider.id }) {
-                                            bangsStore.removeBang(id: customBang.id)
-                                        }
+                                        editingBang = custom
                                     } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.red.opacity(0.7))
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                                            .padding(4)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+                                            )
                                     }
                                     .buttonStyle(.plain)
                                     .focusable(false)
                                     .focusEffectDisabled()
-                                    .padding(.trailing, 4)
+                                    .help("Edit Custom Bang")
+
+                                    Button {
+                                        bangsStore.removeBang(id: custom.id)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.red.opacity(0.8))
+                                            .padding(4)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                    .fill(Color.red.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
                                     .help("Delete Custom Bang")
                                 }
 
@@ -588,48 +603,39 @@ private struct BangsSettingsRow: View {
             }
         }
         .sheet(isPresented: $isAddSheetPresented) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Add Custom Search Bang")
-                    .font(.system(size: 16, weight: .semibold))
-
-                Text("Enter a search engine name, trigger keyword (without !), and URL template with {searchTerms}.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("Name (e.g. GitHub)", text: $newBangName)
-                        .textFieldStyle(.roundedBorder)
-
-                    TextField("Trigger (e.g. gh)", text: $newBangTrigger)
-                        .textFieldStyle(.roundedBorder)
-
-                    TextField("Search URL (e.g. https://github.com/search?q={searchTerms})", text: $newBangURLTemplate)
-                        .textFieldStyle(.roundedBorder)
+            CustomBangModalView(
+                mode: .create,
+                onSave: { newBang in
+                    bangsStore.addBang(
+                        trigger: newBang.cleanTrigger,
+                        name: newBang.name,
+                        searchURLTemplate: newBang.searchURLTemplate,
+                        accentColorHex: newBang.accentColorHex,
+                        iconName: newBang.iconName
+                    )
+                    isAddSheetPresented = false
+                },
+                onCancel: {
+                    isAddSheetPresented = false
                 }
-
-                HStack {
-                    Button("Cancel") {
-                        isAddSheetPresented = false
-                    }
-                    .keyboardShortcut(.cancelAction)
-
-                    Spacer()
-
-                    Button("Add Bang") {
-                        let cleanName = newBangName.trimmingCharacters(in: .whitespaces)
-                        let cleanTrigger = newBangTrigger.trimmingCharacters(in: CharacterSet(charactersIn: "!").union(.whitespaces))
-                        let cleanURL = newBangURLTemplate.trimmingCharacters(in: .whitespaces)
-                        guard !cleanName.isEmpty, !cleanTrigger.isEmpty, !cleanURL.isEmpty else { return }
-
-                        bangsStore.addBang(trigger: cleanTrigger, name: cleanName, searchURLTemplate: cleanURL)
-                        isAddSheetPresented = false
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(newBangName.isEmpty || newBangTrigger.isEmpty || newBangURLTemplate.isEmpty)
+            )
+        }
+        .sheet(item: $editingBang) { bang in
+            let isCustom = bangsStore.customBangs.contains(where: { $0.id == bang.id })
+            CustomBangModalView(
+                mode: .edit(bang),
+                onSave: { updatedBang in
+                    bangsStore.updateBang(updatedBang)
+                    editingBang = nil
+                },
+                onDelete: isCustom ? { bangToDelete in
+                    bangsStore.removeBang(id: bangToDelete.id)
+                    editingBang = nil
+                } : nil,
+                onCancel: {
+                    editingBang = nil
                 }
-            }
-            .padding(20)
-            .frame(width: 420)
+            )
         }
     }
 }

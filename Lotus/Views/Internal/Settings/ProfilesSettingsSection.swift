@@ -70,10 +70,10 @@ struct ProfilesSettingsSection: View {
         }
         .sheet(isPresented: $isCreatingProfile) {
             CreateProfileModalView(
-                onSave: { newName, newColor in
+                onSave: { newName, newIcon, newColor in
                     let created = browserState.createProfile(
                         name: newName,
-                        icon: "person.crop.circle",
+                        icon: newIcon,
                         color: newColor
                     )
                     browserState.switchProfile(to: created.id)
@@ -212,18 +212,23 @@ struct ProfilesSettingsSection: View {
 // MARK: - Create Profile Modal View
 
 struct CreateProfileModalView: View {
-    let onSave: (String, FolderColor) -> Void
+    let onSave: (String, String, FolderColor) -> Void
     let onCancel: () -> Void
 
     @State private var name: String = ""
+    @State private var selectedIcon: String = "person.crop.circle"
     @State private var selectedColor: FolderColor = .blue
     @FocusState private var isNameFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     private let profileColors: [FolderColor] = [.grey, .blue, .purple, .pink, .red, .orange, .yellow, .green]
 
+    private var activeColor: Color {
+        selectedColor == .grey ? (colorScheme == .dark ? .white : .black) : selectedColor.color
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             // Header
             VStack(alignment: .leading, spacing: 6) {
                 Text("Create Profile")
@@ -255,9 +260,46 @@ struct CreateProfileModalView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(isNameFocused ? Color.blue : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)), lineWidth: isNameFocused ? 1.5 : 1)
+                            .stroke(isNameFocused ? activeColor : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)), lineWidth: isNameFocused ? 1.5 : 1)
                     )
                     .focused($isNameFocused)
+                    .animation(.easeInOut(duration: 0.16), value: selectedColor)
+                    .animation(.easeInOut(duration: 0.16), value: isNameFocused)
+            }
+
+            // Icon
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Icon")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.9) : Color.primary)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                    ForEach(Profile.presetIcons, id: \.self) { iconName in
+                        let isSelected = selectedIcon == iconName
+
+                        Button {
+                            selectedIcon = iconName
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(isSelected ? activeColor.opacity(colorScheme == .dark ? 0.25 : 0.18) : (colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)))
+
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(activeColor, lineWidth: 1.5)
+                                }
+
+                                Image(systemName: iconName)
+                                    .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                    .foregroundColor(isSelected ? activeColor : (colorScheme == .dark ? Color.white.opacity(0.7) : Color.primary.opacity(0.7)))
+                            }
+                            .frame(height: 32)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                }
             }
 
             // Color
@@ -329,7 +371,7 @@ struct CreateProfileModalView: View {
                 Button {
                     let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !finalName.isEmpty else { return }
-                    onSave(finalName, selectedColor)
+                    onSave(finalName, selectedIcon, selectedColor)
                 } label: {
                     HStack(spacing: 6) {
                         Text("Create Profile")
@@ -357,7 +399,7 @@ struct CreateProfileModalView: View {
             .padding(.top, 4)
         }
         .padding(24)
-        .frame(width: 380)
+        .frame(width: 400)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(colorScheme == .dark ? Color(red: 0.13, green: 0.13, blue: 0.14) : Color(nsColor: .windowBackgroundColor))
@@ -385,11 +427,16 @@ struct EditProfileModalView: View {
     let onCancel: () -> Void
 
     @State private var name: String = ""
+    @State private var selectedIcon: String = "person.crop.circle"
     @State private var selectedColor: FolderColor = .blue
     @FocusState private var isNameFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     private let profileColors: [FolderColor] = [.grey, .blue, .purple, .pink, .red, .orange, .yellow, .green]
+
+    private var activeColor: Color {
+        selectedColor == .grey ? (colorScheme == .dark ? .white : .black) : selectedColor.color
+    }
 
     init(profile: Profile, canDelete: Bool, onSave: @escaping (Profile) -> Void, onDelete: @escaping (Profile) -> Void, onCancel: @escaping () -> Void) {
         self.profile = profile
@@ -398,11 +445,12 @@ struct EditProfileModalView: View {
         self.onDelete = onDelete
         self.onCancel = onCancel
         _name = State(initialValue: profile.name)
+        _selectedIcon = State(initialValue: profile.icon)
         _selectedColor = State(initialValue: profile.color)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             // Header
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -410,7 +458,7 @@ struct EditProfileModalView: View {
                         .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.primary)
 
-                    Text("Customize profile name and theme color.")
+                    Text("Customize profile name, icon, and theme color.")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
                 }
@@ -434,9 +482,46 @@ struct EditProfileModalView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(isNameFocused ? Color.blue : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)), lineWidth: isNameFocused ? 1.5 : 1)
+                            .stroke(isNameFocused ? activeColor : (colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)), lineWidth: isNameFocused ? 1.5 : 1)
                     )
                     .focused($isNameFocused)
+                    .animation(.easeInOut(duration: 0.16), value: selectedColor)
+                    .animation(.easeInOut(duration: 0.16), value: isNameFocused)
+            }
+
+            // Icon
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Icon")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.9) : Color.primary)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                    ForEach(Profile.presetIcons, id: \.self) { iconName in
+                        let isSelected = selectedIcon == iconName
+
+                        Button {
+                            selectedIcon = iconName
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(isSelected ? activeColor.opacity(colorScheme == .dark ? 0.25 : 0.18) : (colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)))
+
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(activeColor, lineWidth: 1.5)
+                                }
+
+                                Image(systemName: iconName)
+                                    .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                    .foregroundColor(isSelected ? activeColor : (colorScheme == .dark ? Color.white.opacity(0.7) : Color.primary.opacity(0.7)))
+                            }
+                            .frame(height: 32)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                }
             }
 
             // Color
@@ -509,6 +594,7 @@ struct EditProfileModalView: View {
                     var updated = profile
                     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
                     updated.name = trimmed.isEmpty ? profile.name : trimmed
+                    updated.icon = selectedIcon
                     updated.color = selectedColor
                     onSave(updated)
                 } label: {
@@ -538,7 +624,7 @@ struct EditProfileModalView: View {
             .padding(.top, 4)
         }
         .padding(24)
-        .frame(width: 380)
+        .frame(width: 400)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(colorScheme == .dark ? Color(red: 0.13, green: 0.13, blue: 0.14) : Color(nsColor: .windowBackgroundColor))

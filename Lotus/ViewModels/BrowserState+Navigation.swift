@@ -37,6 +37,23 @@ extension BrowserState {
             return
         }
 
+        // Disallow third-party web content from navigating to privileged internal lotus:// schemes.
+        if scheme == "lotus" {
+            let isLink = navigationAction.navigationType == .linkActivated
+            let sourceProtocol = navigationAction.sourceFrame.securityOrigin.protocol.lowercased()
+            let hasWebSourceOrigin = sourceProtocol == "http" || sourceProtocol == "https"
+            let isCurrentURLWeb = (webView.url != nil && !webView.url!.isLotusPage)
+
+            if isLink && isCurrentURLWeb {
+                decisionHandler(.cancel)
+                return
+            }
+            if hasWebSourceOrigin {
+                decisionHandler(.cancel)
+                return
+            }
+        }
+
         // External protocols (for example, mailto:, tel:, slack:, zoommtg:) require
         // user confirmation before Lotus asks macOS to open the handler app.
         if let scheme, !allowedSchemes.contains(scheme) {
@@ -150,6 +167,9 @@ extension BrowserState {
         let targetURL = navigationAction.request.url
         let isCmdPressed = navigationAction.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.command)
 
+        if isPrivate {
+            configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        }
         WebViewFactory.configurePopup(configuration)
         let tabTitle = targetURL?.host ?? "New Tab"
         let newTab = isCmdPressed

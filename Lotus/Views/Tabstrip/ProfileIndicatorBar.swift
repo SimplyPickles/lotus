@@ -81,8 +81,8 @@ struct ProfileIndicatorBar: View {
             .padding(.bottom, 6)
             .sheet(isPresented: $isCreateProfileSheetPresented) {
                 CreateProfileModalView(
-                    onSave: { newName, newColor in
-                        let created = browserState.createProfile(name: newName, icon: "person.crop.circle", color: newColor)
+                    onSave: { newName, newIcon, newColor in
+                        let created = browserState.createProfile(name: newName, icon: newIcon, color: newColor)
                         browserState.switchProfile(to: created.id, direction: .forward)
                         isCreateProfileSheetPresented = false
                     },

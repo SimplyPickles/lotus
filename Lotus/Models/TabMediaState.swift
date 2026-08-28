@@ -18,10 +18,3 @@ struct TabMediaState: Equatable {
         isPlaying && hasAudio && !isMuted
     }
 }
-
-struct OpenSearchDescriptor: Equatable {
-    let title: String
-    let href: String
-    let origin: String
-    let host: String
-}
