@@ -349,24 +349,7 @@ struct Tabstrip: View {
                             if profile.id != browserState.currentProfileId {
                                 browserState.switchProfile(to: profile.id)
                             }
-                            let currentSelected = selectedTabId(for: profile.id)
-                            let unpinned = unpinnedRows(for: profile.id)
-                            let wasUnpinned = unpinned.contains { row in
-                                switch row {
-                                case .single(let t): return t.id == currentSelected
-                                case .split(let t1, let t2): return t1.id == currentSelected || t2.id == currentSelected
-                                case .folderHeader: return false
-                                }
-                            }
-                            let isNewUnpinned = unpinned.contains { row in
-                                switch row {
-                                case .single(let t): return t.id == tabId
-                                case .split(let t1, let t2): return t1.id == tabId || t2.id == tabId
-                                case .folderHeader: return false
-                                }
-                            }
-
-                            if wasUnpinned && isNewUnpinned, let anim = tabSelectionAnimation {
+                            if let anim = tabSelectionAnimation {
                                 withAnimation(anim) {
                                     browserState.selectSidebarTab(tabId, extendingRange: NSEvent.modifierFlags.contains(.shift))
                                 }
@@ -507,35 +490,6 @@ struct Tabstrip: View {
             lhs.tabMediaStates == rhs.tabMediaStates
         }
 
-        @State private var lastActiveUnpinnedTabId: UUID? = nil
-
-        private func isUnpinnedTab(_ tabId: UUID?) -> Bool {
-            guard let tabId = tabId else { return false }
-            for row in rows {
-                switch row {
-                case .single(let tab):
-                    if tab.id == tabId { return true }
-                case .split(let tab1, let tab2):
-                    if tab1.id == tabId || tab2.id == tabId { return true }
-                case .folderHeader:
-                    break
-                }
-            }
-            return false
-        }
-
-        private var effectiveNamespace: Namespace.ID? {
-            guard smoothTabSwitchAnimation else { return nil }
-            let currentIsUnpinned = isUnpinnedTab(profSelectedTabId)
-            let previousWasUnpinned = isUnpinnedTab(lastActiveUnpinnedTabId)
-            // Only smoothly interpolate with matchedGeometryEffect if we are moving
-            // between two already-visible unpinned regular tabs in this space.
-            if currentIsUnpinned && previousWasUnpinned && lastActiveUnpinnedTabId != profSelectedTabId {
-                return tabAnimationNamespace
-            }
-            return nil
-        }
-
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
                 // Pinned Tabs Grid
@@ -650,7 +604,7 @@ struct Tabstrip: View {
                                     isDraggingAnyTab: isCurrent && activeDrag != nil,
                                     isThemeLight: isTabThemeLight(tab.id),
                                     activeTabBackgroundColor: profActiveTabBackgroundColor,
-                                    namespace: effectiveNamespace,
+                                    namespace: smoothTabSwitchAnimation ? tabAnimationNamespace : nil,
                                     sidebarWidth: sidebarWidth - (tab.folderId != nil ? 14 : 0),
                                     isRenaming: isCurrent && (renamingTabId == tab.id),
                                     isPlayingAudio: tabMediaStates[tab.id]?.isPlayingAudio ?? false,
@@ -701,7 +655,7 @@ struct Tabstrip: View {
                                     isMuted2: tabMediaStates[tab2.id]?.isMuted ?? false,
                                     onToggleMute: { tab in onToggleMuteTab(tab.id) },
                                     activeTabBackgroundColor: profActiveTabBackgroundColor,
-                                    namespace: effectiveNamespace,
+                                    namespace: smoothTabSwitchAnimation ? tabAnimationNamespace : nil,
                                     activeDrag: activeDrag,
                                     isDraggingAnyTab: isCurrent && activeDrag != nil,
                                     onSelect: { tab in onSelectTab(tab.id) },
@@ -743,18 +697,6 @@ struct Tabstrip: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollContentBackground(.hidden)
             .frame(width: sidebarWidth, alignment: .topLeading)
-            .onAppear {
-                if isUnpinnedTab(profSelectedTabId) {
-                    lastActiveUnpinnedTabId = profSelectedTabId
-                }
-            }
-            .onChange(of: profSelectedTabId) { newTabId in
-                if isUnpinnedTab(newTabId) {
-                    lastActiveUnpinnedTabId = newTabId
-                } else {
-                    lastActiveUnpinnedTabId = nil
-                }
-            }
         }
     }
 
