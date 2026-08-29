@@ -194,9 +194,7 @@ struct HistoryConfirmationView: View {
                     .stroke(cardStroke, lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.55 : 0.18), radius: 30, x: 0, y: 14)
-            // The overlay is hosted below the browser toolbar; compensate so
-            // the dialog is centered in the full browser container.
-            .offset(y: -20)
+            .offset(y: -45)
             .transition(
                 .asymmetric(
                     insertion: .offset(y: -14).combined(with: .opacity),

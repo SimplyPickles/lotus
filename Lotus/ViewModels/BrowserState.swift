@@ -106,6 +106,11 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var folderToCloseConfirmation: UUID? = nil
     @Published var pendingPopupRequest: PopupConfirmationRequest? = nil
     @Published var profileToDeleteConfirmation: Profile? = nil
+    @Published var deleteBangConfirmation: CustomBang? = nil
+    @Published var historyConfirmation: HistoryConfirmationType? = nil
+    @Published var downloadConfirmation: DownloadConfirmationType? = nil
+    @Published var bookmarkConfirmation: BookmarkConfirmationType? = nil
+    @Published var websiteDataConfirmation: WebsiteDataConfirmationType? = nil
     @Published var profileTransitionDirection: ProfileTransitionDirection = .forward
     @Published var profileSwipeOffset: CGFloat = 0
     @Published var lastSelectedTabPerProfile: [UUID: UUID] = [:]
@@ -309,7 +314,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     // MARK: - Focus
 
     var isAnyTextInputFocused: Bool {
-        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented || profileToDeleteConfirmation != nil {
+        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented || profileToDeleteConfirmation != nil || deleteBangConfirmation != nil || historyConfirmation != nil || downloadConfirmation != nil || bookmarkConfirmation != nil || websiteDataConfirmation != nil {
             return true
         }
         if let responder = NSApp.keyWindow?.firstResponder {

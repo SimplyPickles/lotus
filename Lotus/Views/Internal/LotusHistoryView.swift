@@ -134,7 +134,7 @@ struct LotusHistoryView: View {
     @State private var sections: [HistorySection] = []
     @State private var totalFilteredCount: Int = 0
     @State private var displayLimit: Int = 60
-    @State private var confirmationType: HistoryConfirmationType? = nil
+    @State private var lastClickedId: UUID? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeTabId: UUID {
@@ -212,28 +212,6 @@ struct LotusHistoryView: View {
         .background(Color.clear)
         .focusEffectDisabled()
         .transaction { $0.animation = nil }
-        .overlay {
-            if let confirmation = confirmationType {
-                HistoryConfirmationView(
-                    confirmation: confirmation,
-                    onCancel: {
-                        confirmationType = nil
-                    },
-                    onConfirm: {
-                        switch confirmation {
-                        case .clearAll:
-                            browserState.clearHistory(for: activeProfileId)
-                            selectedIds.removeAll()
-                        case .deleteSelected(let ids):
-                            browserState.removeHistoryEntries(ids: ids)
-                            selectedIds.subtract(ids)
-                        }
-                        confirmationType = nil
-                    }
-                )
-            }
-        }
-        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: confirmationType != nil)
         .onAppear {
             refreshSections()
         }
@@ -251,12 +229,12 @@ struct LotusHistoryView: View {
         }
         .onDeleteCommand {
             guard !selectedIds.isEmpty else { return }
-            confirmationType = .deleteSelected(ids: selectedIds)
+            browserState.historyConfirmation = .deleteSelected(ids: selectedIds)
         }
         .background {
             DeleteKeyMonitor {
                 guard !selectedIds.isEmpty else { return }
-                confirmationType = .deleteSelected(ids: selectedIds)
+                browserState.historyConfirmation = .deleteSelected(ids: selectedIds)
             }
             .frame(width: 0, height: 0)
         }
@@ -337,7 +315,7 @@ struct LotusHistoryView: View {
                         systemImage: "trash",
                         isDestructive: true
                     ) {
-                        confirmationType = .deleteSelected(ids: selectedIds)
+                        browserState.historyConfirmation = .deleteSelected(ids: selectedIds)
                     }
 
                     HeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
@@ -345,7 +323,7 @@ struct LotusHistoryView: View {
                     }
                 } else if !browserState.historyEntries(for: activeProfileId).isEmpty {
                     HeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: browserState.historyEntries(for: activeProfileId).count)
+                        browserState.historyConfirmation = .clearAll(totalCount: browserState.historyEntries(for: activeProfileId).count)
                     }
                 }
             }
@@ -407,7 +385,7 @@ struct LotusHistoryView: View {
                         isSelecting: isSelecting,
                         onToggleSelect: { toggleSelection(entry.id) },
                         onDelete: {
-                            confirmationType = .deleteSelected(ids: [entry.id])
+                            browserState.historyConfirmation = .deleteSelected(ids: [entry.id])
                         },
                         onClick: {
                             if NSEvent.modifierFlags.contains(.shift) {

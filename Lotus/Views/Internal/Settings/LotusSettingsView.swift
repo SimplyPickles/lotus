@@ -120,7 +120,7 @@ struct LotusSettingsView: View {
                     case .profiles:
                         ProfilesSettingsSection(browserState: browserState, tabId: tabId)
                     case .bangs:
-                        BangsSettingsSection()
+                        BangsSettingsSection(browserState: browserState)
                     case .scripts:
                         ScriptsSettingsSection(browserState: browserState)
                     case .tabs:

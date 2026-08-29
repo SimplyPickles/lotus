@@ -156,12 +156,16 @@ struct DeleteBangConfirmationView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(cardBackground)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(cardStroke, lineWidth: 1)
+            )
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.55 : 0.18), radius: 30, x: 0, y: 14)
-            .offset(y: -20)
+            .offset(y: -45)
             .transition(
                 .asymmetric(
-                    insertion: .scale(scale: 0.93, anchor: .center).combined(with: .opacity),
-                    removal: .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+                    insertion: .offset(y: -14).combined(with: .opacity),
+                    removal: .offset(y: -14).combined(with: .opacity)
                 )
             )
         }

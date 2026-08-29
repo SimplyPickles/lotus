@@ -16,11 +16,6 @@ struct DownloadSection: Identifiable, Equatable {
     let items: [DownloadItem]
 }
 
-enum DownloadConfirmationType: Equatable {
-    case clearAll(totalCount: Int)
-    case deleteSelected(ids: Set<UUID>)
-}
-
 // MARK: - Date Formatting
 
 private enum DownloadDateFormatter {
@@ -139,9 +134,6 @@ struct LotusDownloadsView: View {
     @State private var sections: [DownloadSection] = []
     @State private var totalFilteredCount: Int = 0
     @State private var displayLimit: Int = 60
-    @State private var confirmationType: DownloadConfirmationType? = nil
-    @State private var isHoveringCancel: Bool = false
-    @State private var isHoveringConfirm: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeTabId: UUID {
@@ -217,12 +209,6 @@ struct LotusDownloadsView: View {
         .background(Color.clear)
         .focusEffectDisabled()
         .transaction { $0.animation = nil }
-        .overlay {
-            if let confirmation = confirmationType {
-                confirmationOverlay(confirmation)
-            }
-        }
-        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: confirmationType != nil)
         .onAppear {
             refreshSections()
         }
@@ -240,12 +226,12 @@ struct LotusDownloadsView: View {
         }
         .onDeleteCommand {
             guard !selectedIds.isEmpty else { return }
-            confirmationType = .deleteSelected(ids: selectedIds)
+            browserState.downloadConfirmation = .deleteSelected(ids: selectedIds)
         }
         .background {
             DeleteKeyMonitor {
                 guard !selectedIds.isEmpty else { return }
-                confirmationType = .deleteSelected(ids: selectedIds)
+                browserState.downloadConfirmation = .deleteSelected(ids: selectedIds)
             }
             .frame(width: 0, height: 0)
         }
@@ -295,7 +281,7 @@ struct LotusDownloadsView: View {
                         systemImage: "trash",
                         isDestructive: true
                     ) {
-                        confirmationType = .deleteSelected(ids: selectedIds)
+                        browserState.downloadConfirmation = .deleteSelected(ids: selectedIds)
                     }
 
                     DownloadHeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
@@ -303,7 +289,7 @@ struct LotusDownloadsView: View {
                     }
                 } else if !browserState.downloads(for: activeProfileId).isEmpty {
                     DownloadHeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: browserState.downloads(for: activeProfileId).count)
+                        browserState.downloadConfirmation = .clearAll(totalCount: browserState.downloads(for: activeProfileId).count)
                     }
                 }
             }
@@ -374,7 +360,7 @@ struct LotusDownloadsView: View {
                             }
                         },
                         onDelete: {
-                            confirmationType = .deleteSelected(ids: [item.id])
+                            browserState.downloadConfirmation = .deleteSelected(ids: [item.id])
                         },
                         onCancel: {
                             browserState.cancelDownload(id: item.id)
@@ -441,15 +427,16 @@ struct LotusDownloadsView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "arrow.down.circle")
-                .font(.system(size: 40, weight: .ultraLight))
-                .foregroundColor(foregroundSecondary.opacity(0.5))
+                .font(.system(size: 38, weight: .light))
+                .foregroundColor(foregroundSecondary.opacity(0.6))
+                .padding(.bottom, 2)
 
             if searchText.isEmpty {
-                Text("No downloads")
+                Text("No Downloads Yet")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(foregroundSecondary)
 
-                Text("Files you download will appear here")
+                Text("Files you download will appear here.")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(foregroundSecondary.opacity(0.7))
             } else {
@@ -463,175 +450,6 @@ struct LotusDownloadsView: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Confirmation Sheet
-
-    @ViewBuilder
-    private func confirmationOverlay(_ confirmation: DownloadConfirmationType) -> some View {
-        ZStack {
-            Color.black.opacity(0.45)
-                .ignoresSafeArea()
-                .transition(.opacity)
-                .onTapGesture {
-                    confirmationType = nil
-                }
-
-            VStack(alignment: .leading, spacing: 0) {
-                // Icon squircle
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.98, green: 0.45, blue: 0.45),
-                                    Color(red: 0.92, green: 0.20, blue: 0.20),
-                                    Color(red: 0.85, green: 0.08, blue: 0.08)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 38, height: 38)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.25), radius: 5, y: 2)
-
-                    Image(systemName: "trash.fill")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundColor(.white.opacity(0.95))
-                }
-                .padding(.bottom, 14)
-
-                // Title
-                Text(confirmationTitle(for: confirmation))
-                    .font(.system(size: 18.5, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.bottom, 6)
-
-                // Subtitle
-                Text(confirmationSubtitle(for: confirmation))
-                    .font(.system(size: 13.5, weight: .regular))
-                    .foregroundColor(Color.white.opacity(0.65))
-                    .padding(.bottom, 22)
-
-                // Buttons row
-                HStack(spacing: 8) {
-                    Spacer(minLength: 12)
-
-                    // Cancel button
-                    Button {
-                        confirmationType = nil
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("Cancel")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white)
-
-                            Text("ESC")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundColor(.white.opacity(0.55))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .fill(Color.white.opacity(0.08))
-                                )
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(isHoveringCancel ? Color.white.opacity(0.18) : Color.white.opacity(0.12))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.escape, modifiers: [])
-                    .onHover { isHoveringCancel = $0 }
-
-                    // Confirm / Delete button
-                    Button {
-                        switch confirmation {
-                        case .clearAll:
-                            browserState.clearAllDownloads(for: activeProfileId)
-                            selectedIds.removeAll()
-                        case .deleteSelected(let ids):
-                            browserState.removeDownloads(ids: ids)
-                            selectedIds.subtract(ids)
-                        }
-                        confirmationType = nil
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(confirmationButtonTitle(for: confirmation))
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-
-                            Image(systemName: "return")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(isHoveringConfirm ? Color(red: 0.98, green: 0.15, blue: 0.15) : Color(red: 0.90, green: 0.05, blue: 0.05))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.return, modifiers: [])
-                    .onHover { isHoveringConfirm = $0 }
-                }
-            }
-            .padding(22)
-            .frame(width: 440)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(red: 0.12, green: 0.12, blue: 0.13))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.55), radius: 30, x: 0, y: 14)
-            .offset(y: -20)
-            .transition(
-                .asymmetric(
-                    insertion: .offset(y: -14).combined(with: .opacity),
-                    removal: .offset(y: -14).combined(with: .opacity)
-                )
-            )
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .zIndex(100)
-    }
-
-    private func confirmationTitle(for confirmation: DownloadConfirmationType) -> String {
-        switch confirmation {
-        case .clearAll(let count):
-            return "Clear all \(count) downloads?"
-        case .deleteSelected(let ids):
-            return "Delete \(ids.count) \(ids.count == 1 ? "download" : "downloads")?"
-        }
-    }
-
-    private func confirmationSubtitle(for confirmation: DownloadConfirmationType) -> String {
-        switch confirmation {
-        case .clearAll:
-            return "This will remove all download records from Lotus. Downloaded files on your disk will remain untouched."
-        case .deleteSelected:
-            return "This will remove the selected download records from Lotus. The downloaded files on disk will not be deleted."
-        }
-    }
-
-    private func confirmationButtonTitle(for confirmation: DownloadConfirmationType) -> String {
-        switch confirmation {
-        case .clearAll:
-            return "Clear All"
-        case .deleteSelected(let ids):
-            return "Delete \(ids.count)"
-        }
     }
 }
 

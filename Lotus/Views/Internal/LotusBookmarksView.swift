@@ -345,8 +345,7 @@ struct LotusBookmarksView: View {
                         onToggleSelect: { toggleSelection(entry.id) },
                         onEdit: { editingBookmark = entry },
                         onDelete: {
-                            browserState.removeBookmark(id: entry.id)
-                            selectedIds.remove(entry.id)
+                            browserState.bookmarkConfirmation = .deleteSingle(bookmark: entry)
                         },
                         onOpenInNewTab: {
                             browserState.openTab(at: entry.url, title: entry.title)
@@ -411,10 +410,8 @@ struct LotusBookmarksView: View {
     }
 
     private func deleteSelected() {
-        for id in selectedIds {
-            browserState.removeBookmark(id: id)
-        }
-        selectedIds.removeAll()
+        guard !selectedIds.isEmpty else { return }
+        browserState.bookmarkConfirmation = .deleteSelected(count: selectedIds.count, ids: selectedIds)
     }
 
     private func exportBookmarks() {

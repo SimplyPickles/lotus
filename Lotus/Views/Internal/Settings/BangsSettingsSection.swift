@@ -8,13 +8,13 @@
 import SwiftUI
 
 struct BangsSettingsSection: View {
+    @ObservedObject var browserState: BrowserState
     @AppStorage("lotus.browser.bangsEnabled") private var bangsEnabled: Bool = true
     @ObservedObject private var bangsStore = CustomBangsStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isCreatingBang: Bool = false
     @State private var editingBang: CustomBang? = nil
-    @State private var bangToDelete: CustomBang? = nil
     @State private var disabledList: [String] = (UserDefaults.standard.stringArray(forKey: "lotus.browser.disabledBangIDs") ?? [])
 
     private var foregroundPrimary: Color {
@@ -166,10 +166,8 @@ struct BangsSettingsSection: View {
                 },
                 onDelete: isCustom ? { toDelete in
                     editingBang = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
-                        withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
-                            bangToDelete = toDelete
-                        }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        browserState.deleteBangConfirmation = toDelete
                     }
                 } : nil,
                 onCancel: {
@@ -177,26 +175,6 @@ struct BangsSettingsSection: View {
                 }
             )
         }
-        .overlay {
-            if let bang = bangToDelete {
-                DeleteBangConfirmationView(
-                    bang: bang,
-                    onConfirm: {
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                            bangsStore.removeBang(id: bang.id)
-                            bangToDelete = nil
-                        }
-                    },
-                    onCancel: {
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                            bangToDelete = nil
-                        }
-                    }
-                )
-                .transition(.opacity.animation(.easeInOut(duration: 0.18)))
-            }
-        }
-        .animation(.spring(response: 0.26, dampingFraction: 0.82), value: bangToDelete != nil)
     }
 
     // MARK: - Provider Row
@@ -266,9 +244,7 @@ struct BangsSettingsSection: View {
                     .help("Edit Custom Bang")
 
                     Button {
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                            bangToDelete = custom
-                        }
+                        browserState.deleteBangConfirmation = custom
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 13, weight: .regular))

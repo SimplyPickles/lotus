@@ -1,19 +1,19 @@
 //
-//  WebsiteDataConfirmationView.swift
+//  BookmarkConfirmationView.swift
 //  Lotus
 //
-//  Created by Dylan Fraser on 8/24/26.
+//  Created by Dylan Fraser on 8/28/26.
 //
 
 import SwiftUI
 
-enum WebsiteDataConfirmationType: Equatable {
-    case clearAll(totalCount: Int)
-    case deleteSelected(domains: Set<String>)
+enum BookmarkConfirmationType: Equatable {
+    case deleteSingle(bookmark: BookmarkItem)
+    case deleteSelected(count: Int, ids: Set<UUID>)
 }
 
-struct WebsiteDataConfirmationView: View {
-    let confirmation: WebsiteDataConfirmationType
+struct BookmarkConfirmationView: View {
+    let confirmation: BookmarkConfirmationType
     let onCancel: () -> Void
     let onConfirm: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -47,30 +47,20 @@ struct WebsiteDataConfirmationView: View {
 
     private var title: String {
         switch confirmation {
-        case .clearAll:
-            return "Clear all website data?"
-        case .deleteSelected(let domains):
-            return domains.count == 1 ? "Delete data for 1 site?" : "Delete data for \(domains.count) sites?"
+        case .deleteSingle(let bookmark):
+            return "Delete Bookmark “\(bookmark.title)”?"
+        case .deleteSelected(let count, _):
+            return count == 1 ? "Delete 1 Bookmark?" : "Delete \(count) Bookmarks?"
         }
     }
 
     private var subtitle: String {
         switch confirmation {
-        case .clearAll(let count):
-            let siteText = count == 1 ? "site" : "sites"
-            return "This will clear cookies, cache, and local storage for all \(count) \(siteText). You may be logged out of active sessions. This action cannot be undone."
-        case .deleteSelected(let domains):
-            let siteText = domains.count == 1 ? "this site" : "these \(domains.count) sites"
-            return "This will clear stored cookies, cache, and local data for \(siteText). This action cannot be undone."
-        }
-    }
-
-    private var confirmButtonTitle: String {
-        switch confirmation {
-        case .clearAll:
-            return "Clear All"
-        case .deleteSelected:
-            return "Delete"
+        case .deleteSingle:
+            return "Are you sure you want to delete this bookmark? This action cannot be undone."
+        case .deleteSelected(let count, _):
+            let itemText = count == 1 ? "bookmark" : "bookmarks"
+            return "This will remove \(count) \(itemText) from your saved bookmarks. This action cannot be undone."
         }
     }
 
@@ -86,14 +76,15 @@ struct WebsiteDataConfirmationView: View {
 
             // Modal Card
             VStack(alignment: .leading, spacing: 0) {
-                // Icon Squircle
+                // Icon squircle
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color(red: 1.0, green: 0.45, blue: 0.40),
-                                    Color(red: 0.92, green: 0.20, blue: 0.20)
+                                    Color(red: 0.98, green: 0.45, blue: 0.45),
+                                    Color(red: 0.92, green: 0.20, blue: 0.20),
+                                    Color(red: 0.85, green: 0.08, blue: 0.08)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -107,7 +98,7 @@ struct WebsiteDataConfirmationView: View {
                         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.12), radius: 5, y: 2)
 
                     Image(systemName: "trash.fill")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 17, weight: .medium))
                         .foregroundColor(.white.opacity(0.95))
                 }
                 .padding(.bottom, 14)
@@ -116,6 +107,7 @@ struct WebsiteDataConfirmationView: View {
                 Text(title)
                     .font(.system(size: 18.5, weight: .bold))
                     .foregroundColor(foregroundPrimary)
+                    .lineLimit(2)
                     .padding(.bottom, 6)
 
                 // Subtitle
@@ -163,7 +155,7 @@ struct WebsiteDataConfirmationView: View {
                         onConfirm()
                     } label: {
                         HStack(spacing: 5) {
-                            Text(confirmButtonTitle)
+                            Text("Delete")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.white)
 

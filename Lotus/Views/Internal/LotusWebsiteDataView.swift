@@ -18,7 +18,6 @@ struct LotusWebsiteDataView: View {
     @State private var searchText: String = ""
     @State private var selectedDomainNames: Set<String> = []
     @State private var selectionAnchorName: String?
-    @State private var confirmationType: WebsiteDataConfirmationType? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeTabId: UUID {
@@ -98,47 +97,17 @@ struct LotusWebsiteDataView: View {
         .background(Color.clear)
         .focusEffectDisabled()
         .transaction { $0.animation = nil }
-        .overlay {
-            if let confirmation = confirmationType {
-                WebsiteDataConfirmationView(
-                    confirmation: confirmation,
-                    onCancel: {
-                        confirmationType = nil
-                    },
-                    onConfirm: {
-                        switch confirmation {
-                        case .clearAll:
-                            let allRecords = records
-                            records.removeAll()
-                            selectedDomainNames.removeAll()
-                            browserState.removeWebsiteData(records: allRecords) {
-                                refreshRecords()
-                            }
-                        case .deleteSelected(let domains):
-                            let targetRecords = records.filter { domains.contains($0.displayName) }
-                            records.removeAll { domains.contains($0.displayName) }
-                            selectedDomainNames.subtract(domains)
-                            browserState.removeWebsiteData(records: targetRecords) {
-                                refreshRecords()
-                            }
-                        }
-                        confirmationType = nil
-                    }
-                )
-            }
-        }
-        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: confirmationType != nil)
         .onAppear {
             refreshRecords()
         }
         .onDeleteCommand {
             guard !selectedDomainNames.isEmpty else { return }
-            confirmationType = .deleteSelected(domains: selectedDomainNames)
+            browserState.websiteDataConfirmation = .deleteSelected(domains: selectedDomainNames)
         }
         .background {
             DeleteKeyMonitor {
                 guard !selectedDomainNames.isEmpty else { return }
-                confirmationType = .deleteSelected(domains: selectedDomainNames)
+                browserState.websiteDataConfirmation = .deleteSelected(domains: selectedDomainNames)
             }
             .frame(width: 0, height: 0)
         }
@@ -181,7 +150,7 @@ struct LotusWebsiteDataView: View {
                         systemImage: "trash",
                         isDestructive: true
                     ) {
-                        confirmationType = .deleteSelected(domains: selectedDomainNames)
+                        browserState.websiteDataConfirmation = .deleteSelected(domains: selectedDomainNames)
                     }
 
                     HeaderActionButton(title: "Cancel", systemImage: nil, isDestructive: false) {
@@ -189,7 +158,7 @@ struct LotusWebsiteDataView: View {
                     }
                 } else if !records.isEmpty {
                     HeaderActionButton(title: "Clear All", systemImage: nil, isDestructive: false) {
-                        confirmationType = .clearAll(totalCount: records.count)
+                        browserState.websiteDataConfirmation = .clearAll(totalCount: records.count)
                     }
                 }
             }
@@ -252,7 +221,7 @@ struct LotusWebsiteDataView: View {
                         isSelecting: isSelecting,
                         onToggleSelect: { toggleSelection(record.displayName) },
                         onDelete: {
-                            confirmationType = .deleteSelected(domains: [record.displayName])
+                            browserState.websiteDataConfirmation = .deleteSelected(domains: [record.displayName])
                         },
                         onClick: {
                             if NSEvent.modifierFlags.contains(.shift) {

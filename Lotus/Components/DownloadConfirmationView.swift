@@ -1,19 +1,19 @@
 //
-//  WebsiteDataConfirmationView.swift
+//  DownloadConfirmationView.swift
 //  Lotus
 //
-//  Created by Dylan Fraser on 8/24/26.
+//  Created by Dylan Fraser on 8/28/26.
 //
 
 import SwiftUI
 
-enum WebsiteDataConfirmationType: Equatable {
+enum DownloadConfirmationType: Equatable {
     case clearAll(totalCount: Int)
-    case deleteSelected(domains: Set<String>)
+    case deleteSelected(ids: Set<UUID>)
 }
 
-struct WebsiteDataConfirmationView: View {
-    let confirmation: WebsiteDataConfirmationType
+struct DownloadConfirmationView: View {
+    let confirmation: DownloadConfirmationType
     let onCancel: () -> Void
     let onConfirm: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -47,21 +47,19 @@ struct WebsiteDataConfirmationView: View {
 
     private var title: String {
         switch confirmation {
-        case .clearAll:
-            return "Clear all website data?"
-        case .deleteSelected(let domains):
-            return domains.count == 1 ? "Delete data for 1 site?" : "Delete data for \(domains.count) sites?"
+        case .clearAll(let count):
+            return "Clear all \(count) downloads?"
+        case .deleteSelected(let ids):
+            return "Delete \(ids.count) \(ids.count == 1 ? "download" : "downloads")?"
         }
     }
 
     private var subtitle: String {
         switch confirmation {
-        case .clearAll(let count):
-            let siteText = count == 1 ? "site" : "sites"
-            return "This will clear cookies, cache, and local storage for all \(count) \(siteText). You may be logged out of active sessions. This action cannot be undone."
-        case .deleteSelected(let domains):
-            let siteText = domains.count == 1 ? "this site" : "these \(domains.count) sites"
-            return "This will clear stored cookies, cache, and local data for \(siteText). This action cannot be undone."
+        case .clearAll:
+            return "This will remove all download records from Lotus. Downloaded files on your disk will remain untouched."
+        case .deleteSelected:
+            return "This will remove the selected download records from Lotus. The downloaded files on disk will not be deleted."
         }
     }
 
@@ -69,8 +67,8 @@ struct WebsiteDataConfirmationView: View {
         switch confirmation {
         case .clearAll:
             return "Clear All"
-        case .deleteSelected:
-            return "Delete"
+        case .deleteSelected(let ids):
+            return "Delete \(ids.count)"
         }
     }
 
@@ -86,14 +84,15 @@ struct WebsiteDataConfirmationView: View {
 
             // Modal Card
             VStack(alignment: .leading, spacing: 0) {
-                // Icon Squircle
+                // Icon squircle
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color(red: 1.0, green: 0.45, blue: 0.40),
-                                    Color(red: 0.92, green: 0.20, blue: 0.20)
+                                    Color(red: 0.98, green: 0.45, blue: 0.45),
+                                    Color(red: 0.92, green: 0.20, blue: 0.20),
+                                    Color(red: 0.85, green: 0.08, blue: 0.08)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -107,7 +106,7 @@ struct WebsiteDataConfirmationView: View {
                         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.12), radius: 5, y: 2)
 
                     Image(systemName: "trash.fill")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 17, weight: .medium))
                         .foregroundColor(.white.opacity(0.95))
                 }
                 .padding(.bottom, 14)

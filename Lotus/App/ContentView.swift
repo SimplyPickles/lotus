@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import WebKit
 
 struct ContentView: View {
     @StateObject private var browserState: BrowserState
@@ -270,6 +271,93 @@ struct ContentView: View {
         }
         if let profile = browserState.profileToDeleteConfirmation {
             DeleteProfileConfirmationView(browserState: browserState, profile: profile)
+        }
+        if let bang = browserState.deleteBangConfirmation {
+            DeleteBangConfirmationView(
+                bang: bang,
+                onConfirm: {
+                    CustomBangsStore.shared.removeBang(id: bang.id)
+                    browserState.deleteBangConfirmation = nil
+                },
+                onCancel: {
+                    browserState.deleteBangConfirmation = nil
+                }
+            )
+        }
+        if let confirmation = browserState.historyConfirmation {
+            HistoryConfirmationView(
+                confirmation: confirmation,
+                onCancel: {
+                    browserState.historyConfirmation = nil
+                },
+                onConfirm: {
+                    switch confirmation {
+                    case .clearAll:
+                        browserState.clearHistory(for: browserState.currentProfileId)
+                    case .deleteSelected(let ids):
+                        browserState.removeHistoryEntries(ids: ids)
+                    }
+                    browserState.historyConfirmation = nil
+                }
+            )
+        }
+        if let confirmation = browserState.downloadConfirmation {
+            DownloadConfirmationView(
+                confirmation: confirmation,
+                onCancel: {
+                    browserState.downloadConfirmation = nil
+                },
+                onConfirm: {
+                    switch confirmation {
+                    case .clearAll:
+                        browserState.clearAllDownloads(for: browserState.currentProfileId)
+                    case .deleteSelected(let ids):
+                        browserState.removeDownloads(ids: ids)
+                    }
+                    browserState.downloadConfirmation = nil
+                }
+            )
+        }
+        if let confirmation = browserState.bookmarkConfirmation {
+            BookmarkConfirmationView(
+                confirmation: confirmation,
+                onCancel: {
+                    browserState.bookmarkConfirmation = nil
+                },
+                onConfirm: {
+                    switch confirmation {
+                    case .deleteSingle(let bookmark):
+                        browserState.removeBookmark(id: bookmark.id)
+                    case .deleteSelected(_, let ids):
+                        for id in ids {
+                            browserState.removeBookmark(id: id)
+                        }
+                    }
+                    browserState.bookmarkConfirmation = nil
+                }
+            )
+        }
+        if let confirmation = browserState.websiteDataConfirmation {
+            WebsiteDataConfirmationView(
+                confirmation: confirmation,
+                onCancel: {
+                    browserState.websiteDataConfirmation = nil
+                },
+                onConfirm: {
+                    switch confirmation {
+                    case .clearAll:
+                        browserState.fetchWebsiteDataRecords { records in
+                            browserState.removeWebsiteData(records: records)
+                        }
+                    case .deleteSelected(let domains):
+                        browserState.fetchWebsiteDataRecords { records in
+                            let targetRecords = records.filter { domains.contains($0.displayName) }
+                            browserState.removeWebsiteData(records: targetRecords)
+                        }
+                    }
+                    browserState.websiteDataConfirmation = nil
+                }
+            )
         }
     }
 
