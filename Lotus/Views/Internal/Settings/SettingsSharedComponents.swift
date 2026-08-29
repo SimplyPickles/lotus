@@ -435,3 +435,208 @@ extension View {
             .focusEffectDisabled()
     }
 }
+
+// MARK: - Reusable Settings Rows
+
+struct SettingsToggleRow: View {
+    var systemImage: String? = nil
+    let title: String
+    var subtitle: String? = nil
+    @Binding var isOn: Bool
+    var isDisabled: Bool = false
+    var customAction: ((Bool) -> Void)? = nil
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let systemImage = systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                    .frame(width: 22)
+            }
+
+            VStack(alignment: .leading, spacing: subtitle != nil ? 1 : 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                if let subtitle = subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer()
+
+            Toggle(title, isOn: Binding(
+                get: { isOn },
+                set: { newValue in
+                    isOn = newValue
+                    customAction?(newValue)
+                }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .disabled(isDisabled)
+            .opacity(isDisabled ? 0.45 : 1.0)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: subtitle != nil ? 50 : 46)
+    }
+}
+
+struct SettingsPickerRow<T: Hashable>: View {
+    var systemImage: String? = nil
+    let title: String
+    var subtitle: String? = nil
+    @Binding var selection: T
+    let options: [(tag: T, label: String)]
+    var pickerWidth: CGFloat = 160
+    var isDisabled: Bool = false
+    var onChange: ((T) -> Void)? = nil
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let systemImage = systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                    .frame(width: 22)
+            }
+
+            VStack(alignment: .leading, spacing: subtitle != nil ? 1 : 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                if let subtitle = subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer()
+
+            Picker(title, selection: $selection) {
+                ForEach(options, id: \.tag) { opt in
+                    Text(opt.label).tag(opt.tag)
+                }
+            }
+            .labelsHidden()
+            .untintedDropdown()
+            .frame(width: pickerWidth, alignment: .trailing)
+            .disabled(isDisabled)
+            .opacity(isDisabled ? 0.45 : 1.0)
+            .onChange(of: selection) { _, newValue in
+                onChange?(newValue)
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: subtitle != nil ? 50 : 46)
+    }
+}
+
+struct SettingsSegmentedRow<T: Hashable>: View {
+    var systemImage: String? = nil
+    let title: String
+    var subtitle: String? = nil
+    @Binding var selection: T
+    let options: [(tag: T, label: String)]
+    var pickerWidth: CGFloat = 210
+    var isDisabled: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let systemImage = systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                    .frame(width: 22)
+            }
+
+            VStack(alignment: .leading, spacing: subtitle != nil ? 1 : 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                if let subtitle = subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                }
+            }
+
+            Spacer()
+
+            Picker(title, selection: $selection) {
+                ForEach(options, id: \.tag) { opt in
+                    Text(opt.label).tag(opt.tag)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: pickerWidth)
+            .focusable(false)
+            .focusEffectDisabled()
+            .disabled(isDisabled)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: subtitle != nil ? 50 : 48)
+    }
+}
+
+struct SettingsButtonRow: View {
+    var systemImage: String? = nil
+    let title: String
+    var subtitle: String? = nil
+    let buttonTitle: String
+    var buttonWidth: CGFloat = 150
+    var isDestructive: Bool = false
+    let action: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let systemImage = systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
+                    .frame(width: 22)
+            }
+
+            VStack(alignment: .leading, spacing: subtitle != nil ? 1 : 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                if let subtitle = subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                }
+            }
+
+            Spacer()
+
+            Button(buttonTitle, role: isDestructive ? .destructive : nil, action: action)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .frame(width: buttonWidth, height: 28, alignment: .trailing)
+                .focusable(false)
+                .focusEffectDisabled()
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: subtitle != nil ? 50 : 48)
+    }
+}

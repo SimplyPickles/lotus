@@ -77,3 +77,23 @@ extension URL {
         }
     }
 }
+
+// MARK: - Search Template Resolution
+
+extension String {
+    /// Resolves a URL template containing `{searchTerms}`, `%s`, or `{q}` placeholders with the given search query.
+    func resolvingSearchTemplate(query: String) -> URL? {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let populated: String
+        if contains("{searchTerms}") {
+            populated = replacingOccurrences(of: "{searchTerms}", with: encoded)
+        } else if contains("%s") {
+            populated = replacingOccurrences(of: "%s", with: encoded)
+        } else if contains("{q}") {
+            populated = replacingOccurrences(of: "{q}", with: encoded)
+        } else {
+            populated = "\(self)\(encoded)"
+        }
+        return URL(string: populated)
+    }
+}

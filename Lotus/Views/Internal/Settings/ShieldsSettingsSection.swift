@@ -13,23 +13,55 @@ struct ShieldsSettingsSection: View {
     var body: some View {
         VStack(spacing: 16) {
             SettingsSectionCard(
-                title: "Content & Tracker Blocking",
-//                footer: "Lotus blocks cross-site trackers, behavioral fingerprinting scripts, and advertising network analytics."
+                title: "Content & Tracker Blocking"
             ) {
-                ShieldsMasterSettingsRow(contentBlocker: contentBlocker)
+                SettingsToggleRow(
+                    systemImage: "shield.checkered",
+                    title: "Block ads & trackers",
+                    subtitle: "Blocks known trackers, tracking pixels, telemetry, and banner ads",
+                    isOn: $contentBlocker.isAdBlockingEnabled
+                )
                 SettingsDivider()
-                ShieldsTrackingSettingsRow(contentBlocker: contentBlocker)
+                SettingsToggleRow(
+                    systemImage: "cross.case",
+                    title: "Block tracking scripts",
+                    subtitle: "Blocks analytics telemetry scripts and third-party event trackers",
+                    isOn: $contentBlocker.blockTrackersEnabled,
+                    isDisabled: !contentBlocker.isAdBlockingEnabled
+                )
                 SettingsDivider()
-                ShieldsCosmeticSettingsRow(contentBlocker: contentBlocker)
+                SettingsToggleRow(
+                    systemImage: "eye.slash",
+                    title: "Hide cosmetic placeholders",
+                    subtitle: "Collapses and cleans empty whitespace left behind by blocked banner slots",
+                    isOn: $contentBlocker.blockCosmeticElementsEnabled,
+                    isDisabled: !contentBlocker.isAdBlockingEnabled
+                )
             }
 
             SettingsSectionCard(
-                title: "Fingerprint & Canvas Defense",
-//                footer: "Canvas randomization injects micro-noise into image readouts to prevent hardware fingerprinting."
+                title: "Fingerprint & Canvas Defense"
             ) {
-                ShieldsFingerprintSettingsRow(contentBlocker: contentBlocker)
+                SettingsToggleRow(
+                    systemImage: "theatermasks",
+                    title: "Fingerprint protection",
+                    subtitle: "Spoofs Canvas, WebGL, and AudioContext to block hardware profiling",
+                    isOn: $contentBlocker.fingerprintProtectionEnabled,
+                    isDisabled: !contentBlocker.isAdBlockingEnabled
+                )
                 SettingsDivider()
-                ShieldsStrictCanvasBlockSettingsRow(contentBlocker: contentBlocker)
+                SettingsPickerRow(
+                    systemImage: "square.fill.and.line.vertical.and.square.fill",
+                    title: "Canvas defense mode",
+                    subtitle: contentBlocker.strictCanvasBlockEnabled ? "Strictly blocks canvas pixel readouts" : "Injects random noise jitter into canvas extraction",
+                    selection: $contentBlocker.strictCanvasBlockEnabled,
+                    options: [
+                        (false, "Noise Jitter (Recommended)"),
+                        (true, "Strict Block")
+                    ],
+                    pickerWidth: 200,
+                    isDisabled: !contentBlocker.fingerprintProtectionEnabled || !contentBlocker.isAdBlockingEnabled
+                )
             }
 
             SettingsSectionCard(title: "Exceptions & Site Rules") {
@@ -44,178 +76,6 @@ struct ShieldsSettingsSection: View {
 }
 
 // MARK: - Rows
-
-private struct ShieldsMasterSettingsRow: View {
-    @ObservedObject var contentBlocker: ContentBlockerService
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "shield.checkered")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Block ads & trackers")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Blocks known trackers, tracking pixels, telemetry, and banner ads")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Block ads & trackers", isOn: $contentBlocker.isAdBlockingEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct ShieldsTrackingSettingsRow: View {
-    @ObservedObject var contentBlocker: ContentBlockerService
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cross.case")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Block tracking scripts")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Blocks analytics telemetry scripts and third-party event trackers")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Block tracking scripts", isOn: $contentBlocker.blockTrackersEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(!contentBlocker.isAdBlockingEnabled)
-                .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct ShieldsCosmeticSettingsRow: View {
-    @ObservedObject var contentBlocker: ContentBlockerService
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "eye.slash")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Hide cosmetic placeholders")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Collapses and cleans empty whitespace left behind by blocked banner slots")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Hide cosmetic placeholders", isOn: $contentBlocker.blockCosmeticElementsEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(!contentBlocker.isAdBlockingEnabled)
-                .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct ShieldsFingerprintSettingsRow: View {
-    @ObservedObject var contentBlocker: ContentBlockerService
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "theatermasks")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Fingerprint protection")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Spoofs Canvas, WebGL, and AudioContext to block hardware profiling")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Fingerprint protection", isOn: $contentBlocker.fingerprintProtectionEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(!contentBlocker.isAdBlockingEnabled)
-                .opacity(contentBlocker.isAdBlockingEnabled ? 1.0 : 0.45)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct ShieldsStrictCanvasBlockSettingsRow: View {
-    @ObservedObject var contentBlocker: ContentBlockerService
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "square.fill.and.line.vertical.and.square.fill")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Canvas defense mode")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text(contentBlocker.strictCanvasBlockEnabled ? "Strictly blocks canvas pixel readouts" : "Injects random noise jitter into canvas extraction")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("Canvas defense mode", selection: $contentBlocker.strictCanvasBlockEnabled) {
-                Text("Noise Jitter (Recommended)").tag(false)
-                Text("Strict Block").tag(true)
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 200, alignment: .trailing)
-            .disabled(!contentBlocker.fingerprintProtectionEnabled || !contentBlocker.isAdBlockingEnabled)
-            .opacity((contentBlocker.fingerprintProtectionEnabled && contentBlocker.isAdBlockingEnabled) ? 1.0 : 0.45)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
 
 private struct ShieldsStrictPopupBlockedSettingsRow: View {
     @ObservedObject var contentBlocker: ContentBlockerService

@@ -11,15 +11,34 @@ struct GeneralSettingsSection: View {
     @AppStorage("lotus.browser.startupBehavior") private var startupBehavior: String = "restore"
     @AppStorage("lotus.browser.searchEngine") private var searchEngine: String = "google"
     @AppStorage("lotus.browser.searchSuggestionsEnabled") private var searchSuggestionsEnabled: Bool = true
+    @AppStorage("lotus.browser.warnOnQuit") private var warnOnQuit: Bool = true
 
     var body: some View {
         VStack(spacing: 16) {
             SettingsSectionCard(title: "System & Startup") {
                 DefaultBrowserSettingsRow()
                 SettingsDivider()
-                StartupBehaviorSettingsRow(startupBehavior: $startupBehavior)
+                SettingsPickerRow(
+                    systemImage: "power",
+                    title: "On startup",
+                    subtitle: "Choose how Lotus opens when launched",
+                    selection: $startupBehavior,
+                    options: [
+                        ("restore", "Restore Session"),
+                        ("empty", "Command Palette"),
+                        ("pinnedOnly", "Pinned Only")
+                    ],
+                    pickerWidth: 170
+                )
                 SettingsDivider()
-                WarnOnQuitSettingsRow()
+                SettingsToggleRow(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Warn before quitting",
+                    subtitle: "Show a confirmation prompt when pressing ⌘Q",
+                    isOn: $warnOnQuit
+                ) { newValue in
+                    UserDefaults.standard.set(!newValue, forKey: BrowserState.alwaysQuitKey)
+                }
             }
 
             SettingsSectionCard(
@@ -28,7 +47,12 @@ struct GeneralSettingsSection: View {
             ) {
                 SearchEngineSettingsRow(searchEngine: $searchEngine)
                 SettingsDivider()
-                SearchSuggestionsSettingsRow(searchSuggestionsEnabled: $searchSuggestionsEnabled)
+                SettingsToggleRow(
+                    systemImage: "text.magnifyingglass",
+                    title: "Search suggestions",
+                    subtitle: "Show live completions from search engine in command palette",
+                    isOn: $searchSuggestionsEnabled
+                )
             }
         }
     }
@@ -111,81 +135,6 @@ private struct DefaultBrowserSettingsRow: View {
         .padding(.horizontal, 14)
         .frame(height: 50)
         .onAppear(perform: checkDefaultStatus)
-    }
-}
-
-private struct WarnOnQuitSettingsRow: View {
-    @AppStorage("lotus.browser.warnOnQuit") private var warnOnQuit: Bool = true
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Warn before quitting")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Show a confirmation prompt when pressing ⌘Q")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Warn before quitting", isOn: Binding(
-                get: { warnOnQuit },
-                set: { newValue in
-                    warnOnQuit = newValue
-                    UserDefaults.standard.set(!newValue, forKey: BrowserState.alwaysQuitKey)
-                }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct StartupBehaviorSettingsRow: View {
-    @Binding var startupBehavior: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "power")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("On startup")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Choose how Lotus opens when launched")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("On startup", selection: $startupBehavior) {
-                Text("Restore Session").tag("restore")
-                Text("Command Palette").tag("empty")
-                Text("Pinned Only").tag("pinnedOnly")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 170, alignment: .trailing)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
     }
 }
 
@@ -391,37 +340,5 @@ private struct SearchEngineSettingsRow: View {
             .padding(20)
             .frame(width: 420)
         }
-    }
-}
-
-private struct SearchSuggestionsSettingsRow: View {
-    @Binding var searchSuggestionsEnabled: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "text.magnifyingglass")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Search suggestions")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Show live completions from search engine in command palette")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Search suggestions", isOn: $searchSuggestionsEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
     }
 }

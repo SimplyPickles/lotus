@@ -17,165 +17,54 @@ struct MediaSettingsSection: View {
     var body: some View {
         VStack(spacing: 16) {
             SettingsSectionCard(title: "Media Playback") {
-                AutoplayPolicySettingsRow(autoplayPolicy: $autoplayPolicy)
+                SettingsPickerRow(
+                    systemImage: "play.slash",
+                    title: "Autoplay policy",
+                    subtitle: "Control automatic playback of videos and audio",
+                    selection: $autoplayPolicy,
+                    options: [
+                        ("audio", "Block Audio"),
+                        ("blockAll", "Block All Autoplay"),
+                        ("allowAll", "Allow All")
+                    ],
+                    pickerWidth: 170
+                )
                 SettingsDivider()
-                AutoPiPSettingsRow(autoPiPEnabled: $autoPiPEnabled)
+                SettingsToggleRow(
+                    systemImage: "pip.enter",
+                    title: "Automatic Picture in Picture",
+                    subtitle: "Pops playing videos into floating PiP when switching tabs",
+                    isOn: $autoPiPEnabled
+                )
             }
             
             SettingsSectionCard(
-                title: "Performance & Memory",
-//                footer: "Low Power Mode reduces background rendering and animations to prolong battery life."
+                title: "Performance & Memory"
             ) {
-                TabSnoozeSettingsRow(tabSnoozeInterval: $tabSnoozeInterval, browserState: browserState)
+                SettingsPickerRow(
+                    systemImage: "moon.zzz",
+                    title: "Tab snoozing (memory saver)",
+                    subtitle: "Frees RAM by suspending background tabs until you switch to them",
+                    selection: $tabSnoozeInterval,
+                    options: [
+                        ("never", "Never"),
+                        ("15m", "After 15 minutes"),
+                        ("30m", "After 30 minutes"),
+                        ("1h", "After 1 hour"),
+                        ("2h", "After 2 hours")
+                    ],
+                    pickerWidth: 170
+                ) { _ in
+                    browserState.snoozeInactiveTabsIfNeeded()
+                }
                 SettingsDivider()
-                LowPowerPerformanceSettingsRow(lowPowerModeShimmerDisabled: $lowPowerModeShimmerDisabled)
+                SettingsToggleRow(
+                    systemImage: "bolt.badge.automatic",
+                    title: "Optimize for battery & low power",
+                    subtitle: "Suppresses animations and intensive visuals during Low Power Mode",
+                    isOn: $lowPowerModeShimmerDisabled
+                )
             }
         }
-    }
-}
-
-// MARK: - Rows
-
-private struct AutoplayPolicySettingsRow: View {
-    @Binding var autoplayPolicy: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "play.slash")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Autoplay policy")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Control automatic playback of videos and audio")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("Autoplay policy", selection: $autoplayPolicy) {
-                Text("Block Audio").tag("audio")
-                Text("Block All Autoplay").tag("blockAll")
-                Text("Allow All").tag("allowAll")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 170, alignment: .trailing)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct AutoPiPSettingsRow: View {
-    @Binding var autoPiPEnabled: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "pip.enter")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Automatic Picture in Picture")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Pops playing videos into floating PiP when switching tabs")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Automatic Picture in Picture", isOn: $autoPiPEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct LowPowerPerformanceSettingsRow: View {
-    @Binding var lowPowerModeShimmerDisabled: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "bolt.badge.automatic")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Optimize for battery & low power")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Suppresses animations and intensive visuals during Low Power Mode")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Optimize for battery & low power", isOn: $lowPowerModeShimmerDisabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct TabSnoozeSettingsRow: View {
-    @Binding var tabSnoozeInterval: String
-    @ObservedObject var browserState: BrowserState
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "moon.zzz")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Tab snoozing (memory saver)")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Frees RAM by suspending background tabs until you switch to them")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("Tab snoozing", selection: $tabSnoozeInterval) {
-                Text("Never").tag("never")
-                Text("After 15 minutes").tag("15m")
-                Text("After 30 minutes").tag("30m")
-                Text("After 1 hour").tag("1h")
-                Text("After 2 hours").tag("2h")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 170, alignment: .trailing)
-            .onChange(of: tabSnoozeInterval) { _, _ in
-                browserState.snoozeInactiveTabsIfNeeded()
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
     }
 }

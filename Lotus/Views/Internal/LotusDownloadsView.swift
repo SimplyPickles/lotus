@@ -16,59 +16,6 @@ struct DownloadSection: Identifiable, Equatable {
     let items: [DownloadItem]
 }
 
-// MARK: - Date Formatting
-
-private enum DownloadDateFormatter {
-    private static let dayFormatterSameYear: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter
-    }()
-
-    private static let dayFormatterDifferentYear: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d, yyyy"
-        return formatter
-    }()
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }()
-
-    static func dayLabel(for date: Date, relativeTo referenceDate: Date = Date(), calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(date) {
-            return "Today"
-        } else if calendar.isDateInYesterday(date) {
-            return "Yesterday"
-        } else {
-            let currentYear = calendar.component(.year, from: referenceDate)
-            let dateYear = calendar.component(.year, from: date)
-            if dateYear == currentYear {
-                return dayFormatterSameYear.string(from: date)
-            } else {
-                return dayFormatterDifferentYear.string(from: date)
-            }
-        }
-    }
-
-    static func relativeTime(for date: Date, relativeTo referenceDate: Date = Date()) -> String {
-        let interval = referenceDate.timeIntervalSince(date)
-        if interval < 60 {
-            return "Just now"
-        } else if interval < 3600 {
-            let minutes = max(1, Int(interval / 60))
-            return "\(minutes)m ago"
-        } else if interval < 86400 {
-            let hours = max(1, Int(interval / 3600))
-            return "\(hours)h ago"
-        } else {
-            return timeFormatter.string(from: date)
-        }
-    }
-}
-
 // MARK: - Grouping Helper
 
 private enum DownloadGrouping {
@@ -111,7 +58,7 @@ private enum DownloadGrouping {
 
         for day in sortedDays {
             guard let itemsInDay = dayMap[day], !itemsInDay.isEmpty else { continue }
-            let dayTitle = DownloadDateFormatter.dayLabel(for: day, relativeTo: now, calendar: calendar)
+            let dayTitle = LotusDateFormatter.dayLabel(for: day, relativeTo: now, calendar: calendar)
             sections.append(DownloadSection(
                 id: "\(day.timeIntervalSinceReferenceDate)",
                 title: dayTitle,
@@ -668,7 +615,7 @@ private struct DownloadRowView: View {
                     }
                 }
 
-                Text(DownloadDateFormatter.relativeTime(for: item.startedAt))
+                Text(LotusDateFormatter.relativeTime(for: item.startedAt))
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(foregroundSecondary.opacity(0.75))
                     .monospacedDigit()

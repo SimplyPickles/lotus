@@ -53,18 +53,7 @@ struct SiteSearchProvider: Identifiable, Equatable {
 
     func searchURL(for query: String) -> URL? {
         if let customTemplate = customTemplate {
-            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-            let populated: String
-            if customTemplate.contains("{searchTerms}") {
-                populated = customTemplate.replacingOccurrences(of: "{searchTerms}", with: encoded)
-            } else if customTemplate.contains("%s") {
-                populated = customTemplate.replacingOccurrences(of: "%s", with: encoded)
-            } else if customTemplate.contains("{q}") {
-                populated = customTemplate.replacingOccurrences(of: "{q}", with: encoded)
-            } else {
-                populated = "\(customTemplate)\(encoded)"
-            }
-            return URL(string: populated)
+            return customTemplate.resolvingSearchTemplate(query: query)
         }
         var components = URLComponents(string: searchEndpoint)
         components?.queryItems = [URLQueryItem(name: queryParameter, value: query)]

@@ -29,32 +29,87 @@ struct AppearanceSettingsSection: View {
             SettingsSectionCard(title: "Theme & Accent") {
                 AccentColorPickerRow(selectedAccent: $accentColor, browserState: browserState)
                 SettingsDivider()
-                AppearanceSettingsRow(appearanceMode: $appearanceMode)
+                SettingsSegmentedRow(
+                    systemImage: "circle.lefthalf.filled",
+                    title: "Theme",
+                    selection: $appearanceMode,
+                    options: [("system", "System"), ("light", "Light"), ("dark", "Dark")],
+                    pickerWidth: 210
+                )
             }
 
             SettingsSectionCard(
-                title: "Chrome Tinting",
-//                footer: "Tints top toolbar, sidebar tabs, and pinned tab cards with each website's dominant accent color."
+                title: "Chrome Tinting"
             ) {
-                TitlebarTintingSettingsRow(titlebarChromeTintingMode: $titlebarChromeTintingMode)
+                SettingsPickerRow(
+                    systemImage: "menubar.rectangle",
+                    title: "Toolbar chrome tinting",
+                    subtitle: "Tints top toolbar and container with site's dominant accent",
+                    selection: $titlebarChromeTintingMode,
+                    options: [("adaptive", "Adaptive"), ("neutral", "Neutral"), ("systemAccent", "Accent")],
+                    pickerWidth: 140
+                )
                 SettingsDivider()
-                SidebarTabTintingSettingsRow(sidebarTabTintingMode: $sidebarTabTintingMode)
+                SettingsPickerRow(
+                    systemImage: "sidebar.left",
+                    title: "Sidebar tab tinting",
+                    subtitle: "Tints active tab selection with site's dominant accent",
+                    selection: $sidebarTabTintingMode,
+                    options: [("adaptive", "Adaptive"), ("neutral", "Neutral"), ("systemAccent", "Accent")],
+                    pickerWidth: 140
+                )
                 SettingsDivider()
-                PinnedTabTintingSettingsRow(pinnedTabTintingMode: $pinnedTabTintingMode)
+                SettingsPickerRow(
+                    systemImage: "pin",
+                    title: "Pinned tab tinting",
+                    subtitle: "Tints pinned tab cards with vibrant site gradients",
+                    selection: $pinnedTabTintingMode,
+                    options: [("adaptive", "Adaptive"), ("neutral", "Neutral"), ("systemAccent", "Accent")],
+                    pickerWidth: 140
+                )
             }
 
             SettingsSectionCard(title: "Window & Layout") {
-                TopBarSettingsRow(topBarVisibility: $topBarVisibility)
+                SettingsPickerRow(
+                    systemImage: "menubar.rectangle",
+                    title: "Toolbar",
+                    selection: $topBarVisibility,
+                    options: [("always", "Always"), ("hover", "Hover"), ("never", "Never")],
+                    pickerWidth: 130
+                )
                 SettingsDivider()
-                CenterURLPreviewSettingsRow(centerURLPreview: $centerURLPreview)
+                SettingsToggleRow(
+                    systemImage: "text.aligncenter",
+                    title: "Center address bar preview",
+                    subtitle: "Centers text in inactive URL address bar",
+                    isOn: $centerURLPreview
+                )
                 SettingsDivider()
-                CenterCommandPaletteSettingsRow(centerCommandPaletteOverWebview: $centerCommandPaletteOverWebview)
+                SettingsToggleRow(
+                    systemImage: "command",
+                    title: "Center Command Palette",
+                    subtitle: "Centers the palette in the window instead of top-aligning",
+                    isOn: $centerCommandPaletteOverWebview
+                )
                 SettingsDivider()
-                BrowserFrameSettingsRow(showsBrowserFrame: $showsBrowserFrame)
+                SettingsToggleRow(
+                    systemImage: "rectangle.inset.filled",
+                    title: "Browser frame",
+                    isOn: $showsBrowserFrame
+                )
                 SettingsDivider()
-                RoundedWebCornersSettingsRow(showsRoundedWebCorners: $showsRoundedWebCorners)
+                SettingsToggleRow(
+                    systemImage: "rectangle",
+                    title: "Rounded web corners",
+                    isOn: $showsRoundedWebCorners
+                )
                 SettingsDivider()
-                SmoothTabSwitchAnimationSettingsRow(smoothTabSwitchAnimation: $smoothTabSwitchAnimation)
+                SettingsToggleRow(
+                    systemImage: "slider.horizontal.below.rectangle",
+                    title: "Smooth tab switch animation",
+                    subtitle: "Animate tab selection highlights and sliding transitions",
+                    isOn: $smoothTabSwitchAnimation
+                )
             }
 
             ToolbarArrangementSettingsCard(toolbarLayoutRaw: $toolbarLayoutRaw)
@@ -140,328 +195,6 @@ private struct AccentColorDot: View {
         .focusable(false)
         .focusEffectDisabled()
         .help(accent.displayName)
-    }
-}
-
-private struct AppearanceSettingsRow: View {
-    @Binding var appearanceMode: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "circle.lefthalf.filled")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            Text("Theme")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-            Spacer()
-
-            Picker("Theme", selection: $appearanceMode) {
-                Text("System").tag("system")
-                Text("Light").tag("light")
-                Text("Dark").tag("dark")
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 210)
-            .focusable(false)
-            .focusEffectDisabled()
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 48)
-    }
-}
-
-private struct TitlebarTintingSettingsRow: View {
-    @Binding var titlebarChromeTintingMode: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "menubar.rectangle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Toolbar chrome tinting")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Tints top toolbar and container with site's dominant accent")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("Toolbar chrome tinting", selection: $titlebarChromeTintingMode) {
-                Text("Adaptive").tag("adaptive")
-                Text("Neutral").tag("neutral")
-                Text("Accent").tag("systemAccent")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 140, alignment: .trailing)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct SidebarTabTintingSettingsRow: View {
-    @Binding var sidebarTabTintingMode: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Sidebar tab tinting")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Tints active tab selection with site's dominant accent")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("Sidebar tab tinting", selection: $sidebarTabTintingMode) {
-                Text("Adaptive").tag("adaptive")
-                Text("Neutral").tag("neutral")
-                Text("Accent").tag("systemAccent")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 140, alignment: .trailing)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct PinnedTabTintingSettingsRow: View {
-    @Binding var pinnedTabTintingMode: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "pin")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Pinned tab tinting")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Tints pinned tab cards with vibrant site gradients")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Picker("Pinned tab tinting", selection: $pinnedTabTintingMode) {
-                Text("Adaptive").tag("adaptive")
-                Text("Neutral").tag("neutral")
-                Text("Accent").tag("systemAccent")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 140, alignment: .trailing)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct CenterURLPreviewSettingsRow: View {
-    @Binding var centerURLPreview: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "text.aligncenter")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Center address bar preview")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Centers text in inactive URL address bar")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Center address bar preview", isOn: $centerURLPreview)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct CenterCommandPaletteSettingsRow: View {
-    @Binding var centerCommandPaletteOverWebview: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "command")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Center Command Palette")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text("Centers the palette in the window instead of top-aligning")
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Center Command Palette", isOn: $centerCommandPaletteOverWebview)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-    }
-}
-
-private struct TopBarSettingsRow: View {
-    @Binding var topBarVisibility: String
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "menubar.rectangle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            Text("Toolbar")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-            Spacer()
-
-            Picker("Toolbar", selection: $topBarVisibility) {
-                Text("Always").tag("always")
-                Text("Hover").tag("hover")
-                Text("Never").tag("never")
-            }
-            .labelsHidden()
-            .untintedDropdown()
-            .frame(width: 130, alignment: .trailing)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 46)
-    }
-}
-
-private struct BrowserFrameSettingsRow: View {
-    @Binding var showsBrowserFrame: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "rectangle.inset.filled")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            Text("Browser frame")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-            Spacer()
-
-            Toggle("Browser frame", isOn: $showsBrowserFrame)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 46)
-    }
-}
-
-private struct RoundedWebCornersSettingsRow: View {
-    @Binding var showsRoundedWebCorners: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "rectangle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            Text("Rounded web corners")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-            Spacer()
-
-            Toggle("Rounded web corners", isOn: $showsRoundedWebCorners)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 46)
-    }
-}
-
-private struct SmoothTabSwitchAnimationSettingsRow: View {
-    @Binding var smoothTabSwitchAnimation: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "slider.horizontal.below.rectangle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Smooth tab switch animation")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-                Text("Animate tab selection highlights and sliding transitions")
-                    .font(.system(size: 11))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("Smooth tab switch animation", isOn: $smoothTabSwitchAnimation)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 48)
     }
 }
 

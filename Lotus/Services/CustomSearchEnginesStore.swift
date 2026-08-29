@@ -31,18 +31,7 @@ struct CustomSearchEngine: Identifiable, Codable, Equatable, Hashable {
     }
 
     func searchURL(for query: String) -> URL? {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let populated: String
-        if searchURLTemplate.contains("{searchTerms}") {
-            populated = searchURLTemplate.replacingOccurrences(of: "{searchTerms}", with: encoded)
-        } else if searchURLTemplate.contains("%s") {
-            populated = searchURLTemplate.replacingOccurrences(of: "%s", with: encoded)
-        } else if searchURLTemplate.contains("{q}") {
-            populated = searchURLTemplate.replacingOccurrences(of: "{q}", with: encoded)
-        } else {
-            populated = "\(searchURLTemplate)\(encoded)"
-        }
-        return URL(string: populated)
+        searchURLTemplate.resolvingSearchTemplate(query: query)
     }
 }
 
