@@ -21,32 +21,48 @@ extension BrowserState {
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-        completionHandler()
+        let host = frame.securityOrigin.host.isEmpty ? (webView.url?.host ?? "This page") : frame.securityOrigin.host
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                completionHandler()
+                return
+            }
+            let request = JavaScriptDialogRequest(
+                host: host,
+                kind: .alert(message: message, completion: completionHandler)
+            )
+            self.presentJavaScriptDialog(request)
+        }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-        let response = alert.runModal()
-        completionHandler(response == .alertFirstButtonReturn)
+        let host = frame.securityOrigin.host.isEmpty ? (webView.url?.host ?? "This page") : frame.securityOrigin.host
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                completionHandler(false)
+                return
+            }
+            let request = JavaScriptDialogRequest(
+                host: host,
+                kind: .confirm(message: message, completion: completionHandler)
+            )
+            self.presentJavaScriptDialog(request)
+        }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = prompt
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        input.stringValue = defaultText ?? ""
-        alert.accessoryView = input
-        let response = alert.runModal()
-        completionHandler(response == .alertFirstButtonReturn ? input.stringValue : nil)
+        let host = frame.securityOrigin.host.isEmpty ? (webView.url?.host ?? "This page") : frame.securityOrigin.host
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                completionHandler(nil)
+                return
+            }
+            let request = JavaScriptDialogRequest(
+                host: host,
+                kind: .prompt(prompt: prompt, defaultText: defaultText, completion: completionHandler)
+            )
+            self.presentJavaScriptDialog(request)
+        }
     }
 
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {

@@ -188,6 +188,12 @@ struct ContentView: View {
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.pendingPopupRequest != nil)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.isClearAllDataConfirmationPresented)
         .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.profileToDeleteConfirmation != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.deleteBangConfirmation != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.historyConfirmation != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.downloadConfirmation != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.bookmarkConfirmation != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.websiteDataConfirmation != nil)
+        .animation(.spring(response: 0.20, dampingFraction: 0.84), value: browserState.activeJavaScriptDialog != nil)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isStaticSidebarPresented)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: shouldShowFloatingSidebar)
         .onChange(of: browserState.isSidebarVisible) { _, visible in
@@ -358,6 +364,9 @@ struct ContentView: View {
                     browserState.websiteDataConfirmation = nil
                 }
             )
+        }
+        if let dialog = browserState.activeJavaScriptDialog {
+            JavaScriptDialogView(browserState: browserState, request: dialog)
         }
     }
 

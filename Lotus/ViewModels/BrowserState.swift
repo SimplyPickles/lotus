@@ -111,6 +111,8 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var downloadConfirmation: DownloadConfirmationType? = nil
     @Published var bookmarkConfirmation: BookmarkConfirmationType? = nil
     @Published var websiteDataConfirmation: WebsiteDataConfirmationType? = nil
+    @Published var activeJavaScriptDialog: JavaScriptDialogRequest? = nil
+    var pendingJavaScriptDialogs: [JavaScriptDialogRequest] = []
     @Published var profileTransitionDirection: ProfileTransitionDirection = .forward
     @Published var profileSwipeOffset: CGFloat = 0
     @Published var lastSelectedTabPerProfile: [UUID: UUID] = [:]
@@ -314,7 +316,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     // MARK: - Focus
 
     var isAnyTextInputFocused: Bool {
-        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented || profileToDeleteConfirmation != nil || deleteBangConfirmation != nil || historyConfirmation != nil || downloadConfirmation != nil || bookmarkConfirmation != nil || websiteDataConfirmation != nil {
+        if isCommandPaletteOpen || isFindPresented || folderToCloseConfirmation != nil || isQuitConfirmationPresented || pendingPopupRequest != nil || isClearAllDataConfirmationPresented || profileToDeleteConfirmation != nil || deleteBangConfirmation != nil || historyConfirmation != nil || downloadConfirmation != nil || bookmarkConfirmation != nil || websiteDataConfirmation != nil || activeJavaScriptDialog != nil {
             return true
         }
         if let responder = NSApp.keyWindow?.firstResponder {
@@ -323,6 +325,23 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             }
         }
         return isWebInputFocused
+    }
+
+    // MARK: - JavaScript Dialogs
+
+    func presentJavaScriptDialog(_ request: JavaScriptDialogRequest) {
+        if activeJavaScriptDialog == nil {
+            activeJavaScriptDialog = request
+        } else {
+            pendingJavaScriptDialogs.append(request)
+        }
+    }
+
+    func dismissJavaScriptDialog() {
+        activeJavaScriptDialog = nil
+        if !pendingJavaScriptDialogs.isEmpty {
+            activeJavaScriptDialog = pendingJavaScriptDialogs.removeFirst()
+        }
     }
 
     // MARK: - Lifecycle
