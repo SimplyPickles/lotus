@@ -63,62 +63,52 @@ struct HairlineProgressIndicator: View {
 
             ZStack(alignment: .bottomLeading) {
                 if opacity > 0 && progressWidth > 0 {
-                    // Subtle ambient gradient wash inside the input box
+                    // Subtle upward ambient wash spread across the field
                     LinearGradient(
                         stops: [
-                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.10 : 0.06), location: 0.0),
-                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.05 : 0.03), location: 0.50),
+                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.16 : 0.10), location: 0.0),
+                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.08 : 0.05), location: 0.35),
+                            .init(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.02 : 0.01), location: 0.75),
                             .init(color: detectedAccentColor.opacity(0.0), location: 1.0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: progressWidth, height: totalHeight)
-
-                    // Delicate vertical tint softening upwards
-                    LinearGradient(
-                        colors: [
-                            detectedAccentColor.opacity(colorScheme == .dark ? 0.07 : 0.04),
-                            Color.clear
                         ],
                         startPoint: .bottom,
                         endPoint: .top
                     )
                     .frame(width: progressWidth, height: totalHeight)
 
-                    // Thin 1.0pt hairline indicator bar along the bottom edge
-                    ZStack(alignment: .leading) {
-                        Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: detectedAccentColor.opacity(0.25), location: 0.0),
-                                        .init(color: detectedAccentColor.opacity(0.65), location: 0.65),
-                                        .init(color: detectedAccentColor.opacity(0.85), location: 1.0)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: progressWidth, height: hairlineHeight)
-
-                        // Delicate feathering at the advancing tip
-                        if progressWidth > 6 {
+                    // Soft diffused ambient underglow
+                    Rectangle()
+                        .fill(
                             LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.0),
-                                    Color.white.opacity(0.28),
-                                    Color.white.opacity(0.10)
+                                stops: [
+                                    .init(color: detectedAccentColor.opacity(0.10), location: 0.0),
+                                    .init(color: detectedAccentColor.opacity(0.35), location: 0.60),
+                                    .init(color: detectedAccentColor.opacity(0.60), location: 1.0)
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
-                            .frame(width: min(20, progressWidth), height: hairlineHeight)
-                            .offset(x: max(0, progressWidth - 20))
-                        }
-                    }
-                    .frame(height: hairlineHeight)
-                    .shadow(color: detectedAccentColor.opacity(0.30), radius: 1.0, x: 0, y: 0)
+                        )
+                        .frame(width: progressWidth, height: 4.0)
+                        .blur(radius: 4.0)
+
+                    // Thin 1.0pt progress bar with soft diffused glow
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: detectedAccentColor.opacity(0.35), location: 0.0),
+                                    .init(color: detectedAccentColor.opacity(0.70), location: 0.50),
+                                    .init(color: detectedAccentColor.opacity(0.95), location: 1.0)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: progressWidth, height: hairlineHeight)
+                        .shadow(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.65 : 0.45), radius: 2.0, x: 0, y: 0)
+                        .shadow(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.40 : 0.25), radius: 6.0, x: 0, y: -0.5)
+                        .shadow(color: detectedAccentColor.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 12.0, x: 0, y: -1.0)
                 }
             }
             .frame(width: totalWidth, height: totalHeight, alignment: .bottomLeading)

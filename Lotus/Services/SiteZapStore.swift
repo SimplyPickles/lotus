@@ -43,7 +43,13 @@ final class SiteZapStore: ObservableObject {
     }
 
     private func normalize(domain: String) -> String {
-        domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var clean = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if clean.hasPrefix("https://") { clean = String(clean.dropFirst(8)) }
+        if clean.hasPrefix("http://") { clean = String(clean.dropFirst(7)) }
+        if let slashIdx = clean.firstIndex(of: "/") { clean = String(clean[..<slashIdx]) }
+        if let colonIdx = clean.firstIndex(of: ":") { clean = String(clean[..<colonIdx]) }
+        if clean.hasPrefix("www.") { clean = String(clean.dropFirst(4)) }
+        return clean
     }
 
     private func load() {
@@ -68,7 +74,32 @@ final class SiteZapStore: ObservableObject {
     /// Returns all zapped elements for a given domain.
     func zappedElements(for domain: String) -> [ZappedElement] {
         let key = normalize(domain: domain)
-        return zapsByDomain[key] ?? []
+        guard !key.isEmpty else { return [] }
+
+        var results: [ZappedElement] = []
+        var seenIds = Set<UUID>()
+
+        // Exact match
+        if let list = zapsByDomain[key] {
+            for item in list {
+                if seenIds.insert(item.id).inserted {
+                    results.append(item)
+                }
+            }
+        }
+
+        // Subdomain / parent domain matching
+        for (storedDomain, list) in zapsByDomain where storedDomain != key {
+            if key.hasSuffix("." + storedDomain) || storedDomain.hasSuffix("." + key) {
+                for item in list {
+                    if seenIds.insert(item.id).inserted {
+                        results.append(item)
+                    }
+                }
+            }
+        }
+
+        return results
     }
 
     /// Total count of zapped elements for a given domain.

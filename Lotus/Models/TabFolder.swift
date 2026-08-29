@@ -29,20 +29,20 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
             case .orange: return "Orange"
             case .yellow: return "Yellow"
             case .green: return "Green"
-            case .grey: return "Monochrome"
+            case .grey: return "Grey"
         }
     }
 
     var color: Color {
         if self == .grey {
-            return Color(nsColor: .controlAccentColor)
+            return Color(nsColor: .systemGray)
         }
         return Color(nsColor: nsColor)
     }
 
     var swatchColor: Color {
         if self == .grey {
-            return Color.primary
+            return .gray
         }
         return color
     }
@@ -64,7 +64,7 @@ enum FolderColor: String, Codable, CaseIterable, Identifiable {
             case .green:
                 return NSColor(srgbRed: 0.13, green: 0.69, blue: 0.30, alpha: 1.0)
             case .grey:
-                return NSColor.controlAccentColor
+            return .systemGray
         }
     }
 

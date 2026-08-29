@@ -25,13 +25,21 @@ struct BangsSettingsSection: View {
         colorScheme == .dark ? .white.opacity(0.45) : Color(nsColor: .secondaryLabelColor)
     }
 
-    private var allProviders: [SiteSearchProvider] {
-        SiteSearchProvider.all
+    private var builtInProviders: [SiteSearchProvider] {
+        SiteSearchProvider.all.filter { provider in
+            !bangsStore.customBangs.contains(where: { $0.id.uuidString == provider.id })
+        }
+    }
+
+    private var customProviders: [SiteSearchProvider] {
+        SiteSearchProvider.all.filter { provider in
+            bangsStore.customBangs.contains(where: { $0.id.uuidString == provider.id })
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Master toggle and configured engines card
+            // Master toggle and built-in engines card
             SettingsSectionCard(title: "Configured Bangs") {
                 VStack(spacing: 0) {
                     // Master enable toggle row
@@ -66,7 +74,7 @@ struct BangsSettingsSection: View {
                     .frame(height: 50)
 
                     if bangsEnabled {
-                        ForEach(Array(allProviders.enumerated()), id: \.element.id) { index, provider in
+                        ForEach(Array(builtInProviders.enumerated()), id: \.element.id) { index, provider in
                             SettingsDivider(leadingInset: 54)
                             providerRow(for: provider)
                         }
@@ -74,34 +82,60 @@ struct BangsSettingsSection: View {
                 }
             }
 
-            // Add Custom Bang card
-            SettingsSectionCard(title: "Add Custom Bang") {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Create a Custom Bang")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(foregroundPrimary)
+            // Custom Bangs card
+            SettingsSectionCard(title: "Custom Bangs") {
+                VStack(spacing: 0) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Create a Custom Bang")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(foregroundPrimary)
 
-                        Text("Custom search trigger keyword, query URL schema, color and icon")
-                            .font(.system(size: 11.5, weight: .regular))
-                            .foregroundColor(foregroundSecondary)
+                            Text("Custom search trigger keyword, query URL schema, color and icon")
+                                .font(.system(size: 11.5, weight: .regular))
+                                .foregroundColor(foregroundSecondary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            isCreatingBang = true
+                        } label: {
+                            Text("New Bang…")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .disabled(!bangsEnabled)
+                        .focusable(false)
+                        .focusEffectDisabled()
                     }
+                    .padding(.horizontal, 14)
+                    .frame(height: 50)
 
-                    Spacer()
+                    if bangsEnabled {
+                        if customProviders.isEmpty {
+                            SettingsDivider(leadingInset: 14)
+                            HStack(spacing: 10) {
+                                Image(systemName: "sparkle")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(foregroundSecondary)
 
-                    Button {
-                        isCreatingBang = true
-                    } label: {
-                        Text("New Bang…")
+                                Text("No custom bangs created yet. Click “New Bang…” to add one.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(foregroundSecondary)
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 14)
+                            .frame(height: 42)
+                        } else {
+                            ForEach(Array(customProviders.enumerated()), id: \.element.id) { index, provider in
+                                SettingsDivider(leadingInset: 54)
+                                providerRow(for: provider)
+                            }
+                        }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(!bangsEnabled)
-                    .focusable(false)
-                    .focusEffectDisabled()
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 50)
             }
         }
         .sheet(isPresented: $isCreatingBang) {
@@ -132,8 +166,10 @@ struct BangsSettingsSection: View {
                 },
                 onDelete: isCustom ? { toDelete in
                     editingBang = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        bangToDelete = toDelete
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                        withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
+                            bangToDelete = toDelete
+                        }
                     }
                 } : nil,
                 onCancel: {
@@ -157,9 +193,10 @@ struct BangsSettingsSection: View {
                         }
                     }
                 )
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.18)))
             }
         }
+        .animation(.spring(response: 0.26, dampingFraction: 0.82), value: bangToDelete != nil)
     }
 
     // MARK: - Provider Row

@@ -103,6 +103,9 @@ struct Tabstrip: View {
         case "neutral":
             return Color(nsColor: .windowBackgroundColor)
         case "systemAccent":
+            if profile.color == .grey {
+                return Color(nsColor: .windowBackgroundColor)
+            }
             return profile.color.color
         default: // "adaptive"
             if let tabId = profTabId {
@@ -123,6 +126,9 @@ struct Tabstrip: View {
         case "neutral":
             return colorScheme == .light
         case "systemAccent":
+            if browserState.currentProfile.color == .grey {
+                return colorScheme == .light
+            }
             let accent = LotusAccentColor(rawValue: browserState.currentProfile.color.accentColorEquivalent.rawValue) ?? .white
             return accent == .yellow
         default: // "adaptive"

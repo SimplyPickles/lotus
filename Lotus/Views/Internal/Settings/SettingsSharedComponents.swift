@@ -21,6 +21,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case tabs = "Tabs & Sidebar"
     case profiles = "Profiles"
     case bangs = "Search Bangs"
+    case scripts = "Scripts & Styles"
     case shields = "Shields & Blocking"
     case privacy = "Privacy & Data"
     case downloads = "Downloads"
@@ -32,7 +33,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var group: SettingsCategoryGroup {
         switch self {
-        case .general, .appearance, .tabs, .profiles, .bangs:
+        case .general, .appearance, .tabs, .profiles, .bangs, .scripts:
             return .general
         case .shields, .privacy, .downloads:
             return .security
@@ -48,6 +49,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .profiles: return "person.crop.circle.fill"
         case .tabs: return "sidebar.left"
         case .bangs: return "bolt.fill"
+        case .scripts: return "curlybraces"
         case .media: return "play.tv.fill"
         case .shields: return "shield.fill"
         case .privacy: return "lock.shield.fill"
@@ -64,6 +66,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .profiles: return Color(nsColor: .systemOrange)
         case .tabs: return Color(nsColor: .systemBlue)
         case .bangs: return Color(nsColor: .systemYellow)
+        case .scripts: return Color(nsColor: .systemPurple)
         case .shields: return Color(nsColor: .systemRed)
         case .privacy: return Color(nsColor: .systemIndigo)
         case .downloads: return Color(nsColor: .systemTeal)
@@ -80,6 +83,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .tabs: return "Tabs & Sidebar"
         case .profiles: return "Profiles"
         case .bangs: return "Search Bangs"
+        case .scripts: return "Scripts & Styles"
         case .shields: return "Shields & Blocking"
         case .privacy: return "Privacy & Data"
         case .downloads: return "Downloads"
@@ -96,6 +100,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .tabs: return "Tab strip behavior, automatic grouping, and inactive tab archiving"
         case .profiles: return "Independent profile spaces with separate cookies, tabs, and logins"
         case .bangs: return "Direct site search shortcuts using prefixes like !yt, !gh, !w, !r or custom search engines"
+        case .scripts: return "Custom CSS stylesheets and JavaScript snippets injected on matching domains"
         case .shields: return "Tracker blocking, cosmetic filtering, and custom element zapper"
         case .privacy: return "Browsing history, cookie management, and connection security"
         case .downloads: return "File download directory, tidy filenames, and download logs"

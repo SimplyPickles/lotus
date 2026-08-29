@@ -108,6 +108,7 @@ extension BrowserState {
                     self.recordHistoryVisit(title: title, url: newURL)
                 }
                 self.applyZapRules(for: tabId)
+                self.applyUserScripts(to: wv, for: newURL)
             }
         }
         tabObservers.append(urlObs)

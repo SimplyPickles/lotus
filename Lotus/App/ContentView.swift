@@ -28,6 +28,9 @@ struct ContentView: View {
 
     private var currentAccentColor: Color {
         if !browserState.isPrivate {
+            if browserState.currentProfile.color == .grey {
+                return Color(nsColor: .controlAccentColor)
+            }
             return browserState.currentProfile.color.color
         }
         let accent = LotusAccentColor(rawValue: accentColorKey) ?? .white

@@ -1120,18 +1120,33 @@ enum UserScripts {
 
     /// Injects persistent CSS hiding rules and dynamic mutation observers for a website's zapped elements.
     static func zapRulesScript(for elements: [ZappedElement]) -> String {
-        guard !elements.isEmpty else { return "" }
-        let combinedSelectors = elements.map { $0.selector }.joined(separator: ", ")
-        let cssRule = "\(combinedSelectors) { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }"
-        guard let jsonSelectorData = try? JSONSerialization.data(withJSONObject: [combinedSelectors]),
-              let jsonSelectorArray = String(data: jsonSelectorData, encoding: .utf8),
-              jsonSelectorArray.hasPrefix("[") && jsonSelectorArray.hasSuffix("]"),
-              let jsonCSSData = try? JSONSerialization.data(withJSONObject: [cssRule]),
+        if elements.isEmpty {
+            return """
+            (function() {
+                try {
+                    var style = document.getElementById('__lotus_zap_styles__');
+                    if (style && style.parentNode) {
+                        style.parentNode.removeChild(style);
+                    }
+                    if (window.__lotusZapObserver) {
+                        window.__lotusZapObserver.disconnect();
+                        window.__lotusZapObserver = null;
+                    }
+                } catch(e) {}
+            })();
+            """
+        }
+
+        let selectors = elements.map { $0.selector }
+        let cssRules = selectors.map { "\($0) { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }" }.joined(separator: "\n")
+
+        guard let jsonSelectorsData = try? JSONSerialization.data(withJSONObject: selectors),
+              let jsonSelectors = String(data: jsonSelectorsData, encoding: .utf8),
+              let jsonCSSData = try? JSONSerialization.data(withJSONObject: [cssRules]),
               let jsonCSSArray = String(data: jsonCSSData, encoding: .utf8),
               jsonCSSArray.hasPrefix("[") && jsonCSSArray.hasSuffix("]") else {
             return ""
         }
-        let jsonSelector = String(jsonSelectorArray.dropFirst().dropLast())
         let jsonCSS = String(jsonCSSArray.dropFirst().dropLast())
 
         return """
@@ -1149,25 +1164,29 @@ enum UserScripts {
                     (document.head || document.documentElement).appendChild(style);
                 }
 
-                // Immediate removal of existing nodes
-                var selector = \(jsonSelector);
+                var selectors = \(jsonSelectors);
                 function pruneNodes() {
-                    try {
-                        var nodes = document.querySelectorAll(selector);
-                        for (var i = 0; i < nodes.length; i++) {
-                            nodes[i].style.setProperty('display', 'none', 'important');
-                        }
-                    } catch(e) {}
+                    for (var s = 0; s < selectors.length; s++) {
+                        try {
+                            var nodes = document.querySelectorAll(selectors[s]);
+                            for (var i = 0; i < nodes.length; i++) {
+                                nodes[i].style.setProperty('display', 'none', 'important');
+                                nodes[i].style.setProperty('visibility', 'hidden', 'important');
+                            }
+                        } catch(err) {}
+                    }
                 }
                 pruneNodes();
 
-                // MutationObserver for dynamic SPAs (YouTube, Reddit, Twitter, etc.)
                 if (!window.__lotusZapObserver) {
                     var observer = new MutationObserver(function() {
                         pruneNodes();
                     });
-                    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
-                    window.__lotusZapObserver = observer;
+                    var target = document.documentElement || document.body;
+                    if (target) {
+                        observer.observe(target, { childList: true, subtree: true });
+                        window.__lotusZapObserver = observer;
+                    }
                 }
             } catch(e) {}
         })();
@@ -1198,50 +1217,86 @@ enum UserScripts {
 
             function computeSelector(el) {
                 if (!el || el === document.body || el === document.documentElement) return null;
-                if (el.id && !/\\d{4,}/.test(el.id)) {
-                    return '#' + CSS.escape(el.id);
+
+                // 1. Stable, unique ID
+                if (el.id && typeof el.id === 'string' && !/^[0-9]+$/.test(el.id) && !/\\d{5,}/.test(el.id)) {
+                    var idSelector = '#' + CSS.escape(el.id);
+                    try {
+                        if (document.querySelectorAll(idSelector).length === 1) {
+                            return idSelector;
+                        }
+                    } catch(e) {}
                 }
-                if (el.getAttribute('data-testid')) {
-                    return '[' + 'data-testid="' + CSS.escape(el.getAttribute('data-testid')) + '"]';
-                }
-                if (el.getAttribute('data-component')) {
-                    return '[' + 'data-component="' + CSS.escape(el.getAttribute('data-component')) + '"]';
-                }
-                var tag = el.tagName.toLowerCase();
-                var classList = Array.from(el.classList).filter(function(c) {
-                    return c && !c.startsWith('__lotus') && !/\\d{4,}/.test(c);
-                });
-                if (classList.length > 0) {
-                    var candidate = tag + '.' + classList.slice(0, 2).map(CSS.escape).join('.');
-                    if (document.querySelectorAll(candidate).length === 1) {
-                        return candidate;
+
+                // 2. Stable unique attribute
+                var dataAttrs = ['data-testid', 'data-qa', 'data-component', 'data-cy', 'data-test', 'aria-label', 'name'];
+                for (var d = 0; d < dataAttrs.length; d++) {
+                    var attr = dataAttrs[d];
+                    var val = el.getAttribute(attr);
+                    if (val && typeof val === 'string' && val.length > 1 && val.length < 80) {
+                        var attrSelector = '[' + attr + '="' + CSS.escape(val) + '"]';
+                        try {
+                            if (document.querySelectorAll(attrSelector).length === 1) {
+                                return attrSelector;
+                            }
+                        } catch(e) {}
                     }
                 }
-                // Generate hierarchical path
+
+                // 3. Stable unique class combinations
+                var tag = el.tagName.toLowerCase();
+                var rawClasses = el.className && typeof el.className === 'string' ? el.className.trim().split(/\\s+/) : [];
+                var cleanClasses = rawClasses.filter(function(c) {
+                    return c && !c.startsWith('__lotus') && !/^[0-9]+$/.test(c) && !/\\d{5,}/.test(c) && c.length < 50;
+                });
+
+                if (cleanClasses.length > 0) {
+                    for (var c = 1; c <= Math.min(cleanClasses.length, 3); c++) {
+                        var classSelector = tag + '.' + cleanClasses.slice(0, c).map(CSS.escape).join('.');
+                        try {
+                            if (document.querySelectorAll(classSelector).length === 1) {
+                                return classSelector;
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                // 4. Hierarchical path anchored to nearest unique ancestor
                 var path = [];
                 var curr = el;
-                while (curr && curr !== document.body && curr !== document.documentElement && path.length < 4) {
-                    var nodeTag = curr.tagName.toLowerCase();
-                    if (curr.id && !/\\d{4,}/.test(curr.id)) {
+                while (curr && curr !== document.body && curr !== document.documentElement && path.length < 5) {
+                    var currTag = curr.tagName.toLowerCase();
+                    if (curr.id && typeof curr.id === 'string' && !/^[0-9]+$/.test(curr.id) && !/\\d{5,}/.test(curr.id)) {
                         path.unshift('#' + CSS.escape(curr.id));
                         break;
+                    }
+
+                    var currClasses = curr.className && typeof curr.className === 'string' ? curr.className.trim().split(/\\s+/) : [];
+                    var validClasses = currClasses.filter(function(c) {
+                        return c && !c.startsWith('__lotus') && !/^[0-9]+$/.test(c) && !/\\d{5,}/.test(c);
+                    });
+
+                    if (validClasses.length > 0) {
+                        path.unshift(currTag + '.' + CSS.escape(validClasses[0]));
                     } else {
                         var parent = curr.parentElement;
                         if (parent) {
                             var siblings = Array.from(parent.children).filter(function(s) { return s.tagName === curr.tagName; });
                             if (siblings.length > 1) {
                                 var index = siblings.indexOf(curr) + 1;
-                                path.unshift(nodeTag + ':nth-of-type(' + index + ')');
+                                path.unshift(currTag + ':nth-of-type(' + index + ')');
                             } else {
-                                path.unshift(nodeTag);
+                                path.unshift(currTag);
                             }
                         } else {
-                            path.unshift(nodeTag);
+                            path.unshift(currTag);
                         }
                     }
                     curr = curr.parentElement;
                 }
-                return path.join(' > ');
+
+                var fullSelector = path.join(' > ');
+                return fullSelector || tag;
             }
 
             function computeSummary(el) {

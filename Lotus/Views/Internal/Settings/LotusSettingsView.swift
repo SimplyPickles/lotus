@@ -118,6 +118,8 @@ struct LotusSettingsView: View {
                         ProfilesSettingsSection(browserState: browserState, tabId: tabId)
                     case .bangs:
                         BangsSettingsSection()
+                    case .scripts:
+                        ScriptsSettingsSection(browserState: browserState)
                     case .tabs:
                         TabsSettingsSection(browserState: browserState)
                     case .media:

@@ -164,8 +164,8 @@ struct DeleteBangConfirmationView: View {
             .offset(y: -20)
             .transition(
                 .asymmetric(
-                    insertion: .offset(y: -14).combined(with: .opacity),
-                    removal: .offset(y: -14).combined(with: .opacity)
+                    insertion: .scale(scale: 0.93, anchor: .center).combined(with: .opacity),
+                    removal: .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
                 )
             )
         }

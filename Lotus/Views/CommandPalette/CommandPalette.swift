@@ -221,7 +221,8 @@ struct CommandPalette: View {
                 for: newValue,
                 history: browserState.activeProfileHistoryEntries,
                 bookmarks: browserState.activeProfileBookmarks,
-                allowsRemoteSuggestions: activeProvider == nil && areSuggestionsEnabled
+                allowsRemoteSuggestions: activeProvider == nil && areSuggestionsEnabled,
+                openTabs: browserState.activeProfileTabs
             )
         }
         .onChange(of: deleteKeyState.unlockRequest) { _, _ in
@@ -441,7 +442,7 @@ struct CommandPalette: View {
         let hasSubtitle = suggestion.subtitle != nil && suggestion.subtitle != suggestion.displayText
 
         Button {
-            submit(with: suggestion.text)
+            submitSuggestion(suggestion)
         } label: {
             HStack(spacing: 10) {
                 Group {
@@ -489,7 +490,8 @@ struct CommandPalette: View {
                         .foregroundColor(isHighlighted ? foregroundPrimary.opacity(0.85) : foregroundSecondary.opacity(0.70))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .frame(width: 74, height: 18)
+                        .frame(minWidth: 70, idealWidth: 74, maxWidth: 100)
+                        .frame(height: 18)
                         .background(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
                                 .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
@@ -621,8 +623,29 @@ struct CommandPalette: View {
         deleteKeyState.isQueryEmpty = searchText.isEmpty
     }
 
+    /// Handles a tapped suggestion row — switches to the tab instantly if it's
+    /// a tab suggestion, otherwise falls through to normal URL/search submit.
+    private func submitSuggestion(_ suggestion: SearchSuggestion) {
+        if suggestion.isTab, let tabId = suggestion.tabId {
+            browserState.selectTab(tabId)
+            browserState.closeCommandPalette()
+            return
+        }
+        submit(with: suggestion.text)
+    }
+
     private func submit(with text: String? = nil) {
         guard !isSubmitting, browserState.isCommandPaletteOpen else { return }
+
+        // If the keyboard-Enter path lands on a tab suggestion, switch tabs immediately.
+        if text == nil, let selected = selectedIndex, visibleSuggestions.indices.contains(selected) {
+            let s = visibleSuggestions[selected]
+            if s.isTab, let tabId = s.tabId {
+                browserState.selectTab(tabId)
+                browserState.closeCommandPalette()
+                return
+            }
+        }
 
         let resolved: String
         if let text {

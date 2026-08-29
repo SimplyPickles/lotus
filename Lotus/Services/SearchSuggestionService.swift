@@ -19,6 +19,10 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
     let systemImage: String
     let badgeText: String?
     let faviconURL: URL?
+    /// Whether this suggestion represents an already-open tab.
+    let isTab: Bool
+    /// The tab ID to switch to when `isTab` is true.
+    let tabId: UUID?
 
     var displayText: String {
         if let title = title, !title.isEmpty {
@@ -52,6 +56,8 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
         self.isURL = isURL
         self.isInternalPage = isInternalPage
         self.isHistory = isHistory
+        self.isTab = false
+        self.tabId = nil
         self.faviconURL = faviconURL
         if let systemImage {
             self.systemImage = systemImage
@@ -75,6 +81,22 @@ struct SearchSuggestion: Identifiable, Equatable, Hashable {
         } else {
             self.badgeText = nil
         }
+    }
+
+    /// Designated init for open-tab suggestions.
+    init(tab: TabItem) {
+        self.id = "tab-" + tab.id.uuidString
+        self.text = tab.url?.absoluteString ?? tab.title
+        self.title = tab.title.isEmpty ? tab.url?.host : tab.title
+        self.subtitle = tab.url?.host
+        self.isURL = false
+        self.isInternalPage = false
+        self.isHistory = false
+        self.isTab = true
+        self.tabId = tab.id
+        self.systemImage = "macwindow.on.rectangle"
+        self.badgeText = "Switch to Tab"
+        self.faviconURL = tab.faviconURL
     }
 }
 
@@ -124,7 +146,8 @@ final class SearchSuggestionService: ObservableObject {
         for query: String,
         history: [HistoryItem] = [],
         bookmarks: [BookmarkItem] = [],
-        allowsRemoteSuggestions: Bool = true
+        allowsRemoteSuggestions: Bool = true,
+        openTabs: [TabItem] = []
     ) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -137,6 +160,40 @@ final class SearchSuggestionService: ObservableObject {
         }
 
         let queryLower = trimmed.lowercased()
+
+        // --- @tabs prefix mode: only show matching open tabs, no remote fetch ---
+        let tabPrefixes = ["@tabs ", "@tab ", "@t "]
+        let isTabPrefix = tabPrefixes.contains(where: { queryLower.hasPrefix($0) })
+            || ["@tabs", "@tab", "@t"].contains(queryLower)
+
+        if isTabPrefix {
+            let subQuery: String
+            if let prefix = tabPrefixes.first(where: { queryLower.hasPrefix($0) }) {
+                subQuery = String(trimmed.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            } else {
+                subQuery = ""
+            }
+
+            let tabResults: [SearchSuggestion]
+            if subQuery.isEmpty {
+                tabResults = Array(openTabs.prefix(8).map { SearchSuggestion(tab: $0) })
+            } else {
+                tabResults = openTabs
+                    .filter { tab in
+                        let titleMatch = tab.title.lowercased().contains(subQuery)
+                        let hostMatch = (tab.url?.host?.lowercased() ?? "").contains(subQuery)
+                        let urlMatch = (tab.url?.absoluteString.lowercased() ?? "").contains(subQuery)
+                        return titleMatch || hostMatch || urlMatch
+                    }
+                    .prefix(8)
+                    .map { SearchSuggestion(tab: $0) }
+            }
+
+            self.suggestions = tabResults
+            self.isLoading = false
+            return
+        }
+
         let searchEngine = URLInputResolver.selectedSearchEngine
         let cacheKey = CacheKey(
             query: queryLower,
@@ -144,15 +201,51 @@ final class SearchSuggestionService: ObservableObject {
             allowsRemoteSuggestions: allowsRemoteSuggestions
         )
 
-        // 1. Check in-memory cache for instant hit
-        if let cached = cache[cacheKey], !cached.isEmpty {
+        // 1. Check in-memory cache for instant hit (only when no open tabs to inject)
+        if openTabs.isEmpty, let cached = cache[cacheKey], !cached.isEmpty {
             self.suggestions = cached
             self.isLoading = false
             return
         }
 
         // 2. Synchronously apply local matches immediately with 0ms latency
-        let localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed, history: history, bookmarks: bookmarks)
+        var localMatches = getLocalSuggestions(for: queryLower, rawQuery: trimmed, history: history, bookmarks: bookmarks)
+
+        // Prepend up to 2 matching open tabs (by title or URL host) before other results
+        if !openTabs.isEmpty {
+            let matchingTabs = openTabs
+                .filter { tab in
+                    let titleMatch = tab.title.lowercased().contains(queryLower)
+                    let hostMatch = (tab.url?.host?.lowercased() ?? "").contains(queryLower)
+                    return titleMatch || hostMatch
+                }
+                .prefix(2)
+                .map { SearchSuggestion(tab: $0) }
+            localMatches.insert(contentsOf: matchingTabs, at: 0)
+        }
+
+        // Append bang discoverability suggestions when query starts with "!"
+        if queryLower.hasPrefix("!") {
+            let bangQuery = queryLower.count > 1 ? String(queryLower.dropFirst()) : ""
+            let bangMatches = SiteSearchProvider.all
+                .filter { provider in
+                    if bangQuery.isEmpty { return true }
+                    return provider.triggers.contains { $0.hasPrefix(bangQuery) }
+                }
+                .prefix(5)
+                .map { provider -> SearchSuggestion in
+                    let trigger = provider.triggers.first ?? provider.id
+                    return SearchSuggestion(
+                        text: "!" + trigger,
+                        title: provider.name,
+                        subtitle: provider.host,
+                        systemImage: provider.iconName,
+                        badgeText: "!" + trigger
+                    )
+                }
+            localMatches.append(contentsOf: bangMatches)
+        }
+
         self.suggestions = localMatches
         self.isLoading = true
 
@@ -180,7 +273,9 @@ final class SearchSuggestionService: ObservableObject {
             )
             guard !Task.isCancelled else { return }
 
-            self.cache[cacheKey] = results
+            if openTabs.isEmpty {
+                self.cache[cacheKey] = results
+            }
             self.suggestions = results
             self.isLoading = false
         }

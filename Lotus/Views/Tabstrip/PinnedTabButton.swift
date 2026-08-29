@@ -36,17 +36,35 @@ struct PinnedTabButton: View {
         isHovered && !isDraggingAnyTab
     }
 
-    private var adaptiveColor: Color {
-        if let faviconURL = tab.faviconURL,
-           let extracted = colorExtractor.colors(for: faviconURL),
-           let first = extracted.compactMap({ Self.makeVibrant($0) }).first {
-            return first
-        } else if let faviconURL = tab.faviconURL,
-                  let extracted = colorExtractor.color(for: faviconURL),
-                  let vibrant = Self.makeVibrant(extracted) {
-            return vibrant
+    private var dynamicFaviconColors: [Color] {
+        if let host = tab.url?.host?.lowercased(), host.contains("apple.com") {
+            return []
         }
-        return Self.vibrantDomainColors(for: tab).first ?? profileAccentColor
+        if let faviconURL = tab.faviconURL {
+            if let extracted = colorExtractor.colors(for: faviconURL) {
+                let vibrants = extracted.compactMap { Self.makeVibrant($0) }
+                if !vibrants.isEmpty {
+                    return vibrants
+                }
+            }
+            if let extracted = colorExtractor.color(for: faviconURL),
+               let vibrant = Self.makeVibrant(extracted) {
+                return [vibrant]
+            }
+        }
+        return []
+    }
+
+    private var dynamicFaviconColor: Color? {
+        dynamicFaviconColors.first
+    }
+
+    private var adaptiveColor: Color {
+        if let dynamic = dynamicFaviconColor {
+            return dynamic
+        }
+        // Fallback for monochrome / plain favicons (black/white/gray depending on light/dark mode)
+        return colorScheme == .dark ? Color.white.opacity(0.70) : Color.black.opacity(0.55)
     }
 
     private var primaryColor: Color {
@@ -54,32 +72,76 @@ struct PinnedTabButton: View {
         case "neutral":
             return colorScheme == .dark ? Color.white.opacity(0.40) : Color.black.opacity(0.30)
         case "systemAccent":
+            if profileAccentColor == FolderColor.grey.color || profileAccentColor == Color(nsColor: .systemGray) {
+                return colorScheme == .dark ? Color.white.opacity(0.40) : Color.black.opacity(0.30)
+            }
             return profileAccentColor
         default: // "adaptive"
             return adaptiveColor
         }
     }
 
-    private var cardFillColor: Color {
-        if colorScheme == .light {
-            if isSelected {
-                return Color.white
-            } else if pinnedTabTintingMode == "adaptive" {
-                return effectiveHovered ? primaryColor.opacity(0.10) : primaryColor.opacity(0.05)
-            } else if pinnedTabTintingMode == "systemAccent" {
-                return effectiveHovered ? profileAccentColor.opacity(0.10) : profileAccentColor.opacity(0.05)
+    @ViewBuilder
+    private var cardBackgroundView: some View {
+        if isSelected {
+            if pinnedTabTintingMode == "adaptive" && !dynamicFaviconColors.isEmpty {
+                let colors = dynamicFaviconColors
+                if colors.count >= 2 {
+                    ZStack {
+                        colorScheme == .dark ? Color.white.opacity(0.10) : Color.white
+
+                        LinearGradient(
+                            colors: colors.map { $0.opacity(colorScheme == .dark ? 0.26 : 0.16) },
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    }
+                } else if let single = colors.first {
+                    ZStack {
+                        colorScheme == .dark ? Color.white.opacity(0.10) : Color.white
+
+                        LinearGradient(
+                            stops: [
+                                .init(color: single.opacity(colorScheme == .dark ? 0.28 : 0.18), location: 0.0),
+                                .init(color: single.opacity(colorScheme == .dark ? 0.10 : 0.06), location: 1.0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    }
+                } else {
+                    colorScheme == .dark ? Color.white.opacity(0.14) : Color.white
+                }
+            } else if pinnedTabTintingMode == "systemAccent" && profileAccentColor != FolderColor.grey.color && profileAccentColor != Color(nsColor: .systemGray) {
+                ZStack {
+                    colorScheme == .dark ? Color.white.opacity(0.10) : Color.white
+
+                    LinearGradient(
+                        stops: [
+                            .init(color: profileAccentColor.opacity(colorScheme == .dark ? 0.26 : 0.16), location: 0.0),
+                            .init(color: profileAccentColor.opacity(colorScheme == .dark ? 0.09 : 0.05), location: 1.0)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
             } else {
-                return effectiveHovered ? Color.black.opacity(0.08) : Color.black.opacity(0.05)
+                colorScheme == .dark ? Color.white.opacity(0.14) : Color.white
             }
         } else {
-            if isSelected {
-                return Color.white.opacity(0.14)
-            } else if pinnedTabTintingMode == "adaptive" {
-                return effectiveHovered ? primaryColor.opacity(0.12) : primaryColor.opacity(0.06)
-            } else if pinnedTabTintingMode == "systemAccent" {
-                return effectiveHovered ? profileAccentColor.opacity(0.12) : profileAccentColor.opacity(0.06)
+            // Unselected pinned tabs (both neutral and unselected adaptive use neutral appearance)
+            if colorScheme == .light {
+                if pinnedTabTintingMode == "systemAccent" && profileAccentColor != FolderColor.grey.color && profileAccentColor != Color(nsColor: .systemGray) {
+                    effectiveHovered ? profileAccentColor.opacity(0.10) : profileAccentColor.opacity(0.05)
+                } else {
+                    effectiveHovered ? Color.black.opacity(0.08) : Color.black.opacity(0.05)
+                }
             } else {
-                return effectiveHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.05)
+                if pinnedTabTintingMode == "systemAccent" && profileAccentColor != FolderColor.grey.color && profileAccentColor != Color(nsColor: .systemGray) {
+                    effectiveHovered ? profileAccentColor.opacity(0.12) : profileAccentColor.opacity(0.06)
+                } else {
+                    effectiveHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.05)
+                }
             }
         }
     }
@@ -90,16 +152,18 @@ struct PinnedTabButton: View {
         } else if isInSplit {
             return primaryColor.opacity(0.60)
         } else if effectiveHovered {
-            if pinnedTabTintingMode == "neutral" {
-                return colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+            if pinnedTabTintingMode == "systemAccent" && profileAccentColor != FolderColor.grey.color && profileAccentColor != Color(nsColor: .systemGray) {
+                return profileAccentColor.opacity(0.40)
             } else {
-                return primaryColor.opacity(0.40)
+                // Both "neutral" and unselected "adaptive" have clean neutral styling
+                return colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
             }
         } else {
-            if pinnedTabTintingMode == "neutral" {
-                return colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)
+            if pinnedTabTintingMode == "systemAccent" && profileAccentColor != FolderColor.grey.color && profileAccentColor != Color(nsColor: .systemGray) {
+                return profileAccentColor.opacity(0.20)
             } else {
-                return primaryColor.opacity(0.20)
+                // Both "neutral" and unselected "adaptive" have clean neutral styling
+                return colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)
             }
         }
     }
@@ -116,7 +180,7 @@ struct PinnedTabButton: View {
 
     private var cardShadowColor: Color {
         if isSelected {
-            if pinnedTabTintingMode == "neutral" {
+            if pinnedTabTintingMode == "neutral" || (pinnedTabTintingMode == "adaptive" && dynamicFaviconColor == nil) || (pinnedTabTintingMode == "systemAccent" && (profileAccentColor == FolderColor.grey.color || profileAccentColor == Color(nsColor: .systemGray))) {
                 return Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08)
             } else {
                 return primaryColor.opacity(colorScheme == .dark ? 0.35 : 0.22)
@@ -150,41 +214,6 @@ struct PinnedTabButton: View {
         let boostedS = max(s * 1.15, 0.60)
         let boostedB = min(max(b, 0.72), 0.95)
         return Color(nsColor: NSColor(hue: h, saturation: min(boostedS, 1.0), brightness: boostedB, alpha: 1.0))
-    }
-
-    /// Produces a deterministic, high-energy vibrant 3-stop palette derived from the tab's domain or title.
-    static func vibrantDomainColors(for tab: TabItem) -> [Color] {
-        let domainString = tab.url?.host?.lowercased() ?? tab.title.lowercased()
-        var hash: UInt64 = 5381
-        for byte in domainString.utf8 {
-            hash = ((hash << 5) &+ hash) &+ UInt64(byte)
-        }
-
-        // 12 curated vibrant hues
-        let hues: [CGFloat] = [
-            0.58, // Sapphire Blue
-            0.38, // Emerald Green
-            0.78, // Vivid Violet
-            0.96, // Rose Crimson
-            0.08, // Warm Amber
-            0.48, // Azure Cyan
-            0.68, // Electric Indigo
-            0.88, // Magenta Pink
-            0.14, // Sunset Coral
-            0.44, // Mint Teal
-            0.82, // Royal Amethyst
-            0.03  // Vivid Ruby Red
-        ]
-        let selectedHueIndex = Int(hash % UInt64(hues.count))
-        let baseHue = hues[selectedHueIndex]
-        let secondaryHue = (baseHue + 0.08).truncatingRemainder(dividingBy: 1.0)
-        let tertiaryHue = (baseHue + 0.16).truncatingRemainder(dividingBy: 1.0)
-
-        let c1 = Color(nsColor: NSColor(hue: baseHue, saturation: 0.78, brightness: 0.78, alpha: 1.0))
-        let c2 = Color(nsColor: NSColor(hue: secondaryHue, saturation: 0.72, brightness: 0.84, alpha: 1.0))
-        let c3 = Color(nsColor: NSColor(hue: tertiaryHue, saturation: 0.68, brightness: 0.88, alpha: 1.0))
-
-        return [c1, c2, c3]
     }
 
     var body: some View {
@@ -231,8 +260,8 @@ struct PinnedTabButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(height: 38)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(cardFillColor)
+            cardBackgroundView
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)

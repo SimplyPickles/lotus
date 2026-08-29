@@ -35,7 +35,7 @@ extension BrowserState {
 
         let accentHex = LotusAccentColor.currentAccentHex
         let script = UserScripts.startZapModeScript(accentHex: accentHex)
-        wv.evaluateJavaScript(script, in: nil, in: .page) { _ in }
+        wv.evaluateJavaScript(script, in: nil, in: .defaultClient) { _ in }
     }
 
     /// Exits visual Zap mode and tears down the inspector overlay.
@@ -53,7 +53,7 @@ extension BrowserState {
         }
 
         if let wv = webViewStore[targetId] {
-            wv.evaluateJavaScript(UserScripts.stopZapModeScript, in: nil, in: .page) { _ in }
+            wv.evaluateJavaScript(UserScripts.stopZapModeScript, in: nil, in: .defaultClient) { _ in }
         }
     }
 
@@ -77,7 +77,7 @@ extension BrowserState {
         HapticFeedback.perform(.generic)
 
         if let wv = webViewStore[targetId] {
-            wv.evaluateJavaScript(UserScripts.undoZapScript(selector: last.selector), in: nil, in: .page) { _ in }
+            wv.evaluateJavaScript(UserScripts.undoZapScript(selector: last.selector), in: nil, in: .defaultClient) { _ in }
         }
 
         applyZapRules(for: targetId)
@@ -93,7 +93,7 @@ extension BrowserState {
         HapticFeedback.perform(.generic)
 
         if let wv = webViewStore[targetId] {
-            wv.evaluateJavaScript(UserScripts.undoZapScript(selector: zap.selector), in: nil, in: .page) { _ in }
+            wv.evaluateJavaScript(UserScripts.undoZapScript(selector: zap.selector), in: nil, in: .defaultClient) { _ in }
         }
 
         applyZapRules(for: targetId)
@@ -107,7 +107,7 @@ extension BrowserState {
         let elements = SiteZapStore.shared.zappedElements(for: host)
         let js = UserScripts.zapRulesScript(for: elements)
         if !js.isEmpty {
-            wv.evaluateJavaScript(js, in: nil, in: .page) { _ in }
+            wv.evaluateJavaScript(js, in: nil, in: .defaultClient) { _ in }
         }
     }
 }
