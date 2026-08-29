@@ -8,7 +8,7 @@
 import SwiftUI
 import AppKit
 
-/// Header with folder name and tab count hosted inside a native macOS context menu.
+/// Header with folder name, tab count, and color swatches hosted inside a native macOS context menu.
 struct FolderContextMenuHeaderView: View {
     let folder: TabFolder
     let tabCount: Int
@@ -17,7 +17,8 @@ struct FolderContextMenuHeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: folder.isArchive ? "archivebox.fill" : "folder.fill")
+                let iconName = folder.icon ?? (folder.isArchive ? "archivebox.fill" : "folder.fill")
+                Image(systemName: iconName)
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundColor(folder.color.color)
 
@@ -39,6 +40,88 @@ struct FolderContextMenuHeaderView: View {
         }
         .focusable(false)
         .focusEffectDisabled()
+    }
+}
+
+struct FolderIconPicker: View {
+    let folder: TabFolder
+    let onSelectIcon: (String?) -> Void
+
+    @State private var hoveredIcon: String? = nil
+
+    private let row1 = Array(Profile.presetIcons.prefix(8))
+    private let row2 = Array(Profile.presetIcons.suffix(from: 8))
+
+    var body: some View {
+        VStack(alignment: .center, spacing: 6) {
+            VStack(alignment: .center, spacing: 4) {
+                iconRow(icons: row1)
+                iconRow(icons: row2)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            if folder.icon != nil {
+                Button {
+                    onSelectIcon(nil)
+                } label: {
+                    Text("Reset to Default")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .focusable(false)
+        .focusEffectDisabled()
+    }
+
+    @ViewBuilder
+    private func iconRow(icons: [String]) -> some View {
+        HStack(spacing: 4) {
+            ForEach(icons, id: \.self) { icon in
+                let isSelected = folder.icon == icon
+                let isHovered = hoveredIcon == icon
+
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(folder.color.color.opacity(0.20))
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(folder.color.color, lineWidth: 1.25)
+                    } else if isHovered {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.primary.opacity(0.08))
+                    }
+
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                        .foregroundColor(isSelected ? folder.color.color : (isHovered ? .primary : .secondary))
+                }
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if isSelected {
+                        onSelectIcon(nil)
+                    } else {
+                        onSelectIcon(icon)
+                    }
+                }
+                .onHover { hovering in
+                    hoveredIcon = hovering ? icon : (hoveredIcon == icon ? nil : hoveredIcon)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 
@@ -177,9 +260,31 @@ final class FolderContextMenuNSView: NSView {
         renameItem.target = self
         menu.addItem(renameItem)
 
+        // 3. Change Icon Submenu
+        let iconSubmenu = NSMenu()
+        let iconPickerView = FolderIconPicker(
+            folder: folder,
+            onSelectIcon: { [weak menu] newIcon in
+                browserState.setFolderIcon(id: folder.id, to: newIcon)
+                menu?.cancelTracking()
+            }
+        )
+        let iconHostingView = MenuPaletteHostingView(rootView: iconPickerView)
+        iconHostingView.focusRingType = .none
+        let iconFitting = iconHostingView.fittingSize
+        iconHostingView.frame = NSRect(x: 0, y: 0, width: max(iconFitting.width, 216), height: iconFitting.height)
+
+        let iconPickerItem = NSMenuItem()
+        iconPickerItem.view = iconHostingView
+        iconSubmenu.addItem(iconPickerItem)
+
+        let iconMenuItem = NSMenuItem(title: "Change Icon", action: nil, keyEquivalent: "")
+        iconMenuItem.submenu = iconSubmenu
+        menu.addItem(iconMenuItem)
+
         menu.addItem(NSMenuItem.separator())
 
-        // 3. Close All Tabs in Folder
+        // 4. Close All Tabs in Folder
         let closeItem = NSMenuItem(title: "Close All Tabs in Folder", action: #selector(handleClose), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)

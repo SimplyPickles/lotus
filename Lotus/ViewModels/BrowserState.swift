@@ -215,10 +215,18 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     let bookmarkStore = BookmarkStore()
     @Published var bookmarks: [BookmarkItem] = []
     @Published var activeFlyingDownload: FlyingDownloadPayload? = nil
+    @Published var downloadsButtonCenter: CGPoint? = nil
+    @Published var isDownloadsButtonVisibleInToolbar: Bool = false
     @Published var downloadCatchPulseTrigger: Int = 0
     @Published var themeBloomTrigger: [UUID: Int] = [:]
     @Published var shieldDeflectTrigger: [UUID: Int] = [:]
     private var lastShieldDeflectTime: [UUID: Date] = [:]
+
+    var isDownloadsConfiguredInToolbar: Bool {
+        let raw = UserDefaults.standard.string(forKey: "lotus.browser.toolbarLayout") ?? ToolbarItemType.serializeLayout(ToolbarItemType.defaultOrder)
+        let items = ToolbarItemType.parseLayout(from: raw)
+        return items.contains(.downloads)
+    }
 
     func triggerShieldDeflect(for tabId: UUID) {
         let now = Date()
@@ -251,6 +259,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     var lastContextMenuSelectedText: String?
 
     func triggerFlyingDownloadAnimation(filename: String, iconName: String, startLocation: CGPoint? = nil) {
+        guard isDownloadsConfiguredInToolbar else { return }
         let start = startLocation ?? FlyingDownloadView.currentMouseWindowLocation()
         let tab = activeTab
         let faviconColors = tab?.faviconURL.flatMap { FaviconColorExtractor.shared.colors(for: $0) }
@@ -258,6 +267,7 @@ final class BrowserState: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         let isLight = isThemeLight
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            guard self.isDownloadsConfiguredInToolbar else { return }
             self.activeFlyingDownload = FlyingDownloadPayload(
                 filename: filename,
                 iconName: iconName,

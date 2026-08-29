@@ -52,7 +52,8 @@ struct FolderRow: View {
         // tracking, which starves the tabstrip's DragGesture and breaks
         // folder dragging. Tap handling mirrors TabButton's onTapGesture.
         HStack(spacing: 8) {
-            Image(systemName: folder.isArchive ? (folder.isCollapsed ? "archivebox.fill" : "archivebox") : (folder.isCollapsed ? "folder.fill" : "folder"))
+            let iconName = folder.icon ?? (folder.isArchive ? (folder.isCollapsed ? "archivebox.fill" : "archivebox") : (folder.isCollapsed ? "folder.fill" : "folder"))
+            Image(systemName: iconName)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(folder.color.color)
                 .frame(width: 16, height: 16)

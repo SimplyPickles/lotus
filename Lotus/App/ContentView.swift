@@ -275,13 +275,16 @@ struct ContentView: View {
 
     @ViewBuilder
     private var flyingDownloadOverlay: some View {
-        if let flyingPayload = browserState.activeFlyingDownload {
+        if let flyingPayload = browserState.activeFlyingDownload,
+           browserState.isDownloadsConfiguredInToolbar {
             GeometryReader { overlayGeo in
-                let targetX = overlayGeo.size.width - 80
-                let targetY: CGFloat = 20
+                let defaultTargetX = overlayGeo.size.width - 80
+                let defaultTargetY: CGFloat = 20
+                let target = browserState.downloadsButtonCenter ?? CGPoint(x: defaultTargetX, y: defaultTargetY)
                 FlyingDownloadView(
                     payload: flyingPayload,
-                    targetPoint: CGPoint(x: targetX, y: targetY)
+                    targetPoint: target,
+                    browserState: browserState
                 ) {
                     browserState.downloadCatchPulseTrigger += 1
                     HapticFeedback.perform(.alignment, performanceTime: .now)

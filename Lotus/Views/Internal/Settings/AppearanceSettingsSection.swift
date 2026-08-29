@@ -580,12 +580,17 @@ private struct ToolbarArrangementSettingsCard: View {
             if items.isEmpty {
                 HStack {
                     Spacer()
-                    Text("No items on toolbar. Add items from below.")
+                    Text("No items on toolbar. Drag items here or click Add below.")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorScheme == .dark ? .white.opacity(0.4) : .secondary)
                         .padding(.vertical, 16)
                     Spacer()
                 }
+                .contentShape(Rectangle())
+                .onDrop(of: [UTType.text, UTType.plainText, UTType.utf8PlainText], delegate: EmptyToolbarDropDelegate(
+                    draggedItem: $draggedItem,
+                    onAdd: addItem
+                ))
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -706,13 +711,20 @@ private struct AvailableItemsSectionView: View {
                 .padding(.bottom, 6)
             }
         }
+        .contentShape(Rectangle())
         .animation(.spring(response: 0.22, dampingFraction: 0.82), value: isTargeted)
-        .onDrop(of: [UTType.text], delegate: AvailableSectionDropDelegate(
+        .onDrop(of: [UTType.text, UTType.plainText, UTType.utf8PlainText], delegate: AvailableSectionDropDelegate(
             draggedItem: $draggedItem,
             isTargeted: $isTargeted,
             onRemove: onRemove
         ))
     }
+}
+
+// MARK: - Toolbar Drag Store
+
+private enum ToolbarDragStore {
+    static var currentItem: ToolbarItemType? = nil
 }
 
 // MARK: - Drop Position Enum
@@ -740,35 +752,39 @@ private struct ToolbarItemReorderRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Drag grip indicator
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.3) : .secondary.opacity(0.35))
-                .frame(width: 14)
-
-            // Icon square badge
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-
-                Image(systemName: item.iconName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.9) : Color(nsColor: .labelColor))
-            }
-            .frame(width: 28, height: 28)
-
-            // Title and description
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-
-                Text(item.subtitle)
+            // Main draggable content area
+            HStack(spacing: 12) {
+                // Drag grip indicator
+                Image(systemName: "line.3.horizontal")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
-            }
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.3) : .secondary.opacity(0.35))
+                    .frame(width: 14)
 
-            Spacer()
+                // Icon square badge
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+
+                    Image(systemName: item.iconName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.9) : Color(nsColor: .labelColor))
+                }
+                .frame(width: 28, height: 28)
+
+                // Title and description
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.displayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.92) : .primary)
+
+                    Text(item.subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.45) : .secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
 
             // Reordering buttons (Move Up / Move Down)
             HStack(spacing: 4) {
@@ -818,15 +834,17 @@ private struct ToolbarItemReorderRow: View {
             .help("Remove from Toolbar")
         }
         .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
         .frame(height: 48)
         .background(
-            (isTargeted && draggedItem != item)
+            (isTargeted && (draggedItem ?? ToolbarDragStore.currentItem) != item)
                 ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                : Color.clear
+                : Color.white.opacity(0.0001)
         )
+        .contentShape(Rectangle())
         .overlay(
             Group {
-                if isTargeted && draggedItem != item {
+                if isTargeted && (draggedItem ?? ToolbarDragStore.currentItem) != item {
                     VStack {
                         if dropPosition == .below {
                             Spacer()
@@ -839,17 +857,18 @@ private struct ToolbarItemReorderRow: View {
                             Spacer()
                         }
                     }
-                    .animation(.easeInOut(duration: 0.1), value: dropPosition)
                 }
             }
         )
-        .opacity(draggedItem == item ? 0.35 : 1.0)
-        .animation(.easeInOut(duration: 0.12), value: isTargeted)
+        .opacity((draggedItem ?? ToolbarDragStore.currentItem) == item ? 0.35 : 1.0)
         .onDrag {
             draggedItem = item
-            return NSItemProvider(object: NSString(string: item.rawValue))
+            ToolbarDragStore.currentItem = item
+            let provider = NSItemProvider(object: NSString(string: item.rawValue))
+            provider.suggestedName = item.displayName
+            return provider
         }
-        .onDrop(of: [UTType.text], delegate: ToolbarDropDelegate(
+        .onDrop(of: [UTType.text, UTType.plainText, UTType.utf8PlainText], delegate: ToolbarDropDelegate(
             targetItem: item,
             draggedItem: $draggedItem,
             isTargeted: $isTargeted,
@@ -870,35 +889,39 @@ private struct ToolbarAvailableItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Drag grip indicator
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .regular))
-                .foregroundColor(colorScheme == .dark ? .white.opacity(0.25) : .secondary.opacity(0.3))
-                .frame(width: 14)
-
-            // Icon square badge
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-
-                Image(systemName: item.iconName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
-            }
-            .frame(width: 28, height: 28)
-
-            // Title and description
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.75) : .primary.opacity(0.85))
-
-                Text(item.subtitle)
+            // Main draggable content area
+            HStack(spacing: 12) {
+                // Drag grip indicator
+                Image(systemName: "line.3.horizontal")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.35) : .secondary.opacity(0.8))
-            }
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.25) : .secondary.opacity(0.3))
+                    .frame(width: 14)
 
-            Spacer()
+                // Icon square badge
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+
+                    Image(systemName: item.iconName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.65) : Color(nsColor: .secondaryLabelColor))
+                }
+                .frame(width: 28, height: 28)
+
+                // Title and description
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.displayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.75) : .primary.opacity(0.85))
+
+                    Text(item.subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(colorScheme == .dark ? .white.opacity(0.35) : .secondary.opacity(0.8))
+                }
+
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
 
             // Add Button
             Button(action: onAdd) {
@@ -921,12 +944,17 @@ private struct ToolbarAvailableItemRow: View {
             .help("Add \(item.displayName) to Toolbar")
         }
         .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
         .frame(height: 46)
-        .background(Color.clear)
-        .opacity(draggedItem == item ? 0.35 : 1.0)
+        .background(Color.white.opacity(0.0001))
+        .contentShape(Rectangle())
+        .opacity((draggedItem ?? ToolbarDragStore.currentItem) == item ? 0.35 : 1.0)
         .onDrag {
             draggedItem = item
-            return NSItemProvider(object: NSString(string: item.rawValue))
+            ToolbarDragStore.currentItem = item
+            let provider = NSItemProvider(object: NSString(string: item.rawValue))
+            provider.suggestedName = item.displayName
+            return provider
         }
     }
 }
@@ -941,14 +969,12 @@ private struct ToolbarDropDelegate: DropDelegate {
     let onDropAction: (ToolbarItemType, DropPosition) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [UTType.text])
+        draggedItem != nil || ToolbarDragStore.currentItem != nil || info.hasItemsConforming(to: [UTType.text, UTType.plainText, UTType.utf8PlainText])
     }
 
     func dropEntered(info: DropInfo) {
         updatePosition(info: info)
-        withAnimation(.easeInOut(duration: 0.15)) {
-            isTargeted = true
-        }
+        isTargeted = true
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -965,45 +991,89 @@ private struct ToolbarDropDelegate: DropDelegate {
     }
 
     func dropExited(info: DropInfo) {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            isTargeted = false
-        }
+        isTargeted = false
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            isTargeted = false
-        }
+        isTargeted = false
         let isAbove = info.location.y < 24
         let pos: DropPosition = isAbove ? .above : .below
 
-        if let current = draggedItem {
-            onDropAction(current, pos)
-            draggedItem = nil
+        let source = draggedItem ?? ToolbarDragStore.currentItem
+        draggedItem = nil
+        ToolbarDragStore.currentItem = nil
+
+        if let source {
+            onDropAction(source, pos)
             return true
         }
 
-        if let itemProvider = info.itemProviders(for: [UTType.text]).first {
-            itemProvider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { data, _ in
-                if let stringData = data as? Data, let raw = String(data: stringData, encoding: .utf8),
-                   let dropped = ToolbarItemType(rawValue: raw) {
-                    DispatchQueue.main.async {
-                        onDropAction(dropped, pos)
-                    }
-                } else if let raw = data as? String, let dropped = ToolbarItemType(rawValue: raw) {
-                    DispatchQueue.main.async {
-                        onDropAction(dropped, pos)
+        let types = [UTType.utf8PlainText.identifier, UTType.plainText.identifier, UTType.text.identifier]
+        for type in types {
+            if let itemProvider = info.itemProviders(for: [UTType(type) ?? .text]).first {
+                itemProvider.loadItem(forTypeIdentifier: type, options: nil) { data, _ in
+                    if let stringData = data as? Data, let raw = String(data: stringData, encoding: .utf8),
+                       let dropped = ToolbarItemType(rawValue: raw) {
+                        DispatchQueue.main.async {
+                            onDropAction(dropped, pos)
+                        }
+                    } else if let raw = data as? String, let dropped = ToolbarItemType(rawValue: raw) {
+                        DispatchQueue.main.async {
+                            onDropAction(dropped, pos)
+                        }
                     }
                 }
+                return true
             }
-            return true
         }
 
         return false
     }
 }
 
+private struct EmptyToolbarDropDelegate: DropDelegate {
+    @Binding var draggedItem: ToolbarItemType?
+    let onAdd: (ToolbarItemType) -> Void
 
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedItem != nil || ToolbarDragStore.currentItem != nil || info.hasItemsConforming(to: [UTType.text, UTType.plainText, UTType.utf8PlainText])
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let source = draggedItem ?? ToolbarDragStore.currentItem
+        draggedItem = nil
+        ToolbarDragStore.currentItem = nil
+
+        if let source {
+            onAdd(source)
+            return true
+        }
+
+        let types = [UTType.utf8PlainText.identifier, UTType.plainText.identifier, UTType.text.identifier]
+        for type in types {
+            if let itemProvider = info.itemProviders(for: [UTType(type) ?? .text]).first {
+                itemProvider.loadItem(forTypeIdentifier: type, options: nil) { data, _ in
+                    if let stringData = data as? Data, let raw = String(data: stringData, encoding: .utf8),
+                       let dropped = ToolbarItemType(rawValue: raw) {
+                        DispatchQueue.main.async {
+                            onAdd(dropped)
+                        }
+                    } else if let raw = data as? String, let dropped = ToolbarItemType(rawValue: raw) {
+                        DispatchQueue.main.async {
+                            onAdd(dropped)
+                        }
+                    }
+                }
+                return true
+            }
+        }
+        return false
+    }
+}
 
 private struct AvailableSectionDropDelegate: DropDelegate {
     @Binding var draggedItem: ToolbarItemType?
@@ -1011,7 +1081,7 @@ private struct AvailableSectionDropDelegate: DropDelegate {
     let onRemove: (ToolbarItemType) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [UTType.text])
+        draggedItem != nil || ToolbarDragStore.currentItem != nil || info.hasItemsConforming(to: [UTType.text, UTType.plainText, UTType.utf8PlainText])
     }
 
     func dropEntered(info: DropInfo) {
@@ -1024,26 +1094,32 @@ private struct AvailableSectionDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
-        if let current = draggedItem {
-            onRemove(current)
-            draggedItem = nil
+        let source = draggedItem ?? ToolbarDragStore.currentItem
+        draggedItem = nil
+        ToolbarDragStore.currentItem = nil
+
+        if let source {
+            onRemove(source)
             return true
         }
 
-        if let itemProvider = info.itemProviders(for: [UTType.text]).first {
-            itemProvider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { data, _ in
-                if let stringData = data as? Data, let raw = String(data: stringData, encoding: .utf8),
-                   let dropped = ToolbarItemType(rawValue: raw) {
-                    DispatchQueue.main.async {
-                        onRemove(dropped)
-                    }
-                } else if let raw = data as? String, let dropped = ToolbarItemType(rawValue: raw) {
-                    DispatchQueue.main.async {
-                        onRemove(dropped)
+        let types = [UTType.utf8PlainText.identifier, UTType.plainText.identifier, UTType.text.identifier]
+        for type in types {
+            if let itemProvider = info.itemProviders(for: [UTType(type) ?? .text]).first {
+                itemProvider.loadItem(forTypeIdentifier: type, options: nil) { data, _ in
+                    if let stringData = data as? Data, let raw = String(data: stringData, encoding: .utf8),
+                       let dropped = ToolbarItemType(rawValue: raw) {
+                        DispatchQueue.main.async {
+                            onRemove(dropped)
+                        }
+                    } else if let raw = data as? String, let dropped = ToolbarItemType(rawValue: raw) {
+                        DispatchQueue.main.async {
+                            onRemove(dropped)
+                        }
                     }
                 }
+                return true
             }
-            return true
         }
 
         return false

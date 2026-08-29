@@ -437,22 +437,6 @@ struct BrowserToolbar: View {
                     let activeTabProfileId = browserState.tab(for: activeTabId)?.profileId ?? browserState.currentProfileId
                     let isCurrentBookmarked = browserState.isBookmarked(url: currentURL, profileId: activeTabProfileId)
                     let shouldShowBookmark = (isCurrentBookmarked || isInputHovered) && currentURL != nil && currentURL?.isLotusPage == false
-                    if shouldShowBookmark {
-                        let bookmarkColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : (isCurrentBookmarked ? Color.primary : theme.foregroundSecondary)
-                        Button {
-                            browserState.toggleBookmark(for: activeTabId)
-                        } label: {
-                            Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
-                                .font(.system(size: 11.5, weight: isCurrentBookmarked ? .semibold : .regular))
-                                .foregroundColor(bookmarkColor)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .transition(.opacity.combined(with: .scale(scale: 0.90)))
-                        .help(isCurrentBookmarked ? "Remove Bookmark (⌘D)" : "Bookmark Page (⌘D)")
-                    }
 
                     let isSplitActive = browserState.isSplit(id: activeTabId)
                     let shouldShowSplit = isInputHovered
@@ -530,6 +514,23 @@ struct BrowserToolbar: View {
                         .focusable(false)
                         .transition(.opacity.combined(with: .scale(scale: 0.90)))
                         .help(isSplitActive ? "Split View Active (Click to close, hold for options)" : "Split View (Click to split right, hold for options)")
+                    }
+                    
+                    if shouldShowBookmark {
+                        let bookmarkColor = theme.themeColor != nil ? (theme.isThemeLight ? Color.black : Color.white) : (isCurrentBookmarked ? Color.primary : theme.foregroundSecondary)
+                        Button {
+                            browserState.toggleBookmark(for: activeTabId)
+                        } label: {
+                            Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
+                                .font(.system(size: 11.5, weight: isCurrentBookmarked ? .semibold : .regular))
+                                .foregroundColor(bookmarkColor)
+                                .frame(width: 20, height: 20)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.90)))
+                        .help(isCurrentBookmarked ? "Remove Bookmark (⌘D)" : "Bookmark Page (⌘D)")
                     }
                 }
                 .padding(.trailing, 4)
@@ -631,6 +632,24 @@ struct BrowserToolbar: View {
             )
         }
         .buttonStyle(BrowserToolbarButtonStyle(isLight: theme.isThemeLight, hasCustomTheme: theme.themeColor != nil))
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        let frame = geo.frame(in: .global)
+                        browserState.downloadsButtonCenter = CGPoint(x: frame.midX, y: frame.midY)
+                        browserState.isDownloadsButtonVisibleInToolbar = true
+                    }
+                    .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                        browserState.downloadsButtonCenter = CGPoint(x: newFrame.midX, y: newFrame.midY)
+                        browserState.isDownloadsButtonVisibleInToolbar = true
+                    }
+                    .onDisappear {
+                        browserState.isDownloadsButtonVisibleInToolbar = false
+                        browserState.downloadsButtonCenter = nil
+                    }
+            }
+        )
         .focusable(false)
         .help("Downloads")
         .transition(.asymmetric(

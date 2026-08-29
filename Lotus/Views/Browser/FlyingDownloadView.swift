@@ -41,6 +41,7 @@ struct FlyingDownloadPayload: Identifiable, Equatable {
 struct FlyingDownloadView: View {
     let payload: FlyingDownloadPayload
     let targetPoint: CGPoint
+    var browserState: BrowserState? = nil
     let onComplete: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -51,11 +52,16 @@ struct FlyingDownloadView: View {
 
     @State private var backdropOpacity: Double = 0.0
 
-    init(payload: FlyingDownloadPayload, targetPoint: CGPoint, onComplete: @escaping () -> Void) {
+    init(payload: FlyingDownloadPayload, targetPoint: CGPoint, browserState: BrowserState? = nil, onComplete: @escaping () -> Void) {
         self.payload = payload
         self.targetPoint = targetPoint
+        self.browserState = browserState
         self.onComplete = onComplete
         self._currentPoint = State(initialValue: payload.startPoint)
+    }
+
+    private var effectiveTargetPoint: CGPoint {
+        browserState?.downloadsButtonCenter ?? targetPoint
     }
 
     private var isBackgroundLight: Bool {
@@ -119,8 +125,9 @@ struct FlyingDownloadView: View {
     }
 
     private var flightTiltAngle: Double {
-        let dx = targetPoint.x - payload.startPoint.x
-        let dy = targetPoint.y - payload.startPoint.y
+        let dest = effectiveTargetPoint
+        let dx = dest.x - payload.startPoint.x
+        let dy = dest.y - payload.startPoint.y
         let radians = atan2(dy, dx)
         let degrees = radians * 180.0 / .pi
         // Natural banking tilt towards destination (top-right trajectory yields a negative angle)
@@ -236,12 +243,13 @@ struct FlyingDownloadView: View {
 
             // Step 2: Seamlessly swoop out of the dip bottom across to the downloads button
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                let dest = effectiveTargetPoint
                 withAnimation(.easeIn(duration: 0.36)) {
                     backdropOpacity = 0.0
                 }
 
                 withAnimation(.spring(response: 0.46, dampingFraction: 0.78)) {
-                    currentPoint = targetPoint
+                    currentPoint = dest
                     scale = 0.16
                     opacity = 0.0
                     rotationAngle = flightTiltAngle

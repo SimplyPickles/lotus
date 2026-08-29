@@ -17,7 +17,7 @@ struct ProfileIndicatorBar: View {
 
     var body: some View {
         if browserState.profiles.count > 1 {
-            HStack(spacing: 10) {
+            HStack(spacing: 4) {
                 ForEach(Array(browserState.profiles.enumerated()), id: \.element.id) { index, profile in
                     let isActive = profile.id == browserState.currentProfileId
                     let isHovered = hoveredProfileId == profile.id

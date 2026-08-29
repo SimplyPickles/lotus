@@ -182,6 +182,13 @@ extension BrowserState {
         }
     }
 
+    func setFolderIcon(id: UUID, to icon: String?) {
+        guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+            folders[index].icon = icon
+        }
+    }
+
     func renameFolder(id: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = folders.firstIndex(where: { $0.id == id }) else { return }
